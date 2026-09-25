@@ -430,6 +430,9 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
 }
 
 /// One-shot non-streaming completion (poster HTML, theme generation, ...).
+/// Budget ladder: reasoning models can burn the whole initial budget on
+/// thinking, so an empty content with finish_reason=length retries at a
+/// doubled budget (capped) before giving up with a clear diagnostic.
 pub fn complete(
     system: &str,
     user: &str,
@@ -437,17 +440,50 @@ pub fn complete(
     temperature: f64,
 ) -> Result<String, String> {
     let (p, key) = active_provider()?;
+    let msgs = vec![
+        serde_json::json!({ "role": "system", "content": system }),
+        serde_json::json!({ "role": "user", "content": user }),
+    ];
+    let mut budget = max_tokens.max(1024);
+    loop {
+        let reply = chat_once(&p.base_url, &key, &p.model, &msgs, budget, temperature)?;
+        let content = strip_think(&reply.content).trim().to_string();
+        if !content.is_empty() {
+            return Ok(content);
+        }
+        if reply.finish == "length" && budget < COMPLETE_BUDGET_CAP {
+            budget = (budget * 2).min(COMPLETE_BUDGET_CAP);
+            continue;
+        }
+        return Err(empty_reply_diagnostic(&reply));
+    }
+}
+
+const COMPLETE_BUDGET_CAP: u32 = 16384;
+
+struct OnceReply {
+    content: String,
+    finish: String,
+    has_reasoning: bool,
+}
+
+/// One raw non-streaming chat call, parsed into content + finish_reason.
+fn chat_once(
+    base_url: &str,
+    key: &str,
+    model: &str,
+    msgs: &[serde_json::Value],
+    max_tokens: u32,
+    temperature: f64,
+) -> Result<OnceReply, String> {
     let body = serde_json::json!({
-        "model": p.model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ],
+        "model": model,
+        "messages": msgs,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": false,
     });
-    let resp = call_completions_post(&p.base_url, &key, "/chat/completions", &body)?;
+    let resp = call_completions_post(base_url, key, "/chat/completions", &body)?;
     let v: serde_json::Value = resp
         .into_json()
         .map_err(|e| format!("响应解析失败: {}", e))?;
@@ -457,10 +493,33 @@ pub fn complete(
             err.get("message").and_then(|m| m.as_str()).unwrap_or("?")
         ));
     }
-    Ok(v["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string())
+    let msg = &v["choices"][0]["message"];
+    Ok(OnceReply {
+        content: msg["content"].as_str().unwrap_or("").to_string(),
+        finish: v["choices"][0]["finish_reason"].as_str().unwrap_or("?").to_string(),
+        has_reasoning: msg.get("reasoning_content").is_some(),
+    })
+}
+
+/// Some models inline reasoning as a <think> block inside content.
+fn strip_think(s: &str) -> String {
+    let Some(start) = s.find("<think>") else { return s.to_string() };
+    match s[start..].find("</think>") {
+        Some(rel) => format!("{}{}", &s[..start], &s[start + rel + "</think>".len()..]),
+        None => s[..start].to_string(),
+    }
+}
+
+fn empty_reply_diagnostic(reply: &OnceReply) -> String {
+    match reply.finish.as_str() {
+        "length" => format!(
+            "AI 输出被 max_tokens 截断（content 为空，思考未写完；预算已自动加到 {} 仍不够）。该模型思考占比过高，请换输出预算更大的模型或更短的需求描述",
+            COMPLETE_BUDGET_CAP
+        ),
+        "content_filter" => "AI 输出被服务端内容安全过滤".into(),
+        _ if reply.has_reasoning => "AI 只返回了思考内容、正文为空（推理型模型常见）；重试一次或更换模型".into(),
+        _ => format!("AI 返回的正文为空（finish_reason={}）；可重试或检查该模型的输出格式", reply.finish),
+    }
 }
 
 // ------------------------------------------------------- image generation ---
@@ -586,7 +645,7 @@ pub fn generate_svg_component(desc: &str) -> Result<String, String> {
                 desc, last_err
             )
         };
-        let content = complete(SVG_EXPERT_SYSTEM, &user_text, 1600, 0.8)?;
+        let content = complete(SVG_EXPERT_SYSTEM, &user_text, 4096, 0.8)?;
         let snippet = extract_svg_snippet(&content)?;
         match validate_svg_snippet(&snippet) {
             Ok(()) => return Ok(snippet),
@@ -754,39 +813,28 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
         THEME_SCHEMA
     );
     let mut last_err = String::new();
-    for attempt in 0..2 {
-        let mut msgs = vec![serde_json::json!({ "role": "system", "content": THEME_SYSTEM })];
-        if attempt == 0 {
-            msgs.push(serde_json::json!({ "role": "user", "content": base_user }));
+    let mut budget: u32 = 4096;
+    for attempt in 0..4 {
+        let user_text = if attempt == 0 || last_err.is_empty() {
+            base_user.clone()
         } else {
-            msgs.push(serde_json::json!({
-                "role": "user",
-                "content": format!("{}\n\n注意：上一次输出未通过合规校验，错误：{}。请修正后重新输出完整 TOML。", base_user, last_err)
-            }));
-        }
-        let body = serde_json::json!({
-            "model": p.model,
-            "messages": msgs,
-            "temperature": 0.8,
-            "max_tokens": 4096,
-            "stream": false,
-        });
-        let resp = call_completions_post(&p.base_url, &key, "/chat/completions", &body)?;
-        let v: serde_json::Value = resp
-            .into_json()
-            .map_err(|e| format!("响应解析失败: {}", e))?;
-        let msg = &v["choices"][0]["message"];
-        let content = msg["content"].as_str().unwrap_or("").trim().to_string();
+            format!(
+                "{}\n\n注意：上一次输出出现问题：{}。请修正后重新输出完整 TOML。",
+                base_user, last_err
+            )
+        };
+        let msgs = vec![
+            serde_json::json!({ "role": "system", "content": THEME_SYSTEM }),
+            serde_json::json!({ "role": "user", "content": user_text }),
+        ];
+        let reply = chat_once(&p.base_url, &key, &p.model, &msgs, budget, 0.8)?;
+        let content = strip_think(&reply.content).trim().to_string();
         if content.is_empty() {
             // Surface *why* it was empty instead of the useless "AI 返回为空".
-            let finish = v["choices"][0]["finish_reason"].as_str().unwrap_or("?");
-            let has_reasoning = msg.get("reasoning_content").is_some();
-            last_err = match finish {
-                "length" => "AI 输出被 max_tokens 截断（content 为空，思考未写完）；换更大的模型或更短的风格描述再试".into(),
-                "content_filter" => "AI 输出被服务端内容安全过滤".into(),
-                _ if has_reasoning => "AI 只返回了思考内容、正文为空（推理型模型常见）；重试一次或更换模型".into(),
-                _ => format!("AI 返回的正文为空（finish_reason={}）；可重试或检查该模型的输出格式", finish),
-            };
+            if reply.finish == "length" && budget < COMPLETE_BUDGET_CAP {
+                budget = (budget * 2).min(COMPLETE_BUDGET_CAP);
+            }
+            last_err = empty_reply_diagnostic(&reply);
             continue;
         }
         let toml_src = extract_toml(&content)?;
@@ -854,5 +902,12 @@ mod tests {
         let t = theme::load_builtin_theme("minimal").unwrap();
         let out = pipeline(THEME_SAMPLE_DOC, &ConvertOptions::new(t)).unwrap();
         assert!(out.blocking_violations().is_empty());
+    }
+
+    #[test]
+    fn strip_think_removes_reasoning_block() {
+        assert_eq!(strip_think("<think>blah</think>[meta]"), "[meta]");
+        assert_eq!(strip_think("<think>unclosed"), "");
+        assert_eq!(strip_think("clean output"), "clean output");
     }
 }
