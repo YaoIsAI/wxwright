@@ -54,6 +54,8 @@ pub fn strip_frontmatter(md: &str) -> (Vec<(String, String)>, String) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn strip_frontmatter_roundtrip() {
         let (pairs, body) = strip_frontmatter("---\ntitle: \"你好\"\ntheme: minimal\n---\n\n# H\n");
