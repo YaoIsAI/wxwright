@@ -562,6 +562,7 @@ function aiThinkingTimer(el, intervalHandleRef) {
 }
 
 function finalizeAiMessage(el, content, info = {}) {
+  if (!el || !el.isConnected) return;
   el.querySelector(".cursor")?.remove();
   el.querySelector(".ai-typing")?.remove();
   const dur = aiStartedAt ? ((Date.now() - aiStartedAt) / 1000).toFixed(1) : null;
@@ -718,8 +719,9 @@ async function aiSend(text) {
 /* demo harness: canned markdown streamed locally so the whole UX is
    verifiable without a backend */
 async function demoStream(text) {
-  if (aiBusy) return;
+  if (aiBusy) { toast(lang === "zh-CN" ? "正在生成中，请稍候" : "Still generating, please wait"); return; }
   aiBusy = true;
+  aiStopped = false;
   aiStartedAt = Date.now();
   aiModelName = "demo";
   const sendBtn = $("btn-ai-send");
@@ -739,29 +741,36 @@ async function demoStream(text) {
     "需要我把这套结构直接**替换进文章**吗？",
   ].join("");
   let i = 0;
+  const CH = 24; // chars per tick
   const timer = setInterval(() => {
     if (aiStopped) { clearInterval(timer); finish(true); return; }
     if (i >= demoText.length) { clearInterval(timer); finish(false); return; }
+    const next = demoText.slice(i, i + CH);
+    i += CH;
     if (!gotFirst) {
       gotFirst = true;
       el.querySelector(".ai-typing")?.remove();
       contentEl.appendChild(textNode);
     }
-    textNode.appendData(demoText[i]);
-    acc += demoText[i];
-    i++;
+    textNode.appendData(next);
+    acc += next;
     requestAnimationFrame(() => msgScrollBottom());
-  }, 28);
+  }, 90);
   function finish(stopped) {
     aiBusy = false;
     sendBtn.innerHTML = '<svg class="icon"><use href="#i-send"/></svg>';
     sendBtn.classList.remove("stopping");
-    if (!acc) acc = "(stopped)";
+    if (!el.isConnected) return; // drawer cleared while streaming
+    if (!acc) acc = stopped ? (lang === "zh-CN" ? "（已停止）" : "(stopped)") : "";
     finalizeAiMessage(el, acc, { stopped });
+    if (!stopped) {
+      aiHistory.push({ role: "assistant", content: acc });
+      if (aiHistory.length > 24) aiHistory = aiHistory.slice(-24);
+    }
   }
 }
 
-/* ---------------------------------------------------------- AI settings */
+/* ---------------------------------------------------------- AI settings *//* ---------------------------------------------------------- AI settings */
 function openModal(id) { $(id).hidden = false; }
 function closeModal(id) { $(id).hidden = true; }
 async function renderProviderList() {
@@ -807,6 +816,7 @@ async function renderProviderList() {
       $("pf-name").value = p.name;
       $("pf-model").value = p.model;
       $("pf-base").value = p.base_url;
+      $("pf-brand").value = p.brand || "";
       $("pf-key").value = "";
       $("pf-logo").value = p.logo || "";
       $("pf-key").placeholder = t("f_key_hint");
@@ -829,6 +839,7 @@ async function saveProviderFromForm() {
     model: $("pf-model").value.trim(),
   };
   const key = $("pf-key").value.trim();
+  provider.brand = $("pf-brand").value.trim() || null;
   provider.logo = $("pf-logo").value.trim() || null;
   const s = key
     ? await invoke("ai_save_provider_with_key", { provider, apiKey: key })
@@ -1351,9 +1362,38 @@ const BRAND_MARKS = {
   },
 };
 
+/* vendor presets: one-click provider forms (official logos via BRAND_LOGOS) */
+const VENDOR_PRESETS = {
+  openai: { name: "OpenAI", base: "https://api.openai.com", model: "gpt-4o", brand: "openai" },
+  deepseek: { name: "DeepSeek", base: "https://api.deepseek.com", model: "deepseek-chat", brand: "deepseek" },
+  kimi: { name: "Moonshot Kimi", base: "https://api.moonshot.cn", model: "kimi-latest", brand: "moonshotai" },
+  qwen: { name: "通义千问", base: "https://dashscope.aliyuncs.com/compatible-mode", model: "qwen-plus", brand: "qwen" },
+  zhipu: { name: "智谱 GLM", base: "https://open.bigmodel.cn", model: "glm-4-plus", brand: "zhipu" },
+  gemini: { name: "Google Gemini", base: "https://generativelanguage.googleapis.com", model: "gemini-2.0-flash", brand: "googlegemini" },
+  xai: { name: "xAI Grok", base: "https://api.x.ai", model: "grok-3", brand: "xai" },
+  mistral: { name: "Mistral", base: "https://api.mistral.ai", model: "mistral-large-latest", brand: "mistralai" },
+  openrouter: { name: "OpenRouter", base: "https://openrouter.ai/api", model: "openai/gpt-4o", brand: "openrouter" },
+  together: { name: "Together", base: "https://api.together.xyz", model: "meta-llama/Llama-3-70B-Instruct-Turbo", brand: "meta" },
+  ollama: { name: "Ollama 本地", base: "http://localhost:11434", model: "qwen2.5:14b", brand: "ollama" },
+  lmstudio: { name: "LM Studio 本地", base: "http://localhost:1234", model: "local-model", brand: "lmstudio" },
+  agnes: { name: "Agnes AI", base: "https://apihub.agnes-ai.com", model: "agnes-3.0-flash", brand: "agnes" },
+};
+
 function brandFor(provider) {
+  // 1. official logo library (brand-logos.js, Simple Icons CC0) — explicit
+  //    brand key first, then keyword match on name/base_url/model
+  const LIB = window.BRAND_LOGOS || {};
+  if (provider && provider.brand && LIB[provider.brand]) {
+    return { key: provider.brand, ...LIB[provider.brand] };
+  }
   const hay = [provider && provider.name, provider && provider.base_url, provider && provider.model]
     .filter(Boolean).join(" ").toLowerCase();
+  for (const [key, entry] of Object.entries(LIB)) {
+    if ((entry.match || [key]).some((m) => hay.includes(m))) {
+      return { key, ...entry };
+    }
+  }
+  // 2. legacy hand-drawn marks (agnes and any future custom marks)
   for (const [key, brand] of Object.entries(BRAND_MARKS)) {
     if (brand.match.some((m) => hay.includes(m))) return { key, ...brand };
   }
@@ -1907,8 +1947,13 @@ function bindUI() {
   });
   $("btn-ai-close").addEventListener("click", () => { $("ai-drawer").hidden = true; });
   $("btn-ai-clear").addEventListener("click", () => {
+    aiStopped = true; // aborts a running demo stream
     aiHistory = [];
+    aiBusy = false;
     $("ai-messages").innerHTML = "";
+    const sendBtn = $("btn-ai-send");
+    sendBtn.innerHTML = '<svg class="icon"><use href="#i-send"/></svg>';
+    sendBtn.classList.remove("stopping");
   });
   $("btn-ai-send").addEventListener("click", () => {
     if (aiBusy) {
@@ -1988,6 +2033,26 @@ function bindUI() {
     await saveProviderFromForm();
     toast(t("provider_saved"), "ok");
     refreshModelSelect();
+  });
+  // vendor preset dropdown: one click fills name/base_url/model/brand
+  const vendorSel = $("pf-vendor");
+  for (const [key, v] of Object.entries(VENDOR_PRESETS)) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = `${v.name} · ${v.base}`;
+    vendorSel.appendChild(opt);
+  }
+  vendorSel.addEventListener("change", () => {
+    const v = VENDOR_PRESETS[vendorSel.value];
+    if (!v) return;
+    $("pf-id").value = "";
+    $("pf-name").value = v.name;
+    $("pf-base").value = v.base;
+    $("pf-model").value = v.model;
+    $("pf-brand").value = v.brand;
+    $("pf-key").value = "";
+    $("pf-logo").value = "";
+    renderProviderList();
   });
   $("pf-logo-pick").addEventListener("click", () => {
     const inpEl = document.createElement("input");
