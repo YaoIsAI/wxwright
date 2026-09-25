@@ -11,6 +11,36 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **Unified AI generation runtime (`jobs.rs` + `ai-jobs.js`)**: every GUI
+  generation panel (AI theme, SVG component, poster HTML, cloud image,
+  ComfyUI t2i/i2i) now runs as a *job* — a registry entry with an id and a
+  cancel flag, streaming progress over one `ai-job` event channel. The
+  frontend renders a shared console widget (status + elapsed + stop button +
+  collapsible stream log, DeepSeek-style thinking indicator). Stop is real:
+  the SSE read loop checks the cancel flag between chunks and drops the
+  connection; ComfyUI runs additionally POST `/interrupt`. Multiple jobs can
+  run concurrently without interfering.
+- **Generate-validate-repair as one task table**: theme / svg / poster share
+  a single spec-driven loop (system prompt, output extractor, MP-compliance
+  validator, bounded retries that feed errors back to the model). The poster
+  path gains what it never had: a self-containment gate (no script/iframe/
+  link/@import/external url or src) enforced *before* rasterization, with
+  violations fed back for repair. Poster prompt moved to the backend and is
+  platform-aware.
+- **Reasoning-model capability heuristic**: models whose id suggests a
+  thinking phase (o1/o3/r1/reasoner/glm-z/qwq/...) start generation with a
+  larger token budget; empty-but-truncated replies ladder the budget
+  (cap 16384) before failing; `<think>` blocks are stripped. Fixes "AI 主题
+  未通过合规校验：AI 输出被 max_tokens 截断" on reasoning-heavy models.
+- **Platform registry (`wxwright-core::platform`, PRD §16)**: six platform
+  descriptors (WeChat MP / Xiaohongshu / Zhihu / Meta / X / LinkedIn) with
+  capabilities (rich text? image-note? API publish?), preset canvas sizes
+  and honest capability notes. `wxwright platforms` CLI lists them (JSON in
+  `--json` mode). The GUI top bar gains a platform switcher: poster and
+  size-studio presets, the AI poster copy style, and the Xiaohongshu
+  "export image set" batch action (rasterizes the current poster at every
+  preset size into the asset library) all follow the switch. Untouched
+  poster templates follow the platform's canvas; edited HTML is preserved.
 - **Chart engine**: a ` ```chart ` fenced JSON block (`kind: bar|line|pie`,
   `title`, `labels[]`, `values[]`, optional `unit`) renders as an inline
   self-contained SVG chart (677x430, 6-colour palette) that passes the MP

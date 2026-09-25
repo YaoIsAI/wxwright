@@ -12,6 +12,7 @@ pub mod img;
 pub mod ir;
 pub mod normalizer;
 pub mod parser;
+pub mod platform;
 pub mod render;
 pub mod rules;
 pub mod theme;

@@ -225,7 +225,7 @@ fn completions_url(base: &str) -> String {
     }
 }
 
-fn active_provider() -> Result<(Provider, String), String> {
+pub(crate) fn active_provider() -> Result<(Provider, String), String> {
     let s = load_settings();
     let id = s
         .active
@@ -264,7 +264,7 @@ fn truncate(s: &str, n: usize) -> String {
 }
 
 /// POST one API call with rich error extraction.
-fn call_completions_post(
+pub(crate) fn call_completions_post(
     base_url: &str,
     key: &str,
     path: &str,
@@ -459,12 +459,12 @@ pub fn complete(
     }
 }
 
-const COMPLETE_BUDGET_CAP: u32 = 16384;
+pub(crate) const COMPLETE_BUDGET_CAP: u32 = 16384;
 
-struct OnceReply {
-    content: String,
-    finish: String,
-    has_reasoning: bool,
+pub(crate) struct OnceReply {
+    pub(crate) content: String,
+    pub(crate) finish: String,
+    pub(crate) has_reasoning: bool,
 }
 
 /// One raw non-streaming chat call, parsed into content + finish_reason.
@@ -502,7 +502,7 @@ fn chat_once(
 }
 
 /// Some models inline reasoning as a <think> block inside content.
-fn strip_think(s: &str) -> String {
+pub(crate) fn strip_think(s: &str) -> String {
     let Some(start) = s.find("<think>") else { return s.to_string() };
     match s[start..].find("</think>") {
         Some(rel) => format!("{}{}", &s[..start], &s[start + rel + "</think>".len()..]),
@@ -510,7 +510,7 @@ fn strip_think(s: &str) -> String {
     }
 }
 
-fn empty_reply_diagnostic(reply: &OnceReply) -> String {
+pub(crate) fn empty_reply_diagnostic(reply: &OnceReply) -> String {
     match reply.finish.as_str() {
         "length" => format!(
             "AI 输出被 max_tokens 截断（content 为空，思考未写完；预算已自动加到 {} 仍不够）。该模型思考占比过高，请换输出预算更大的模型或更短的需求描述",
@@ -622,7 +622,7 @@ pub fn generate_image(prompt: &str, w: u32, h: u32) -> Result<Vec<String>, Strin
 
 // ------------------------------------------------------- svg components ---
 
-const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组件专家。只输出一个可直接粘贴进公众号文章的 HTML 片段：一个 <section> 包裹的内联 <svg>，不要任何解释、不要 markdown 围栏。
+pub(crate) const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组件专家。只输出一个可直接粘贴进公众号文章的 HTML 片段：一个 <section> 包裹的内联 <svg>，不要任何解释、不要 markdown 围栏。
 
 铁律（违反即废品）：
 1. 全部样式内联；严禁 class/id/<style>/外部资源/外链图片；
@@ -655,7 +655,7 @@ pub fn generate_svg_component(desc: &str) -> Result<String, String> {
     Err(format!("AI 组件未通过合规校验：{}", last_err))
 }
 
-fn extract_svg_snippet(text: &str) -> Result<String, String> {
+pub(crate) fn extract_svg_snippet(text: &str) -> Result<String, String> {
     let t = text.trim();
     let start = t.find("<section").or_else(|| t.find("<svg"));
     let start = match start {
@@ -672,7 +672,7 @@ fn extract_svg_snippet(text: &str) -> Result<String, String> {
     }
 }
 
-fn validate_svg_snippet(snippet: &str) -> Result<(), String> {
+pub(crate) fn validate_svg_snippet(snippet: &str) -> Result<(), String> {
     let blocks: Vec<String> = wxwright_core::validator::validate_html(snippet)
         .into_iter()
         .filter(|v| v.is_block())
@@ -687,14 +687,14 @@ fn validate_svg_snippet(snippet: &str) -> Result<(), String> {
 
 // ------------------------------------------------------- theme generation ---
 
-const THEME_SYSTEM: &str = "你是微信公众号排版主题设计器。只输出一个完整的 TOML 主题文件，不要任何解释文字、不要 markdown 代码围栏。硬性规则：\n\
+pub(crate) const THEME_SYSTEM: &str = "你是微信公众号排版主题设计器。只输出一个完整的 TOML 主题文件，不要任何解释文字、不要 markdown 代码围栏。硬性规则：\n\
 1. 严禁出现 font-family（官方规范 R-3.1）；\n\
 2. 所有颜色用 #RRGGBB 十六进制；\n\
 3. 正文颜色与白色背景对比度 >= 4.5:1，次级文字 >= 3:1；\n\
 4. 必须包含 [meta]（id 用小写字母数字和连字符）与 [colors]；\n\
 5. [block.*] 覆盖只能使用安全 CSS 属性（margin/padding/border/color/font-size/font-weight/letter-spacing/text-align/line-height/background/border-radius）。";
 
-const THEME_SCHEMA: &str = r##"可用 color 键（全部可选，未提供的用引擎默认）：
+pub(crate) const THEME_SCHEMA: &str = r##"可用 color 键（全部可选，未提供的用引擎默认）：
 accent, text, text_secondary, text_tertiary, border, border_strong,
 quote_bg, quote_text, code_bg, code_text, code_border, inline_code_color,
 table_head_bg, table_border, note_bg, note_border, tip_bg, tip_border,
@@ -760,7 +760,7 @@ fn main() {}
 - 列表项
 "#;
 
-fn extract_toml(text: &str) -> Result<String, String> {
+pub(crate) fn extract_toml(text: &str) -> Result<String, String> {
     let t = text.trim();
     if t.starts_with("```") {
         let after = &t[t.find("```").unwrap()..];
@@ -781,7 +781,7 @@ fn extract_toml(text: &str) -> Result<String, String> {
 
 /// Validate a generated theme: parse, render the sample doc, require zero
 /// blocking violations. Returns non-blocking warnings.
-fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, String> {
+pub(crate) fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, String> {
     let t = theme::parse_theme(toml_src).map_err(|e| format!("TOML 解析失败: {}", e))?;
     let opts = ConvertOptions::new(t);
     let out = pipeline(THEME_SAMPLE_DOC, &opts).map_err(|e| format!("渲染失败: {}", e))?;
@@ -800,6 +800,19 @@ fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, String> {
         .filter(|v| !v.is_block())
         .map(|v| format!("{}: {}", v.rule_id, v.message))
         .collect())
+}
+
+/// Persist a validated theme TOML into the user themes dir and return the
+/// metadata payload shared by the sync and job-based generation paths.
+pub(crate) fn save_theme_artifact(toml_src: &str) -> Result<serde_json::Value, String> {
+    let path = theme::save_user_theme(toml_src).map_err(|e| e.to_string())?;
+    let t = theme::parse_theme(toml_src).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "id": t.meta.id,
+        "name": t.meta.name,
+        "name_zh": t.meta.name_zh,
+        "file": path.to_string_lossy(),
+    }))
 }
 
 /// Generate a brand-new theme via the active AI provider, validate it
@@ -840,15 +853,9 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
         let toml_src = extract_toml(&content)?;
         match validate_generated_theme(&toml_src) {
             Ok(warnings) => {
-                let path = theme::save_user_theme(&toml_src).map_err(|e| e.to_string())?;
-                let t = theme::parse_theme(&toml_src).map_err(|e| e.to_string())?;
-                return Ok(serde_json::json!({
-                    "id": t.meta.id,
-                    "name": t.meta.name,
-                    "name_zh": t.meta.name_zh,
-                    "file": path.to_string_lossy(),
-                    "warnings": warnings,
-                }));
+                let mut v = save_theme_artifact(&toml_src)?;
+                v["warnings"] = serde_json::json!(warnings);
+                return Ok(v);
             }
             Err(e) => last_err = e,
         }

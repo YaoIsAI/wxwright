@@ -5,6 +5,7 @@ mod ai;
 mod articles;
 mod comfy;
 mod extract;
+mod jobs;
 mod commands;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};
@@ -53,6 +54,9 @@ pub fn run() {
             commands::wx_bind_status,
             commands::wx_bind,
             commands::wx_unbind,
+            commands::ai_job_start,
+            commands::ai_job_stop,
+            commands::list_platforms,
             commands::ai_image,
             commands::ai_save_image_model,
             commands::comfy_txt2img,

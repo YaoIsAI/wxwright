@@ -108,6 +108,8 @@ enum Commands {
     },
     /// Environment health check.
     Doctor,
+    /// List supported social platforms and their capabilities (PRD §16).
+    Platforms,
     /// MCP server operations.
     Mcp {
         #[command(subcommand)]
@@ -285,6 +287,7 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
         Commands::Publish { draft_id, yes } => cmd_publish(draft_id, *yes, out),
         Commands::Theme { cmd } => cmd_theme(cmd, out),
         Commands::Doctor => cmd_doctor(out),
+        Commands::Platforms => cmd_platforms(out),
         Commands::Mcp { cmd } => cmd_mcp(cmd, out),
         Commands::AgentCard { md, json } => cmd_agent_card(*md, *json, out),
         Commands::Login {
@@ -959,6 +962,41 @@ fn which(exe: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn cmd_platforms(out: &Out) -> Result<i32, String> {
+    if out.json_mode {
+        out.print_json(&wxwright_core::platform::list_platforms());
+        return Ok(0);
+    }
+    out.plain(&format!(
+        "{:<10} {:<42} {:<22} {}",
+        "ID", "PLATFORM", "OUTPUT", "PRESETS"
+    ));
+    for p in wxwright_core::platform::list_platforms() {
+        let output = if p.rich_text {
+            "rich text"
+        } else if p.image_note {
+            "image note"
+        } else {
+            "images/text"
+        };
+        let api = if p.api_publish { "+api" } else { "-" };
+        let example = p
+            .presets
+            .first()
+            .map(|(l, w, h)| format!("{} ({}x{})", l, w, h))
+            .unwrap_or_default();
+        out.plain(&format!(
+            "{:<10} {:<42} {:<22} {:>2}  {}",
+            p.id,
+            format!("{} / {}", p.name_zh, p.name_en),
+            format!("{} {}", output, api),
+            p.presets.len(),
+            example
+        ));
+    }
+    Ok(0)
 }
 
 fn cmd_doctor(out: &Out) -> Result<i32, String> {

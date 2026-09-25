@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=18" />
+  <link rel="stylesheet" href="styles.css?v=19" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -128,6 +128,10 @@
       </button>
     </div>
     <div class="toolbar">
+      <label class="field">
+        <span class="field-label" data-i18n="platform">平台</span>
+        <select id="platform-select" class="select" title="目标平台：切换后海报/尺寸工坊预设联动（PRD §16）"></select>
+      </label>
       <label class="field">
         <span class="field-label" data-i18n="theme">主题</span>
         <select id="theme-select" class="select"></select>
@@ -512,6 +516,7 @@
         <textarea id="theme-desc" rows="3" placeholder="例如：奶茶铺子配色，奶咖色底、焦糖强调色，圆角卡片，元气手写感"></textarea>
         <div class="form-actions">
           <span id="theme-status" class="section-hint" style="margin: 0;"></span>
+          <div id="theme-job"></div>
           <span class="spacer"></span>
           <button id="btn-theme-generate" class="btn btn-primary">
             <svg class="icon"><use href="#i-spark"/></svg>
@@ -535,14 +540,7 @@
         <div class="poster-toolbar">
           <label class="field">
             <span class="field-label" data-i18n="preset">尺寸</span>
-            <select id="poster-preset" class="select select-sm">
-              <option value="1080x460" data-scene="公众号头图 2.35:1">头图 1080×460（2.35:1）</option>
-              <option value="1080x1080" data-scene="公众号次图 1:1">次图 1080×1080（1:1）</option>
-              <option value="500x500" data-scene="小方图 1:1">小方图 500×500</option>
-              <option value="1280x720" data-scene="正文横图 16:9">横图 1280×720（16:9）</option>
-              <option value="1080x1440" data-scene="正文竖图 3:4">竖图 1080×1440（3:4）</option>
-              <option value="custom">自定义...</option>
-            </select>
+            <select id="poster-preset" class="select select-sm"><!-- options filled per platform --><option value="custom">自定义...</option></select>
           </label>
           <span class="field">
             <button type="button" class="chip tpl-chip" data-tpl="cover">头图模板</button>
@@ -567,12 +565,14 @@
               <iframe id="poster-preview" title="poster preview" sandbox=""></iframe>
             </div>
             <div class="poster-preview-meta" id="poster-preview-meta"></div>
+          <div id="poster-job"></div>
           </div>
         </div>
         <p class="section-hint" data-i18n="poster_hint">本地光栅化（SVG foreignObject），完全离线。海报 HTML 必须自包含：禁止外部图片/字体/脚本，图片只能内嵌 data URI。适合做公众号头图、金句卡、正文场景图。</p>
         <div class="form-actions">
           <button id="btn-poster-reset" class="btn btn-ghost" data-i18n="reset_tpl">重置模板</button>
           <button id="btn-poster-save" class="btn btn-ghost" data-i18n="save_img">保存图片...</button>
+          <button id="btn-poster-imgset" class="btn btn-ghost" hidden data-i18n="imgset">导出图组</button>
           <span class="spacer"></span>
           <button id="btn-poster-insert" class="btn btn-primary">
             <svg class="icon"><use href="#i-plus"/></svg>
@@ -685,6 +685,7 @@
         <div id="comfy-results" class="assets-grid"></div>
         <div class="form-actions">
           <span id="comfy-progress" class="section-hint" style="margin: 0;"></span>
+          <div id="comfy-job"></div>
           <span class="spacer"></span>
           <button id="comfy-generate" class="btn btn-primary">
             <svg class="icon"><use href="#i-wand"/></svg>
@@ -791,6 +792,7 @@
           </button>
         </div>
         <div id="svgkit-ai-status" class="section-hint" style="margin: 0 0 10px;"></div>
+        <div id="svgkit-job"></div>
         <div class="svgkit-layout">
           <div class="svgkit-list" id="svgkit-list"></div>
           <div class="svgkit-editor">
@@ -811,8 +813,9 @@
   </div>
 
   <div id="toast-host" class="toast-host"></div>
-  <script src="pet.js?v=18"></script>
+  <script src="pet.js?v=19"></script>
   <script src="brand-logos.js?v=18"></script>
-  <script src="app.js?v=18"></script>
+  <script src="ai-jobs.js?v=19"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>

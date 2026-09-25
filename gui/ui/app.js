@@ -98,8 +98,11 @@ const I18N = {
     wx_bind_ok: "已绑定公众号", wx_unbind_ok: "已解除绑定",
     wx_demo_only: "浏览器演示模式下不可用",
     wx_secret_ph: "仅保存到本机钥匙串",
-    validate: "校验",
     wx_status_fail: "读取绑定状态失败",
+    validate: "校验",
+    platform: "平台", custom_size: "自定义...",
+    imgset: "导出图组", imgset_done: (n) => `图组已导出 ${n} 张到素材库`,
+    job_stopped: "已停止",
   },
   en: {
     library: "Library", theme: "Theme", copy: "Copy rich text", ai: "AI",
@@ -158,8 +161,11 @@ const I18N = {
     wx_bind_ok: "Official account bound", wx_unbind_ok: "Unbound",
     wx_demo_only: "Unavailable in browser demo mode",
     wx_secret_ph: "Keychain on this machine only",
-    validate: "Check",
     wx_status_fail: "Failed to read binding status",
+    validate: "Check",
+    platform: "Platform", custom_size: "Custom...",
+    imgset: "Export image set", imgset_done: (n) => `${n} image(s) exported to the asset library`,
+    job_stopped: "Stopped",
   },
 };
 let lang = "zh-CN";
@@ -169,6 +175,7 @@ let currentTheme = "minimal";
 let darkPreview = false;
 let convertTimer = null;
 let aiLanding = false; // one-shot: pulse the preview's last block after AI insert/replace
+const jobBusy = {}; // in-flight guard per AI panel kind
 let lastResult = null;
 let currentArticleId = null;
 let dirty = false;
@@ -972,14 +979,16 @@ async function loadAgentCard() {
 
 /* ------------------------------------------------------- AI theme modal */
 async function generateTheme() {
+  if (jobBusy.theme) return;
   const desc = $("theme-desc").value.trim();
   if (!desc) { toast(lang === "zh-CN" ? "请先描述想要的风格" : "Describe the style first", "err"); return; }
   if (!(await hasProvider())) { toast(t("theme_need_ai"), "err"); return; }
-  const btn = $("btn-theme-generate");
-  btn.disabled = true;
-  $("theme-status").textContent = t("theme_generating");
+  $("theme-status").textContent = "";
+  jobBusy.theme = true;
   try {
-    const res = await invoke("ai_generate_theme", { description: desc });
+    const job = await AIJobs.run("theme", { description: desc }, $("theme-job"));
+    if (job.stopped) { $("theme-status").textContent = t("job_stopped"); return; }
+    const res = job.result;
     // refresh theme list and apply
     const themes = await invoke("list_themes");
     $("theme-select").innerHTML = themes
@@ -988,7 +997,6 @@ async function generateTheme() {
     currentTheme = res.id;
     $("theme-select").value = currentTheme;
     localStorage.setItem("wxwright-theme", currentTheme);
-    $("theme-status").textContent = "";
     toast(t("theme_done", res.name_zh || res.name), "ok");
     window.Mozai && Mozai.celebrate();
     convertNow();
@@ -999,24 +1007,100 @@ async function generateTheme() {
     $("theme-status").textContent = String(e);
     toast(String(e), "err");
   } finally {
-    btn.disabled = false;
+    delete jobBusy.theme;
   }
 }
 
+/* ------------------------------------------------------- platform switch */
+let PLATFORMS = [];
+let currentPlatform = localStorage.getItem("wxwright-platform") || "wechat";
+function currentPlatformSpec() {
+  return PLATFORMS.find((p) => p.id === currentPlatform)
+    || { id: "wechat", name_zh: "微信公众号", name_en: "WeChat MP", rich_text: true, image_note: false,
+         presets: [["头图 1080×460（2.35:1）", 1080, 460], ["次图 1080×1080（1:1）", 1080, 1080],
+                   ["小方图 500×500（1:1）", 500, 500], ["正文横图 1280×720（16:9）", 1280, 720],
+                   ["正文竖图 1080×1440（3:4）", 1080, 1440], ["贴图 900×383", 900, 383], ["贴图 383×383", 383, 383]],
+         note: "" };
+}
+function platformLabel(p) { return lang === "zh-CN" ? p.name_zh : p.name_en; }
+
+function renderPlatformOptions() {
+  const sel = $("platform-select");
+  sel.innerHTML = PLATFORMS.length
+    ? PLATFORMS.map((p) => `<option value="${p.id}"${p.id === currentPlatform ? " selected" : ""}>${escapeHtml(platformLabel(p))}</option>`).join("")
+    : `<option value="wechat">微信公众号</option>`;
+  sel.title = currentPlatformSpec().note || "";
+}
+
+/* rebuild poster + fit-studio preset options from the active platform */
+function renderPlatformPresets() {
+  const spec = currentPlatformSpec();
+  if (!Array.isArray(spec.presets)) return;
+  const posterSel = $("poster-preset");
+  posterSel.innerHTML = spec.presets
+    .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(label)}</option>`)
+    .join("") + `<option value="custom">${t("custom_size")}</option>`;
+  const fitSel = $("fit-preset");
+  if (fitSel) {
+    fitSel.innerHTML = spec.presets
+      .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(label)}</option>`)
+      .join("");
+  }
+  const imgsetBtn = $("btn-poster-imgset");
+  if (imgsetBtn) imgsetBtn.hidden = !spec.image_note;
+}
+
+function applyPlatform(id) {
+  currentPlatform = id;
+  localStorage.setItem("wxwright-platform", id);
+  renderPlatformOptions();
+  renderPlatformPresets();
+  if (!$("modal-poster").hidden) {
+    // untouched template follows the new platform's canvas; edited HTML stays
+    if (!posterTemplateDirty) {
+      const { w, h } = posterSize();
+      $("poster-html").value = posterTemplate(w, h, currentTpl);
+      $("poster-custom").hidden = $("poster-preset").value !== "custom";
+    }
+    updatePosterPreview();
+  }
+}
+
+async function initPlatformSwitcher() {
+  if (invoke) {
+    try { PLATFORMS = await invoke("list_platforms"); } catch (e) { PLATFORMS = []; }
+  }
+  if (!PLATFORMS.length) {
+    // browser demo fallback: keep the switcher meaningful (same shape as core)
+    PLATFORMS = [
+      { id: "wechat", name_zh: "微信公众号", name_en: "WeChat MP", rich_text: true, image_note: false, note: "",
+        presets: [["头图 1080×460（2.35:1）", 1080, 460], ["次图 1080×1080（1:1）", 1080, 1080],
+                  ["小方图 500×500（1:1）", 500, 500], ["正文横图 1280×720（16:9）", 1280, 720],
+                  ["正文竖图 1080×1440（3:4）", 1080, 1440], ["贴图 900×383", 900, 383], ["贴图 383×383", 383, 383]] },
+      { id: "xhs", name_zh: "小红书", name_en: "Xiaohongshu", rich_text: false, image_note: true, note: "image-note",
+        presets: [["封面 1080×1440（3:4）", 1080, 1440], ["方图 1080×1080（1:1）", 1080, 1080]] },
+    ];
+  }
+  if (!PLATFORMS.some((p) => p.id === currentPlatform)) currentPlatform = "wechat";
+  renderPlatformOptions();
+  renderPlatformPresets();
+  $("platform-select").addEventListener("change", () => {
+    applyPlatform($("platform-select").value);
+    toast((lang === "zh-CN" ? "已切换到：" : "Platform: ") + platformLabel(currentPlatformSpec()), "ok");
+  });
+}
+
 /* --------------------------------------------------------- poster studio */
-const POSTER_PRESETS = {
-  "1080x460": { w: 1080, h: 460, scene: "公众号头图 2.35:1" },
-  "1080x1080": { w: 1080, h: 1080, scene: "公众号次图 1:1" },
-  "500x500": { w: 500, h: 500, scene: "小方图 1:1" },
-  "1280x720": { w: 1280, h: 720, scene: "正文横图 16:9" },
-  "1080x1440": { w: 1080, h: 1440, scene: "正文竖图 3:4" },
-};
+let posterTemplateDirty = false; // user/AI edited: don't auto-regenerate on platform switch
 function posterSize() {
   const v = $("poster-preset").value;
   if (v === "custom") {
     return { w: Math.max(100, Math.min(4096, parseInt($("poster-w").value) || 800)), h: Math.max(100, Math.min(4096, parseInt($("poster-h").value) || 600)), scene: "自定义海报" };
   }
-  return POSTER_PRESETS[v];
+  const spec = currentPlatformSpec();
+  const hit = spec.presets.find(([label, w, h]) => `${w}x${h}` === v);
+  if (hit) return { w: hit[1], h: hit[2], scene: hit[0] };
+  return { w: 1080, h: 1440, scene: "封面" };
 }
 function posterTemplate(w, h, tpl = "cover") {
   if (tpl === "quote") return posterQuoteCard(w, h);
@@ -1101,9 +1185,6 @@ function posterPictureCard(w, h) {
 </div></body></html>`;
 }
 
-function posterSystemPrompt(w, h, scene) {
-  return `你是公众号海报设计师。输出一个完整自包含的 HTML 文档：单文件、全部样式内联在 <style> 中、严禁任何外部资源（外链图片/字体/脚本都不允许，图片只能内嵌 data URI）。html 与 body 尺寸固定为 ${w}px × ${h}px，overflow hidden。可以使用系统字体（font-family 不受限，因为产物是图片）。设计需高级、极简、留白充分，适合微信公众号${scene}。若内容适合，在角落加署名「AI瑶 · 公众号 码聋」。只输出 HTML 代码，不要任何解释。`;
-}
 function updatePosterPreview() {
   const { w, h } = posterSize();
   const iframe = $("poster-preview");
@@ -1178,27 +1259,69 @@ async function posterExport(insert) {
     toast(String(e), "err");
   }
 }
+/* Xiaohongshu-style image-note export: rasterize the current poster at
+   every preset size of the active platform (deduped) into the asset library. */
+async function exportImageSet() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  const html = $("poster-html").value.trim();
+  if (!html) { toast(lang === "zh-CN" ? "请先生成或粘贴海报 HTML" : "Generate or paste poster HTML first", "err"); return; }
+  const spec = currentPlatformSpec();
+  const seen = new Set();
+  const sizes = spec.presets.filter(([, w, h]) => {
+    const k = `${w}x${h}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  $("status-text").textContent = t("poster_rasterizing");
+  let n = 0;
+  try {
+    for (const [, w, h] of sizes) {
+      try {
+        const blob = await htmlToPngBlob(html, w, h, 1);
+        const b64 = await blobToBase64(blob);
+        await invoke("import_image_bytes", {
+          filename: `${spec.id}-set-${w}x${h}-${Date.now()}.png`,
+          base64Data: b64,
+        });
+        n++;
+      } catch (e) {
+        toast(`${w}×${h}: ${e}`, "err");
+      }
+    }
+    if (n > 0) {
+      toast(t("imgset_done", n), "ok");
+      window.Mozai && Mozai.celebrate();
+    }
+  } finally {
+    delete jobBusy.poster;
+    $("status-text").textContent = t("ready");
+  }
+}
+
 async function posterAiGenerate() {
+  if (jobBusy.poster) return;
   if (!(await hasProvider())) { toast(t("poster_need_ai"), "err"); return; }
   const { w, h, scene } = posterSize();
   const desc = $("poster-desc").value.trim();
   if (!desc) { toast(lang === "zh-CN" ? "请先描述海报内容与风格" : "Describe the poster first", "err"); return; }
-  const btn = $("btn-poster-ai");
-  btn.disabled = true;
   $("status-text").textContent = t("poster_generating");
+  jobBusy.poster = true;
   try {
-    const html = await invoke("ai_complete", {
-      system: posterSystemPrompt(w, h, scene),
-      user: `设计要求：${desc}\n场景：公众号${scene}，尺寸 ${w}×${h}。`,
-      maxTokens: 4096,
-    });
-    $("poster-html").value = html.trim();
+    const job = await AIJobs.run(
+      "poster",
+      { description: desc, width: w, height: h, scene, platform: currentPlatform() },
+      $("poster-job")
+    );
+    if (job.stopped) { $("status-text").textContent = t("job_stopped"); return; }
+    $("poster-html").value = String(job.result).trim();
+    posterTemplateDirty = true;
     updatePosterPreview();
     toast(lang === "zh-CN" ? "HTML 已生成，可直接编辑后导出" : "HTML generated; edit freely before export", "ok");
+    window.Mozai && Mozai.celebrate();
   } catch (e) {
     toast(String(e), "err");
   } finally {
-    btn.disabled = false;
     $("status-text").textContent = t("ready");
   }
 }
@@ -1702,17 +1825,18 @@ function currentSvgMarkup() {
 }
 
 async function svgKitAiGenerate() {
+  if (jobBusy.svg) return;
   const desc = $("svgkit-desc").value.trim();
   if (!desc) { toast(lang === "zh-CN" ? "请先描述想要的互动效果" : "Describe the effect first", "err"); return; }
   if (!(await hasProvider())) { toast(lang === "zh-CN" ? "请先在设置中配置 AI Provider" : "Configure an AI provider first", "err"); return; }
-  const btn = $("svgkit-ai-generate");
-  btn.disabled = true;
-  $("svgkit-ai-status").textContent = lang === "zh-CN" ? "AI 生成组件中（自动通过合规校验）..." : "Generating (auto-validated)...";
+  jobBusy.svg = true;
+  $("svgkit-ai-status").textContent = "";
   try {
-    const svg = await invoke("ai_generate_svg", { description: desc });
+    const job = await AIJobs.run("svg", { description: desc }, $("svgkit-job"));
+    if (job.stopped) { $("svgkit-ai-status").textContent = t("job_stopped"); return; }
+    const svg = job.result;
     svgKitCustom.unshift({ id: "c" + Date.now(), name: desc.slice(0, 14), svg });
     saveCustomSvg();
-    $("svgkit-ai-status").textContent = "";
     svgKitKey = "c0";
     svgKitParams = {};
     renderSvgKit();
@@ -1722,7 +1846,7 @@ async function svgKitAiGenerate() {
     $("svgkit-ai-status").textContent = String(e);
     toast(String(e), "err");
   } finally {
-    btn.disabled = false;
+    delete jobBusy.svg;
   }
 }
 
@@ -2392,10 +2516,15 @@ function bindUI() {
 
   /* poster modal */
   $("btn-poster").addEventListener("click", () => {
-    if (!$("poster-html").value.trim()) $("poster-html").value = posterTemplate(1080, 460, "cover");
+    if (!$("poster-html").value.trim()) {
+      const { w, h } = posterSize();
+      $("poster-html").value = posterTemplate(w, h, "cover");
+      posterTemplateDirty = false;
+    }
     openModal("modal-poster");
     updatePosterPreview();
   });
+  $("poster-html").addEventListener("input", () => { posterTemplateDirty = true; });
   $("poster-preset").addEventListener("change", () => {
     $("poster-custom").hidden = $("poster-preset").value !== "custom";
     updatePosterPreview();
@@ -2404,10 +2533,12 @@ function bindUI() {
   $("btn-poster-reset").addEventListener("click", () => {
     const { w, h } = posterSize();
     $("poster-html").value = posterTemplate(w, h, currentTpl);
+    posterTemplateDirty = false;
     updatePosterPreview();
   });
   $("btn-poster-insert").addEventListener("click", () => posterExport(true));
   $("btn-poster-save").addEventListener("click", () => posterExport(false));
+  $("btn-poster-imgset").addEventListener("click", exportImageSet);
   $("poster-html").addEventListener("input", () => {
     clearTimeout($("poster-html")._t);
     $("poster-html")._t = setTimeout(updatePosterPreview, 400);
@@ -2566,39 +2697,43 @@ function bindUI() {
 
 /* ------------------------------------------------------ comfy generation */
 async function comfyGenerate() {
+  if (jobBusy.comfy) return;
   if (!invoke) { toast(t("demo_mode"), "err"); return; }
   const prompt = $("comfy-prompt").value.trim();
   if (!prompt) return;
   const [w, h] = $("comfy-size").value.split("x").map((x) => parseInt(x));
   const steps = Math.max(4, parseInt($("comfy-steps").value) || 20);
-  const btn = $("comfy-generate");
-  btn.disabled = true;
   $("comfy-progress").textContent =
     comfyImgSrc === "cloud"
       ? lang === "zh-CN" ? "云端生成中..." : "Generating in the cloud..."
       : lang === "zh-CN" ? "已提交 ComfyUI 队列，生成中（最多等待 10 分钟）..." : "Queued in ComfyUI (up to 10 min)...";
   $("comfy-results").innerHTML = "";
+  jobBusy.comfy = true;
   try {
-    let paths;
+    let params;
     if (comfyImgSrc === "cloud") {
-      paths = await invoke("ai_image", { prompt, width: w, height: h });
+      params = { mode: "cloud", prompt, width: w, height: h };
     } else if (comfyMode === "i2i") {
       const src = $("comfy-source").value.trim();
       if (!src) throw new Error(lang === "zh-CN" ? "请先从素材库选择源图" : "Pick a source image first");
-      paths = await invoke("comfy_img2img", { sourcePath: src, prompt, negative: $("comfy-negative").value, denoise: parseFloat($("comfy-denoise").value) || 0.55, steps });
+      params = { mode: "i2i", sourcePath: src, prompt, negative: $("comfy-negative").value, denoise: parseFloat($("comfy-denoise").value) || 0.55, steps };
     } else {
-      paths = await invoke("comfy_txt2img", { prompt, negative: $("comfy-negative").value, width: w, height: h, steps });
+      params = { mode: "t2i", prompt, negative: $("comfy-negative").value, width: w, height: h, steps };
     }
+    const job = await AIJobs.run("comfy", params, $("comfy-job"));
+    if (job.stopped) { $("comfy-progress").textContent = t("job_stopped"); return; }
+    const paths = job.result.paths;
     renderComfyResults(paths);
+    $("comfy-progress").textContent = "";
     toast(paths.length === 1
       ? (lang === "zh-CN" ? "生成完成，点击图片插入文章" : "Done, click the image to insert it")
       : (lang === "zh-CN" ? `生成完成（${paths.length} 张）` : `Done (${paths.length})`), "ok");
     window.Mozai && Mozai.celebrate();
   } catch (e) {
+    $("comfy-progress").textContent = "";
     toast(String(e), "err");
   } finally {
-    btn.disabled = false;
-    $("comfy-progress").textContent = "";
+    delete jobBusy.comfy;
   }
 }
 
@@ -2648,6 +2783,7 @@ async function init() {
       $("preview").srcdoc = demo;
       $("editor").value = demoMd;
     } catch (e) {}
+    await initPlatformSwitcher();
     refreshLibrary();
     refreshModelSelect();
     applyDevice();
@@ -2670,6 +2806,7 @@ async function init() {
         .join("");
       $("theme-select").value = currentTheme;
     },
+    () => initPlatformSwitcher(),
     () => refreshLibrary(),
     () => refreshModelSelect(),
     async () => {

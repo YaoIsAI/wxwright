@@ -358,6 +358,33 @@ pub fn wx_unbind() -> Result<bool, String> {
     wxwright_mp::clear_credentials().map(|_| true).map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------- AI generation jobs ---
+#[tauri::command]
+pub async fn ai_job_start(
+    kind: String,
+    params: serde_json::Value,
+    app: tauri::AppHandle,
+) -> Result<u64, String> {
+    // registration is cheap but may fail fast (no provider): do it off-thread
+    let k = kind.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::jobs::start_job(&k, params, app)
+    })
+    .await
+    .map_err(|e| format!("task join failed: {}", e))?
+}
+
+#[tauri::command]
+pub fn ai_job_stop(id: u64) -> bool {
+    crate::jobs::stop(id)
+}
+
+#[tauri::command]
+pub fn list_platforms() -> serde_json::Value {
+    serde_json::to_value(wxwright_core::platform::list_platforms())
+        .unwrap_or(serde_json::json!([]))
+}
+
 #[tauri::command]
 pub fn comfy_save_config(
     url: String,
@@ -399,7 +426,7 @@ pub async fn comfy_txt2img(
     let neg = negative.unwrap_or_default();
     let steps_n = steps.unwrap_or(20);
     tauri::async_runtime::spawn_blocking(move || {
-        crate::comfy::txt2img(&prompt, &neg, width, height, steps_n)
+        crate::comfy::txt2img(&prompt, &neg, width, height, steps_n, None)
     })
     .await
     .map_err(|e| format!("task join failed: {}", e))?
@@ -417,7 +444,7 @@ pub async fn comfy_img2img(
     let dn = denoise.unwrap_or(0.5);
     let steps_n = steps.unwrap_or(20);
     tauri::async_runtime::spawn_blocking(move || {
-        crate::comfy::img2img(&source_path, &prompt, &neg, dn, steps_n)
+        crate::comfy::img2img(&source_path, &prompt, &neg, dn, steps_n, None)
     })
     .await
     .map_err(|e| format!("task join failed: {}", e))?

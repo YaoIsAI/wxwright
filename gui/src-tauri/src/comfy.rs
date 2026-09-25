@@ -3,6 +3,7 @@
 //! Generated images land in the managed assets library (articles::assets).
 
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -237,7 +238,11 @@ fn img2img_workflow(
 }
 
 /// Queue a workflow and wait for its output images. Returns raw PNG/JPG bytes.
-fn run_workflow(url: &str, workflow: Value) -> Result<Vec<Vec<u8>>, String> {
+fn run_workflow(
+    url: &str,
+    workflow: Value,
+    cancel: Option<&AtomicBool>,
+) -> Result<Vec<Vec<u8>>, String> {
     let url = url.trim_end_matches('/');
     let agent = agent_long();
     let resp = agent
@@ -259,6 +264,15 @@ fn run_workflow(url: &str, workflow: Value) -> Result<Vec<Vec<u8>>, String> {
     // Poll history until the prompt completes (max 10 min).
     for _ in 0..600 {
         std::thread::sleep(Duration::from_millis(1000));
+        if let Some(flag) = cancel {
+            if flag.load(Ordering::Relaxed) {
+                // Best-effort: tell ComfyUI to interrupt the running prompt.
+                let _ = agent
+                    .post(&format!("{}/interrupt", url))
+                    .send_string("{}");
+                return Err(super::jobs::CANCELLED.to_string());
+            }
+        }
         let hist_raw = agent
             .get(&format!("{}/history/{}", url, prompt_id))
             .call()
@@ -340,6 +354,7 @@ pub fn txt2img(
     w: u32,
     h: u32,
     steps: u32,
+    cancel: Option<&AtomicBool>,
 ) -> Result<Vec<String>, String> {
     let (url, model) = comfy_settings();
     let seed = std::time::SystemTime::now()
@@ -357,6 +372,7 @@ pub fn txt2img(
     let images = run_workflow(
         &url,
         txt2img_workflow(&model, prompt, neg, w, h, steps, seed),
+        cancel,
     )?;
     let mut paths = Vec::new();
     for (i, bytes) in images.iter().enumerate() {
@@ -373,6 +389,7 @@ pub fn img2img(
     negative: &str,
     denoise: f64,
     steps: u32,
+    cancel: Option<&AtomicBool>,
 ) -> Result<Vec<String>, String> {
     let (url, model) = comfy_settings();
     let bytes = std::fs::read(source_path).map_err(|e| format!("read failed: {}", e))?;
@@ -394,6 +411,7 @@ pub fn img2img(
     let images = run_workflow(
         &url,
         img2img_workflow(&model, &server_name, prompt, neg, steps, denoise, seed),
+        cancel,
     )?;
     let mut paths = Vec::new();
     for (i, b) in images.iter().enumerate() {
