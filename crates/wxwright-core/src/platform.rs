@@ -7,6 +7,9 @@
 //! actually wired. Descriptors are data, not behaviour — renderers and rule
 //! tables stay with the dialect implementations that consume them.
 
+use crate::ir::{Block, Inline, InlineKind};
+use crate::validator;
+
 /// One social-media platform the engine can target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PlatformSpec {
@@ -138,9 +141,242 @@ pub fn get_platform(id: &str) -> PlatformSpec {
         .unwrap_or(WECHAT)
 }
 
+
+// ------------------------------------------------------- export adapters --
+
+/// What artifact a platform's primary "copy" action produces. This is the
+/// essential per-platform difference: WeChat pastes dialect rich text into
+/// the MP editor; Xiaohongshu posts a plain-text caption plus an image set;
+/// Zhihu accepts Markdown directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportKind {
+    /// Dialect HTML via the clipboard rich-text flavor (WeChat MP editor).
+    RichTextDialect,
+    /// Plain-text caption (Xiaohongshu note text, Meta/X/LinkedIn text).
+    Caption,
+    /// Raw Markdown (Zhihu and other Markdown-friendly hosts).
+    Markdown,
+}
+
+pub fn export_kind(id: &str) -> ExportKind {
+    match id {
+        "wechat" => ExportKind::RichTextDialect,
+        "xhs" => ExportKind::Caption,
+        "zhihu" => ExportKind::Markdown,
+        _ => ExportKind::Caption,
+    }
+}
+
+/// Render the document as the platform's plain-text caption: structure is
+/// linearised (headings become short lines, lists become bullets, links keep
+/// only their text since most caption hosts do not autolink), images become
+/// [图片] placeholders (they travel in the image set, not the text).
+pub fn render_caption(doc: &[Block], title: Option<&str>) -> String {
+    let mut out = String::new();
+    if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
+        out.push_str(t);
+        out.push_str("\n\n");
+    }
+    push_blocks(doc, &mut out);
+    while out.contains("\n\n\n\n") {
+        out = out.replace("\n\n\n\n", "\n\n\n");
+    }
+    out.trim().to_string()
+}
+
+fn push_blocks(blocks: &[Block], out: &mut String) {
+    for b in blocks {
+        push_block(b, out);
+    }
+}
+
+fn push_block(b: &Block, out: &mut String) {
+    match b {
+        Block::Heading { level, inlines, .. } => {
+            if *level == 1 {
+                // H1 usually duplicates the caption title; keep it out.
+                return;
+            }
+            push_inlines(inlines, out);
+            out.push_str("\n\n");
+        }
+        Block::Paragraph { inlines } => {
+            push_inlines(inlines, out);
+            out.push_str("\n\n");
+        }
+        Block::List { ordered, items, .. } => {
+            for (i, item) in items.iter().enumerate() {
+                let bullet = if *ordered {
+                    format!("{}. ", i + 1)
+                } else {
+                    "• ".to_string()
+                };
+                out.push_str(&bullet);
+                match item.checked {
+                    Some(true) => out.push_str("[x] "),
+                    Some(false) => out.push_str("[ ] "),
+                    None => {}
+                }
+                push_blocks(&item.blocks, out);
+                out.push('\n');
+            }
+            out.push('\n');
+        }
+        Block::Blockquote { blocks } | Block::Card { blocks, .. } => push_blocks(blocks, out),
+        Block::Table { header, rows, .. } => {
+            for cell in header {
+                push_inlines(cell, out);
+                out.push_str(" | ");
+            }
+            out.push('\n');
+            for row in rows {
+                for cell in row {
+                    push_inlines(cell, out);
+                    out.push_str(" | ");
+                }
+                out.push('\n');
+            }
+            out.push('\n');
+        }
+        Block::Image(img) => {
+            out.push_str(&format!("[图片:{}]\n", img.alt));
+        }
+        Block::Figure { image, caption } => {
+            out.push_str(&format!("[图片:{}] ", image.alt));
+            push_inlines(caption, out);
+            out.push_str("\n\n");
+        }
+        Block::Code { code, .. } => {
+            out.push_str(code.trim());
+            out.push_str("\n\n");
+        }
+        Block::Formula { latex } => {
+            out.push_str(latex);
+            out.push_str("\n\n");
+        }
+        Block::Rule => out.push_str("\n---\n\n"),
+        Block::Toc => {}
+        Block::RawHtml { html } => out.push_str(html.trim()),
+        Block::SvgEmbed { .. } | Block::Chart { .. } => {
+            out.push_str("[互动组件在公众号版本中]\n");
+        }
+    }
+}
+
+fn push_inlines(inlines: &[Inline], out: &mut String) {
+    for i in inlines {
+        push_inline(i, out);
+    }
+}
+
+fn push_inline(i: &Inline, out: &mut String) {
+    match i {
+        Inline::Text(t) => out.push_str(t),
+        Inline::Code(c) => out.push_str(c),
+        Inline::Math { latex, .. } => out.push_str(latex),
+        Inline::Image(img) => out.push_str(&format!("[图片:{}]", img.alt)),
+        Inline::Break => out.push('\n'),
+        Inline::RawHtml(h) => out.push_str(h),
+        Inline::Styled { children, .. } => push_inlines(children, out),
+    }
+}
+
+// -------------------------------------------------------- platform rules --
+
+/// Platform-specific compliance rules (PRD §16: each platform brings its own
+/// rule table). Xiaohongshu notes have hard length limits and conventions.
+pub fn validate_platform_caption(
+    platform: &str,
+    title: &str,
+    caption: &str,
+    images: usize,
+) -> Vec<crate::validator::Violation> {
+    if platform != "xhs" {
+        return Vec::new();
+    }
+    let mut v = Vec::new();
+    if title.chars().count() > 20 {
+        v.push(crate::validator::Violation {
+            rule_id: "XHS-1".into(),
+            severity: "warn".into(),
+            message: format!(
+                "title is {} chars; the Xiaohongshu title field caps at 20",
+                title.chars().count()
+            ),
+            node: truncate_node(title),
+            fixable: false,
+        });
+    }
+    let body_chars = caption.chars().count();
+    if body_chars > 1000 {
+        v.push(crate::validator::Violation {
+            rule_id: "XHS-2".into(),
+            severity: "block".into(),
+            message: format!("caption is {body_chars} chars; Xiaohongshu notes cap at 1000"),
+            node: truncate_node(caption),
+            fixable: false,
+        });
+    }
+    if caption.matches('#').count() < 2 {
+        v.push(crate::validator::Violation {
+            rule_id: "XHS-3".into(),
+            severity: "warn".into(),
+            message: "no #hashtag# found; Xiaohongshu relies on hashtags for reach".into(),
+            node: String::new(),
+            fixable: false,
+        });
+    }
+    if images == 0 {
+        v.push(crate::validator::Violation {
+            rule_id: "XHS-4".into(),
+            severity: "warn".into(),
+            message: "image note without images; export a cover/content image set".into(),
+            node: String::new(),
+            fixable: false,
+        });
+    } else if images > 9 {
+        v.push(crate::validator::Violation {
+            rule_id: "XHS-5".into(),
+            severity: "warn".into(),
+            message: format!("{images} images; a Xiaohongshu note carries at most 9"),
+            node: String::new(),
+            fixable: false,
+        });
+    }
+    v
+}
+
+fn truncate_node(s: &str) -> String {
+    s.chars().take(60).collect()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+#[test]
+fn caption_renderer_linearises_structure() {
+    let doc = crate::parser::parse_markdown(
+        "# 我的标题\n\n正文**加粗**和[链接文字](https://x.y)。\n\n- 甲\n- 乙\n",
+    );
+    let cap = render_caption(&doc, Some("我的标题"));
+    assert!(cap.starts_with("我的标题\n\n正文加粗和链接文字。"), "got: {cap}");
+    assert!(cap.contains("• 甲"));
+    assert!(!cap.contains("https://x.y"), "links keep text only");
+}
+
+#[test]
+fn xhs_rules_fire_on_limits_and_conventions() {
+    let long_title = "一个超过二十个字的小红书标题肯定是会被截断的哦";
+    let v = validate_platform_caption("xhs", long_title, "正文 #标签#", 0);
+    assert!(v.iter().any(|x| x.rule_id == "XHS-1"));
+    assert!(v.iter().any(|x| x.rule_id == "XHS-4"));
+    let v2 = validate_platform_caption("xhs", "短标题", "没有话题标签的正文", 3);
+    assert!(v2.iter().any(|x| x.rule_id == "XHS-3"));
+    let big = "字".repeat(1001);
+    let v3 = validate_platform_caption("xhs", "短标题", &big, 3);
+    assert!(v3.iter().any(|x| x.rule_id == "XHS-2" && x.is_block()));
+    assert!(validate_platform_caption("wechat", "t", "c", 1).is_empty());
+}
 
     #[test]
     fn ids_are_unique_and_wechat_is_default() {

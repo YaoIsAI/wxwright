@@ -478,6 +478,7 @@ wxwright — 让任何 AI Agent 一键把文章发进微信公众号（Rust · C
 | 交互润色 | 校验按钮移至保存旁（胶囊样式）；SVG 组件库颜色参数内置取色器；AI 插入/替换带编辑器落点高亮 + 预览末块脉冲；墨仔形态切换交叉淡入；应用图标超采样重生成（1024px 渲染→Lanczos3→8 帧 ICO）；官方品牌标扩至 17 家（新增 xAI、智谱） |
 | 统一 AI 生成运行时 | 全部生成面板（AI 主题/SVG 组件/海报 HTML/云端生图/ComfyUI）收敛为 job 运行时：单一 ai-job 事件通道流式输出（含 DeepSeek 式思考指示）、真实取消（SSE 读循环断连 + ComfyUI /interrupt）、共享运行控制台（状态/耗时/停止/流式日志）、多 job 并发；主题/SVG/海报共用「生成→提取→校验→修复」规格表，海报新增自包含门禁（外链/脚本/字体在光栅化前拦截并回喂修复） |
 | 推理模型能力注册 | 按模型 id 启发式识别思考型模型（o1/o3/r1/reasoner/glm-z/qwq 等）自动放大起始预算；空正文截断时预算阶梯加倍（封顶 16384）；`<think>` 块剥离 |
+| 平台出口适配与规则表 | 复制主按钮按平台产出对应制品：微信=方言富文本、小红书=纯文本文案（IR 线性化：列表转圆点/图片转占位/链接只留文字）、知乎=原样 Markdown；合规徽标按平台规则表切换（小红书 XHS-1..5：标题≤20/正文≤1000 阻断/话题标签/图组提示/图片≤9）；platform 字段随文章 frontmatter 持久化，打开文章自动恢复，切换即标记未保存 |
 | 平台注册表（§16 落地） | wxwright-core::platform 六平台描述符（微信公众号/小红书/知乎/Meta/X/LinkedIn）：能力位（富文本/图片笔记/API 发布）+ 预设尺寸 + 能力注记；CLI `wxwright platforms` 列出；GUI 顶栏平台切换器联动海报/尺寸工坊预设与 AI 文案风格；小红书「导出图组」一键按平台预设批量光栅化入素材库 |
 | 发布自动化 | Tag 驱动 GitHub Actions：Windows NSIS+便携、macOS dmg+CLI 双架构、Linux deb/AppImage+musl CLI、SHA256SUMS（docs/release-automation.md） |
 

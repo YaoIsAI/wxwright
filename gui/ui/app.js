@@ -69,6 +69,8 @@ const I18N = {
     wx_status_fail: "读取绑定状态失败",
     validate: "校验",
     platform: "平台", custom_size: "自定义...",
+    copy_rich: "复制富文本", copy_caption: "复制文案", copy_md: "复制 Markdown",
+    copied_caption: "文案已复制，去小红书 App 粘贴", copied_md: "Markdown 已复制",
     imgset: "导出图组", imgset_done: (n) => `图组已导出 ${n} 张到素材库`,
     job_stopped: "已停止",
   },
@@ -132,6 +134,8 @@ const I18N = {
     wx_status_fail: "Failed to read binding status",
     validate: "Check",
     platform: "Platform", custom_size: "Custom...",
+    copy_rich: "Copy rich text", copy_caption: "Copy caption", copy_md: "Copy Markdown",
+    copied_caption: "Caption copied - paste it into the note editor", copied_md: "Markdown copied",
     imgset: "Export image set", imgset_done: (n) => `${n} image(s) exported to the asset library`,
     job_stopped: "Stopped",
   },
@@ -187,6 +191,7 @@ function applyI18n() {
     const k = el.getAttribute("data-i18n-placeholder");
     if (I18N[lang][k]) el.placeholder = I18N[lang][k];
   });
+  if (typeof refreshCopyButton === "function") refreshCopyButton();
   $("ai-input").placeholder = t("send_placeholder");
   $("library-search").placeholder = t("search_ph");
   const langBtn = $("btn-lang");
@@ -277,6 +282,19 @@ async function convertNow() {
     lastResult = res;
     $("preview").srcdoc = wrapPreviewHtml(res.html);
     updateStats(res.stats, res.violations);
+    if (currentPlatform !== "wechat") {
+      // platform rule table replaces the dialect verdict for non-WeChat targets
+      try {
+        const pv = await invoke("platform_validate", {
+          platform: currentPlatform,
+          title: loadedTitle || autoTitle(md),
+          markdown: md,
+          images: res.stats.images || 0,
+        });
+        updateRuleChip(pv.violations || []);
+        if (!$("violations-panel").hidden) renderViolationsPanel(pv.violations || []);
+      } catch (e) { /* keep dialect verdict on failure */ }
+    }
     if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
     $("status-text").textContent = t("ready");
   } catch (e) {
@@ -354,7 +372,7 @@ async function refreshLibrary() {
       const art = await invoke("read_article", { id: btn.dataset.rename });
       const newTitle = await uiPrompt(t("prompt_rename"), art.meta.title);
       if (newTitle && newTitle.trim() && newTitle !== art.meta.title) {
-        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, markdown: art.markdown });
+        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, platform: art.meta.platform, markdown: art.markdown });
         toast(t("renamed_ok"), "ok");
         refreshLibrary();
       }
@@ -364,7 +382,7 @@ async function refreshLibrary() {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const art = await invoke("read_article", { id: btn.dataset.dup });
-      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, markdown: art.markdown });
+      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, platform: art.meta.platform, markdown: art.markdown });
       toast(t("duplicated_ok"), "ok");
       refreshLibrary();
     });
@@ -383,6 +401,7 @@ async function persistCurrent(silent = false) {
     id: currentArticleId,
     title,
     theme: currentTheme,
+    platform: currentPlatform,
     markdown: md,
   });
   currentArticleId = meta.id;
@@ -405,7 +424,7 @@ async function openArticle(id) {
     if (currentArticleId === null) {
       const md = $("editor").value;
       if (md.trim().length > 0) {
-        const meta = await invoke("save_article", { id: null, title: autoTitle(md), theme: currentTheme, markdown: md });
+        const meta = await invoke("save_article", { id: null, title: autoTitle(md), theme: currentTheme, platform: currentPlatform, markdown: md });
         toast(t("saved_new_ok", meta.title));
       }
     } else {
@@ -422,6 +441,9 @@ async function openArticle(id) {
     currentTheme = art.meta.theme;
     $("theme-select").value = currentTheme;
     localStorage.setItem("wxwright-theme", currentTheme);
+  }
+  if (art.meta.platform && art.meta.platform !== currentPlatform) {
+    applyPlatform(art.meta.platform); // silent: platform is a per-article property
   }
   refreshLibrary();
   convertNow();
@@ -447,7 +469,7 @@ async function importMdFiles() {
     });
     if (!path) return;
     const content = await invoke("read_text_file", { path });
-    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, markdown: content });
+    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, platform: currentPlatform, markdown: content });
     toast(t("imported_ok"), "ok");
     refreshLibrary();
   } catch (e) {
@@ -485,6 +507,27 @@ function uiPrompt(title, value = "") {
 /* -------------------------------------------------------------- actions */
 async function doCopy() {
   if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  // Non-WeChat platforms: the copy artifact is the platform's own export
+  // (caption text for image-note platforms, raw Markdown for Zhihu).
+  if (currentPlatform !== "wechat") {
+    const btn = $("btn-copy");
+    btn.disabled = true;
+    try {
+      const text = await invoke("platform_export_text", {
+        platform: currentPlatform,
+        title: loadedTitle || autoTitle($("editor").value),
+        markdown: $("editor").value,
+      });
+      await invoke("copy_text_plain", { text });
+      toast(currentPlatform === "zhihu" ? t("copied_md") : t("copied_caption"), "ok");
+      window.Mozai && Mozai.celebrate();
+    } catch (e) {
+      toast(String(e), "err");
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
   const btn = $("btn-copy");
   btn.disabled = true;
   try {
@@ -992,6 +1035,16 @@ function currentPlatformSpec() {
 }
 function platformLabel(p) { return lang === "zh-CN" ? p.name_zh : p.name_en; }
 
+/* the primary copy action is a per-platform artifact (PRD §16 export adapter) */
+function refreshCopyButton() {
+  const label = $("copy-label");
+  if (!label) return;
+  const id = currentPlatform;
+  label.textContent = id === "wechat" ? t("copy_rich")
+    : id === "zhihu" ? t("copy_md")
+    : t("copy_caption");
+}
+
 function renderPlatformOptions() {
   const sel = $("platform-select");
   sel.innerHTML = PLATFORMS.length
@@ -1023,6 +1076,7 @@ function applyPlatform(id) {
   localStorage.setItem("wxwright-platform", id);
   renderPlatformOptions();
   renderPlatformPresets();
+  refreshCopyButton();
   if (!$("modal-poster").hidden) {
     // untouched template follows the new platform's canvas; edited HTML stays
     if (!posterTemplateDirty) {
@@ -1052,8 +1106,15 @@ async function initPlatformSwitcher() {
   if (!PLATFORMS.some((p) => p.id === currentPlatform)) currentPlatform = "wechat";
   renderPlatformOptions();
   renderPlatformPresets();
+  refreshCopyButton();
   $("platform-select").addEventListener("change", () => {
     applyPlatform($("platform-select").value);
+    if (currentArticleId) {
+      dirty = true; // platform is part of the article; persist on next save
+      $("stat-saved").textContent = t("not_saved");
+    }
+    refreshCopyButton();
+    convertNow(); // chip switches to the platform rule table immediately
     toast((lang === "zh-CN" ? "已切换到：" : "Platform: ") + platformLabel(currentPlatformSpec()), "ok");
   });
 }

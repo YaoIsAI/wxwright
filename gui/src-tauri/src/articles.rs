@@ -11,6 +11,8 @@ pub struct ArticleMeta {
     pub created: String,
     pub updated: String,
     pub theme: String,
+    /// Target platform id ("wechat" | "xhs" | ...), persisted in frontmatter.
+    pub platform: String,
     pub chars: usize,
 }
 
@@ -112,12 +114,14 @@ fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
     let created = get("created").unwrap_or_default();
     let updated = get("updated").unwrap_or_default();
     let theme = get("theme").unwrap_or_else(|| "minimal".to_string());
+    let platform = get("platform").unwrap_or_else(|| "wechat".to_string());
     Some(ArticleMeta {
         id,
         title,
         created,
         updated,
         theme,
+        platform,
         chars: body.chars().count(),
     })
 }
@@ -153,6 +157,7 @@ pub fn save_article(
     id: Option<String>,
     title: &str,
     theme: &str,
+    platform: &str,
     markdown: &str,
 ) -> Result<ArticleMeta, String> {
     let dir = library_dir();
@@ -180,21 +185,28 @@ pub fn save_article(
         title.trim()
     };
     let body = format!(
-        "---\ntitle: \"{}\"\ncreated: {}\nupdated: {}\ntheme: {}\n---\n\n{}",
+        "---\ntitle: \"{}\"\ncreated: {}\nupdated: {}\ntheme: {}\nplatform: {}\n---\n\n{}",
         title.replace('"', "'"),
         created,
         updated,
         theme,
+        platform,
         markdown.trim_start()
     );
     let path = dir.join(format!("{}.md", id));
     std::fs::write(&path, body).map_err(|e| format!("write failed: {}", e))?;
+    let platform = if platform.trim().is_empty() {
+        "wechat"
+    } else {
+        platform.trim()
+    };
     Ok(ArticleMeta {
         id,
         title: title.to_string(),
         created,
         updated,
         theme: theme.to_string(),
+        platform: platform.to_string(),
         chars: markdown.chars().count(),
     })
 }

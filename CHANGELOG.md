@@ -27,6 +27,20 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
     rendering after the full download.
 
 ### Added
+- **Platform export adapters & per-platform rule tables** (the essential
+  platform difference, PRD §16): the primary copy action now produces the
+  target platform's own artifact - WeChat keeps dialect rich text,
+  Xiaohongshu copies a plain-text caption (markdown linearised via the IR:
+  bullets, image placeholders, links keep text only since caption hosts do
+  not autolink), Zhihu copies raw Markdown. The compliance chip follows the
+  platform rule table: Xiaohongshu gains XHS-1..5 (title <=20 chars, note
+  body <=1000 chars blocking, hashtag convention, image-set presence, <=9
+  images); non-WeChat targets show the platform verdict instead of the
+  dialect verdict. Platform is persisted per article in frontmatter
+  (`platform:`), restored on open, and switching marks the article dirty.
+  Core: `platform::render_caption` + `platform::validate_platform_caption`
+  + `ExportKind`; commands `platform_export_text` / `platform_validate`;
+  copy button label morphs per platform.
 - **Unified AI generation runtime (`jobs.rs` + `ai-jobs.js`)**: every GUI
   generation panel (AI theme, SVG component, poster HTML, cloud image,
   ComfyUI t2i/i2i) now runs as a *job* — a registry entry with an id and a

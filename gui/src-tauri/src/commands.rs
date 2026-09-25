@@ -214,9 +214,60 @@ pub fn save_article(
     id: Option<String>,
     title: String,
     theme: String,
+    platform: Option<String>,
     markdown: String,
 ) -> Result<ArticleMeta, String> {
-    crate::articles::save_article(id, &title, &theme, &markdown)
+    crate::articles::save_article(id, &title, &theme, platform.as_deref().unwrap_or("wechat"), &markdown)
+}
+
+// ------------------------------------------------ platform export adapter --
+/// Render the article for the active platform's primary copy action.
+/// WeChat keeps its dedicated rich-text copy path; other platforms get
+/// plain text / Markdown produced by the core export adapters.
+#[tauri::command]
+pub fn platform_export_text(
+    platform: String,
+    title: String,
+    markdown: String,
+) -> Result<String, String> {
+    match wxwright_core::platform::export_kind(&platform) {
+        wxwright_core::platform::ExportKind::RichTextDialect => {
+            Err("wechat uses the dedicated rich-text copy".into())
+        }
+        wxwright_core::platform::ExportKind::Markdown => Ok(markdown),
+        wxwright_core::platform::ExportKind::Caption => {
+            let doc = wxwright_core::parser::parse_markdown(&markdown);
+            Ok(wxwright_core::platform::render_caption(&doc, Some(&title)))
+        }
+    }
+}
+
+/// Platform-specific rule table (PRD §16). WeChat articles are validated by
+/// the dialect engine; Xiaohongshu captions get their own limits here.
+#[tauri::command]
+pub fn platform_validate(
+    platform: String,
+    title: String,
+    markdown: String,
+    images: usize,
+) -> Result<serde_json::Value, String> {
+    match wxwright_core::platform::export_kind(&platform) {
+        wxwright_core::platform::ExportKind::RichTextDialect => {
+            Ok(serde_json::json!({ "mode": "dialect" }))
+        }
+        mode => {
+            let doc = wxwright_core::parser::parse_markdown(&markdown);
+            let cap = wxwright_core::platform::render_caption(&doc, Some(&title));
+            let violations = wxwright_core::platform::validate_platform_caption(
+                &platform,
+                &title,
+                &cap,
+                images,
+            );
+            let _ = mode;
+            Ok(serde_json::json!({ "mode": "platform", "violations": violations }))
+        }
+    }
 }
 
 #[tauri::command]
