@@ -1,0 +1,133 @@
+name: Release
+
+# Tag-driven multi-platform build & publish (PRD 12.3 distribution matrix).
+# Usage: bump version in Cargo.toml workspace, commit, then:
+#   git tag v1.0.1 && git push origin v1.0.1
+# Artifacts land on the GitHub Release of that tag automatically.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GUI_DIR: gui
+
+jobs:
+  # ------------------------------------------------------------ CLI binaries
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: wxwright-cli-windows-x64.zip
+            use_zip: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: wxwright-cli-macos-arm64.tar.gz
+            use_zip: false
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: wxwright-cli-macos-x64.tar.gz
+            use_zip: false
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            archive: wxwright-cli-linux-x64.tar.gz
+            use_zip: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install musl tools (Linux static)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build CLI
+        run: cargo build --release -p wxwright-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.use_zip }}" = "true" ]; then
+            7z a "../../../${{ matrix.archive }}" wxwright.exe
+          else
+            tar czf "../../../${{ matrix.archive }}" wxwright
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  # ------------------------------------------------------------ GUI bundles
+  build-gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: nsis
+            label: windows
+          - os: macos-latest
+            bundles: dmg,app
+            label: macos
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+            label: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux deps (webkit2gtk et al.)
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install tauri-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+      - name: Build GUI bundles
+        working-directory: ${{ env.GUI_DIR }}
+        run: cargo tauri build --bundles ${{ matrix.bundles }}
+      - name: Collect bundle artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-artifacts
+          find src-tauri/target/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" \) \
+            -exec cp {} dist-artifacts/ \;
+          # portable CLI produced by the same build (windows/mac/linux)
+          BIN=wxwright
+          [ -f src-tauri/target/release/wxwright.exe ] && BIN=wxwright.exe
+          cp "src-tauri/target/release/$BIN" dist-artifacts/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wxwright-gui-${{ matrix.label }}
+          path: dist-artifacts/*
+
+  # ------------------------------------------------------------ publish
+  release:
+    needs: [build-cli, build-gui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f -not -name "*.sha256" -exec sha256sum {} \; > SHA256SUMS.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/*

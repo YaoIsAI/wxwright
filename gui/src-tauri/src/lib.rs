@@ -1,0 +1,69 @@
+//! wxwright GUI (Tauri 2): thin shell over wxwright-core. All correctness
+//! logic lives in the engine crate; this host only marshals UI calls.
+
+mod ai;
+mod articles;
+mod comfy;
+mod commands;
+
+use tauri::{DragDropEvent, Emitter, WindowEvent};
+
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::list_themes,
+            commands::convert_preview,
+            commands::copy_rich,
+            commands::export_html,
+            commands::validate_md,
+            commands::read_text_file,
+            commands::load_sample,
+            commands::agent_card_markdown,
+            commands::copy_agent_card,
+            commands::mcp_install,
+            commands::list_articles,
+            commands::library_dir,
+            commands::read_article,
+            commands::save_article,
+            commands::delete_article,
+            commands::ai_settings,
+            commands::ai_save_provider,
+            commands::ai_save_provider_with_key,
+            commands::ai_delete_provider,
+            commands::ai_set_active,
+            commands::ai_test,
+            commands::ai_chat,
+            commands::ai_stop,
+            commands::ai_generate_svg,
+            commands::ai_generate_theme,
+            commands::ai_complete,
+            commands::write_file_base64,
+            commands::list_assets,
+            commands::asset_data_uri,
+            commands::asset_thumb,
+            commands::delete_asset,
+            commands::comfy_status,
+            commands::comfy_save_config,
+            commands::comfy_launch,
+            commands::ai_image,
+            commands::ai_save_image_model,
+            commands::comfy_txt2img,
+            commands::comfy_img2img,
+            commands::import_image_from_path,
+            commands::import_image_bytes,
+            commands::copy_text_plain,
+        ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                let names: Vec<String> = paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                let _ = window.emit("dropped-files", names);
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running wxwright");
+}

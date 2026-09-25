@@ -1,0 +1,10 @@
+[package]
+name = "icongen"
+description = "Generate wxwright app icon assets from assets/icon/master.svg (dev tool, not shipped)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+resvg = "0.45"
+ico = "0.3"

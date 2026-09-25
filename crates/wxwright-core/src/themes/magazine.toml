@@ -1,0 +1,70 @@
+[meta]
+id = "magazine"
+name = "Magazine"
+name_zh = "杂志"
+author = "wxwright"
+license = "MIT"
+description = "Editorial magazine rhythm: centered display headings, pull quotes, warm paper tones. (font-family is forbidden by the official spec; typography is expressed through spacing, scale and rules.)"
+description_zh = "杂志编辑风：居中大标题、引文式引用、暖纸色排版（官方规范禁用 font-family，字体气质通过字号、间距与分隔线表达）。"
+link_style = "footnote"
+code_theme = "light"
+
+[colors]
+accent = "#B45309"
+text = "#292524"
+text_secondary = "#57534E"
+text_tertiary = "#A8A29E"
+border = "#E7E5E4"
+border_strong = "#D6D3D1"
+quote_bg = "#FAFAF9"
+quote_text = "#57534E"
+code_bg = "#FAF6EF"
+code_text = "#44403C"
+code_border = "#EDE6D8"
+inline_code_color = "#9A3412"
+table_head_bg = "#FAF9F7"
+table_border = "#E7E5E4"
+note_bg = "#FBF3E4"
+note_border = "#B45309"
+tip_bg = "#F0FDF4"
+tip_border = "#15803D"
+important_bg = "#FDF2F8"
+important_border = "#BE185D"
+warning_bg = "#FEF3C7"
+warning_border = "#B45309"
+caution_bg = "#FEF2F2"
+caution_border = "#B91C1C"
+keypoint_bg = "#FBF3E4"
+comment_bg = "#FAFAF9"
+toc_bg = "#FAFAF9"
+
+[block.h1]
+margin = "36px 0 20px"
+padding = "14px 0"
+border-top = "1px solid {text}"
+border-bottom = "1px solid {text}"
+text-align = "center"
+
+[block.h1_leaf]
+font-size = "24px"
+font-weight = "600"
+letter-spacing = "2px"
+
+[block.h2]
+margin = "30px 0 16px"
+text-align = "center"
+
+[block.h2_leaf]
+font-size = "18px"
+font-weight = "600"
+letter-spacing = "3px"
+
+[block.paragraph_leaf]
+font-size = "16px"
+line-height = "1.85"
+letter-spacing = "0.5px"
+
+[color_dark]
+text = "#D6D3D1"
+background = "#191919"
+accent = "#F59E0B"

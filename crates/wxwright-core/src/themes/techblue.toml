@@ -1,0 +1,57 @@
+[meta]
+id = "techblue"
+name = "Tech Blue"
+name_zh = "科技蓝"
+author = "wxwright"
+license = "MIT"
+description = "Technical writing theme: accent bars, dark code panels, tight rhythm."
+description_zh = "技术写作风：强调色侧栏标题、深色代码面板、紧凑节奏。"
+link_style = "footnote"
+code_theme = "dark"
+
+[colors]
+accent = "#2563EB"
+text = "#24292F"
+text_secondary = "#475569"
+text_tertiary = "#94A3B8"
+border = "#CBD5E1"
+border_strong = "#94A3B8"
+quote_bg = "#F1F5F9"
+quote_text = "#475569"
+code_bg = "#0F172A"
+code_text = "#E2E8F0"
+code_border = "#1E293B"
+inline_code_color = "#1D4ED8"
+table_head_bg = "#EFF6FF"
+table_border = "#CBD5E1"
+note_bg = "#EFF6FF"
+note_border = "#2563EB"
+tip_bg = "#ECFEFF"
+tip_border = "#0891B2"
+important_bg = "#EEF2FF"
+important_border = "#4F46E5"
+warning_bg = "#FFFBEB"
+warning_border = "#D97706"
+caution_bg = "#FEF2F2"
+caution_border = "#DC2626"
+keypoint_bg = "#DBEAFE"
+comment_bg = "#F8FAFC"
+toc_bg = "#F8FAFC"
+
+[block.h1]
+border-bottom = "2px solid {accent}"
+
+[block.h2]
+border-left = "4px solid {accent}"
+padding-left = "10px"
+
+[block.h2_leaf]
+color = "{accent}"
+
+[block.h3_leaf]
+color = "{text}"
+
+[color_dark]
+text = "#CBD5E1"
+background = "#191919"
+accent = "#60A5FA"

@@ -1,0 +1,103 @@
+# Changelog
+
+All notable changes to wxwright are documented here.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+versioning follows [Semantic Versioning](https://semver.org/).
+
+This project had no git history when the changelog was normalized (2026-09-25),
+so earlier entries describe the feature set as it stood rather than an
+invent­ed commit timeline. `docs/` is the source of truth for the current spec.
+
+## [Unreleased]
+
+### Added
+- Official vendor logos: a bundled logo library (Simple Icons, CC0) with 14
+  official marks (OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot Kimi,
+  Qwen, Meta, Mistral, Ollama, OpenRouter, Perplexity, HuggingFace, LM Studio,
+  xAI-adjacent aliases) rendered inline - zero external requests. Provider
+  rows, the model quick-select pill and the model menu all show the official
+  mark; keyword auto-match (name/base_url/model) plus an explicit `brand`
+  field; custom uploaded logos still override. A vendor preset dropdown in
+  the provider form auto-fills name/base URL/model/brand for 13 common
+  providers (one click instead of typing).
+- MCP tool `wxwright_upload_images` (mmbiz upload decoupled from draft
+  creation), closing the gap between the PRD §7 tool contract and the server.
+- Test `tool_surface_matches_agent_card`: the MCP implementation, the agent
+  card, and the README now fail CI if the tool list drifts apart.
+
+### Changed
+- Clipboard: the `text/html` rich flavor is attempted on Windows, macOS and
+  Linux alike (arboard 3.6 supports all three) and only degrades to plain
+  text where the clipboard cannot accept HTML (e.g. headless CI). Previously
+  it hard-coded rich copy to Windows only.
+- `panic = "unwind"` in the release profile + per-request `catch_unwind` in
+  the MCP stdio loop, so one handler panic answers a JSON-RPC error instead
+  of dropping the agent's whole session.
+- GUI AI theme generation: `max_tokens` 2000 -> 4096, and an empty AI reply
+  now reports *why* (length-truncated / content-filter / reasoning-only)
+  instead of the useless "AI 返回为空".
+- Version normalized to `0.9.0` (workspace + tauri.conf); `repository`
+  unified to the `YaoIsAI/wxwright` namespace.
+
+### Fixed
+- `.gitignore`: the blanket `assets/` rule was silently excluding the icon
+  source-of-truth `assets/icon/master.svg` from commits; re-included it while
+  still ignoring runtime asset output.
+- Cleared all `clippy -D warnings` lints (manual_clamp, let_unit_value,
+  into_iter_on_ref, type_complexity, len_zero, needless_return) so CI is green.
+
+## [0.9.0] - 2026-09-25
+
+First consolidated release: one pure-Rust engine shared by three hosts,
+enforcing the official WeChat editor spec with a generate-then-verify
+pipeline.
+
+### Added
+- **Engine (`wxwright-core`)**: GFM parser (headings/tables/task lists/alert
+  cards/TOC/figures/inline code), dialect renderer (`section` + `span[leaf]`,
+  all styles inline), TOML theme system (minimal / techblue / magazine),
+  syntect-based code highlighting, image pipeline (`data-w`/`data-ratio`,
+  base64 inline / mmbiz upload via a swappable `ImageTransport`), clipboard
+  payload builder, i18n (en / zh-CN, machine-facing keys stay English).
+- **Official spec rule engine** (PRD §5.3): normalizer (auto-fix) + validator
+  (detect) for R-1.1 … R-4.4 plus payload-hygiene rules; `data-ignore-width`
+  subtree exemption honored on both sides; every rule backed by a
+  violation-sample test.
+- **CLI** (`wxwright`): convert / validate / fix / copy / image upload / draft
+  create|update|list / publish / theme list|new|validate / doctor / mcp serve /
+  mcp install / agent-card / login / logout / bench. Exit codes 0/1/2 aligned
+  with the official verify CLI; `--json` on every command; stdin `-`;
+  `--lang` / `NO_COLOR` / `--no-color`. Credentials via OS keychain with
+  env-var override; `publish` requires explicit `--yes`.
+- **MCP server** (stdio JSON-RPC): 7 tools, 2 resources (incl. the bilingual
+  rule table), a publish-guide prompt; one-click `mcp install` for
+  Claude / Cursor / VS Code / OpenCode.
+- **Desktop GUI (Tauri 2)**: three-pane layout (article library / editor /
+  phone-frame preview), Dark Mode simulation, one-click rich copy, HTML
+  export, .md drag-and-drop; local article + asset libraries; AI assistant
+  drawer (OpenAI-compatible providers incl. local Ollama / LM Studio, keys in
+  the OS keychain, streaming with stop); agent integration panel; AI theme
+  generator (auto-validated against the rules); Poster Studio (HTML -> PNG,
+  offline); ComfyUI text/image-to-image integration; iPhone/Pixel device
+  frames. The GUI binary also answers `mcp serve`.
+- **Agent hand-off card** (`agent-card`): paste-into-system-prompt contract,
+  snapshot-tested against the real tool surface.
+- **Design governance**: single icon master -> platform icons via `icongen`;
+  zero-emoji repo scan test; ASCII CLI prefixes; SVG-only icons.
+- **CI**: three-platform build/test/clippy/fmt matrix + the official
+  `verify-article-structure-spec` puppeteer truth gate; tag-driven
+  multi-platform release workflow (Windows NSIS+portable, macOS dmg+CLI
+  arm64/x64, Linux deb/AppImage+musl CLI, SHA256SUMS) — see
+  `docs/release-automation.md`.
+- **Docs**: `agent-integration.md`, `performance.md` (SLO table + local
+  `bench`), `manual-test-matrix.md` (four-view regression), README +
+  README.zh-CN.
+
+### Known limitations
+- Formula rendering keeps LaTeX as styled text (image mode needs a bridge).
+- `R-2.1` deep identical-wrapper chains are detected but not auto-unwrapped.
+- `--official-check` prints guidance; the puppeteer run itself lives in CI.
+- clap help text is English; reports are localized (en / zh-CN).
+
+[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/YaoIsAI/wxwright/releases/tag/v0.9.0

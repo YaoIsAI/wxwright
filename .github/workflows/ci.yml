@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  official-spec-gate:
+    # Truth gate: the official puppeteer checker (PRD 9-1).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build golden HTML
+        run: |
+          cargo build -p wxwright-cli
+          for t in minimal techblue magazine; do
+            target/debug/wxwright convert examples/sample-article.md --theme $t --out "golden-$t.html"
+          done
+      - name: Official verify-article-structure-spec
+        run: |
+          git clone --depth 1 https://github.com/wechatjs/verify-article-structure-spec /tmp/spec
+          cd /tmp/spec && npm install
+          for f in golden-*.html; do
+            cp "$f" /tmp/spec/ && (cd /tmp/spec && npm run check -- "$f")
+          done
+
+  gui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build -p wxwright-gui

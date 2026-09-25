@@ -1,0 +1,2447 @@
+/* wxwright GUI: library + editor + preview + AI assistant + agent panel
+   + poster studio + device frames + writing pet (墨仔). */
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
+
+/* ------------------------------------------------------------------ i18n */
+const I18N = {
+  "zh-CN": {
+    library: "文章库", theme: "主题", copy: "复制富文本", ai: "AI 助手",
+    ready: "就绪", converting: "转换中...", not_saved: "未保存", saved: "已保存",
+    save: "保存", empty_library: "还没有文章\n点击右上角 + 新建",
+    search_ph: "搜索文章...",
+    chars: "字符", words: "词数", images: "图片",
+    settings: "设置", about: "关于", ai_providers: "AI Providers（OpenAI 兼容协议）",
+    ai_hint: "支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串，设置文件只存引用。",
+    f_name: "名称", f_model: "模型", f_baseurl: "Base URL", f_key: "API Key",
+    f_key_hint: "留空表示保留原 Key", test: "测试连接", cancel: "取消", ok: "确定",
+    save_provider: "保存 Provider", active_badge: "使用中",
+    ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
+    q_polish: "润色当前文章", q_continue: "续写", q_title: "起 5 个标题", q_outline: "帮我列提纲", q_poster: "生成头图文案",
+    ai_insert: "插入编辑器", ai_replace: "替换文章", ai_copy: "复制",
+    agent_title: "Agent 接入", agent_mcp: "MCP 一键接入",
+    agent_mcp_hint: "点击对应客户端，wxwright 的 MCP 配置（wxwright mcp serve）会自动写入；写入后重启客户端即可看到 wxwright 工具。",
+    agent_card: "Agent 接手卡", agent_card_hint: "把整段卡片复制进任意 AI Agent 的系统提示，Agent 即刻接手；或让它直接调用 CLI / MCP。",
+    copy_card: "复制整段卡片", preview_card: "预览卡片", hide_card: "收起卡片",
+    agent_cli: "CLI 速查（点击复制）",
+    c_copy: "全链路：转换-图片-校验-剪贴板", c_convert: "转换为公众号 HTML",
+    c_validate: "规范校验（退出码 0/1/2）", c_serve: "手动启动 MCP server（stdio）",
+    c_card: "输出 Agent 接手卡", c_doctor: "环境体检",
+    copied_ok: "富文本已复制。打开公众号编辑器，Ctrl+V 粘贴。",
+    copied_plain: "剪贴板已写入（纯文本模式）。",
+    copy_blocked_rules: "存在阻断级规范问题，未复制：",
+    copy_blocked_images: "以下图片无法通过剪贴板粘贴（需 mmbiz 或 https 直链）：",
+    copy_failed: "失败：", exported_ok: "已导出：",
+    rule_ok: "规范通过", rule_chip: "规范",
+    dark_hint: "深色预览为模拟效果，实际以公众号 Dark Mode 算法为准",
+    "violations_none": "未发现规范问题。",
+    ft_title: "没有 API Key？",
+    ft_body: "作者的另一个项目 Free Tokens 持续收录免费模型额度——去逛逛，一起实现 Token 自由。",
+    svg_desc_ph: "描述想要的互动效果，例如：点击后头像放大并显示一句祝福语",
+    saved_ok: (x) => `已保存：${x}`, deleted_ok: "已删除", renamed_ok: "已重命名", duplicated_ok: "已创建副本", imported_ok: "已导入",
+    copied_text: "已复制到剪贴板", mcp_installed: (p) => `已写入：${p}`,
+    provider_saved: "Provider 已保存", connected: "连接成功：",
+    first_run_hint: "提示：右上角机器人图标可一键把 wxwright 接入 Claude / Cursor 等 AI Agent",
+    demo_mode: "浏览器演示模式（无本地后端）",
+    theme_ai_title: "AI 生成主题", theme_ai_hint: "描述你想要的主题风格，AI 会生成全新配色与排版，并自动通过公众号官方规范校验（font-family 禁用、对比度约束）。生成结果保存为用户主题，CLI 也能使用。",
+    generate: "生成主题", theme_generating: "生成中，约需 10-30 秒...",
+    theme_done: (id) => `主题「${id}」已生成并应用`, theme_need_ai: "请先在设置中配置 AI Provider",
+    poster_title: "海报工坊（HTML 生成图片）", preset: "尺寸",
+    poster_desc_ph: "描述海报内容与风格，点「AI 生成」", ai_generate: "AI 生成",
+    poster_hint: "本地光栅化（SVG foreignObject），完全离线。海报 HTML 必须自包含：禁止外部图片/字体/脚本，图片只能内嵌 data URI。适合做公众号头图、金句卡、正文场景图。",
+    reset_tpl: "重置模板", save_img: "保存图片...", insert_article: "导出并插入文章",
+    poster_inserted: "图片已插入文章", poster_saved: "图片已保存", poster_need_ai: "请先在设置中配置 AI Provider",
+    poster_generating: "AI 生成 HTML 中...", poster_rasterizing: "正在导出 PNG...",
+    rename: "重命名", duplicate: "创建副本", prompt_rename: "重命名文章",
+    img_imported: (n) => `已导入 ${n} 张图片`,
+  },
+  en: {
+    library: "Library", theme: "Theme", copy: "Copy rich text", ai: "AI",
+    ready: "Ready", converting: "Converting...", not_saved: "unsaved", saved: "saved",
+    save: "Save", empty_library: "No articles yet.\nClick + to create.",
+    search_ph: "Search articles...",
+    chars: "chars", words: "words", images: "images",
+    settings: "Settings", about: "About", ai_providers: "AI Providers (OpenAI-compatible)",
+    ai_hint: "Works with OpenAI / DeepSeek / Qwen / Kimi / Zhipu and local Ollama (http://localhost:11434) or LM Studio (http://localhost:1234). API keys go to the OS keychain.",
+    f_name: "Name", f_model: "Model", f_baseurl: "Base URL", f_key: "API Key",
+    f_key_hint: "leave empty to keep the current key", test: "Test", cancel: "Cancel", ok: "OK",
+    save_provider: "Save provider", active_badge: "active",
+    ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
+    q_polish: "Polish article", q_continue: "Continue writing", q_title: "5 title ideas", q_outline: "Draft an outline", q_poster: "Cover copy",
+    ai_insert: "Insert", ai_replace: "Replace article", ai_copy: "Copy",
+    agent_title: "Agent integration", agent_mcp: "One-click MCP setup",
+    agent_mcp_hint: "Click a client to write the wxwright MCP config (wxwright mcp serve). Restart the client afterwards.",
+    agent_card: "Agent card", agent_card_hint: "Paste this card into any AI agent's system prompt, or let it call the CLI / MCP directly.",
+    copy_card: "Copy card", preview_card: "Preview card", hide_card: "Hide card",
+    agent_cli: "CLI cheat sheet (click to copy)",
+    c_copy: "Full chain: convert-images-validate-clipboard", c_convert: "Convert to MP HTML",
+    c_validate: "Compliance check (exit 0/1/2)", c_serve: "Start MCP server manually (stdio)",
+    c_card: "Print the agent card", c_doctor: "Environment check",
+    copied_ok: "Rich text copied. Open the MP editor and press Ctrl+V.",
+    copied_plain: "Clipboard written (plain-text mode).",
+    copy_blocked_rules: "Blocking violations, not copied:",
+    copy_blocked_images: "These images cannot survive clipboard paste (mmbiz or https required):",
+    copy_failed: "Failed: ", exported_ok: "Exported: ",
+    rule_ok: "Compliant", rule_chip: "Rules",
+    dark_hint: "Dark preview is an approximation; the MP Dark Mode algorithm decides",
+    "violations_none": "No violations found.",
+    ft_title: "No API key?",
+    ft_body: "The author's other project Free Tokens curates free model credits - token freedom for everyone.",
+    svg_desc_ph: "Describe the interaction, e.g. avatar zooms in with a blessing on tap",
+    saved_ok: (x) => `Saved: ${x}`, deleted_ok: "Deleted", renamed_ok: "Renamed", duplicated_ok: "Duplicated", imported_ok: "Imported",
+    copied_text: "Copied to clipboard", mcp_installed: (p) => `Written: ${p}`,
+    provider_saved: "Provider saved", connected: "Connected: ",
+    first_run_hint: "Tip: the robot icon top-right connects wxwright to Claude / Cursor in one click",
+    demo_mode: "Browser demo mode (no local backend)",
+    theme_ai_title: "AI theme generator", theme_ai_hint: "Describe the style; the AI generates a brand-new palette and typography, automatically validated against the official MP rules. Saved as a user theme (usable from the CLI too).",
+    generate: "Generate", theme_generating: "Generating, 10-30s...",
+    theme_done: (id) => `Theme "${id}" generated and applied`, theme_need_ai: "Configure an AI provider in Settings first",
+    poster_title: "Poster Studio (HTML to PNG)", preset: "Size",
+    poster_desc_ph: "Describe the poster, then click AI Generate", ai_generate: "AI Generate",
+    poster_hint: "Local rasterization (SVG foreignObject), fully offline. Poster HTML must be self-contained: no external images/fonts/scripts; data-URI images only.",
+    reset_tpl: "Reset template", save_img: "Save image...", insert_article: "Export & insert",
+    poster_inserted: "Image inserted into the article", poster_saved: "Image saved", poster_need_ai: "Configure an AI provider in Settings first",
+    poster_generating: "Generating HTML...", poster_rasterizing: "Exporting PNG...",
+    rename: "Rename", duplicate: "Duplicate", prompt_rename: "Rename article",
+    img_imported: (n) => `${n} image(s) imported`,
+  },
+};
+let lang = "zh-CN";
+
+/* ----------------------------------------------------------------- state */
+let currentTheme = "minimal";
+let darkPreview = false;
+let convertTimer = null;
+let lastResult = null;
+let currentArticleId = null;
+let dirty = false;
+let aiBusy = false;
+let aiHistory = [];
+let libraryFilter = "";
+
+/* ------------------------------------------------------------------ util */
+function t(key, ...args) {
+  const v = I18N[lang][key];
+  return typeof v === "function" ? v(...args) : v;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function toast(message, kind = "info", listHtml = "") {
+  const host = $("toast-host");
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.innerHTML = `<div><div>${message}</div>${listHtml}</div>`;
+  host.appendChild(el);
+  setTimeout(() => el.remove(), kind === "err" ? 8000 : 3600);
+}
+async function copyPlain(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    if (invoke) {
+      try { await invoke("copy_text_plain", { text }); return true; } catch (e2) {}
+    }
+    return false;
+  }
+}
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const k = el.getAttribute("data-i18n");
+    if (I18N[lang][k] && typeof I18N[lang][k] === "string") el.textContent = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const k = el.getAttribute("data-i18n-placeholder");
+    if (I18N[lang][k]) el.placeholder = I18N[lang][k];
+  });
+  $("ai-input").placeholder = t("send_placeholder");
+  $("library-search").placeholder = t("search_ph");
+  const langBtn = $("btn-lang");
+  if (langBtn) langBtn.textContent = lang === "zh-CN" ? "EN" : "中文";
+  const ftLink = $("freetokens-link");
+  if (ftLink && !ftLink.dataset.bound) {
+    ftLink.dataset.bound = "1";
+    ftLink.addEventListener("click", () => {
+      if (window.__TAURI__ && window.__TAURI__.opener) {
+        window.__TAURI__.opener.openUrl("https://free-tokens.org");
+      } else {
+        window.open("https://free-tokens.org", "_blank");
+      }
+    });
+  }
+  localStorage.setItem("wxwright-lang", lang);
+}
+
+/* -------------------------------------------------------------- preview */
+function wrapPreviewHtml(dialect) {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;background:#fff;}
+  body{padding:16px 14px;word-break:break-word;}
+  section{max-width:100%;}
+  /* phone-realistic: no visible scrollbars */
+  ::-webkit-scrollbar{width:0;height:0;display:none;}
+  html{scrollbar-width:none;}
+</style></head><body>${dialect}</body></html>`;
+}
+function updateStats(stats, violations) {
+  $("stat-chars").textContent = `${t("chars")} ${stats.chars}`;
+  $("stat-words").textContent = `${t("words")} ${stats.words}`;
+  $("stat-images").textContent = `${t("images")} ${stats.images}`;
+  updateRuleChip(violations || []);
+}
+function updateRuleChip(violations) {
+  const chip = $("rule-chip");
+  chip.hidden = false;
+  const blocks = violations.filter((v) => v.severity === "block").length;
+  const warns = violations.length - blocks;
+  if (violations.length === 0) {
+    chip.className = "rule-chip ok";
+    chip.innerHTML = `<svg class="icon icon-sm"><use href="#i-check"/></svg><span>${t("rule_ok")}</span>`;
+  } else {
+    chip.className = "rule-chip" + (blocks > 0 ? " blocking" : "");
+    chip.innerHTML = `<span>${t("rule_chip")}</span><b class="rc-block">${blocks}</b><span>${lang === "zh-CN" ? "阻断" : "block"}</span>·<b class="rc-warn">${warns}</b><span>${lang === "zh-CN" ? "提示" : "warn"}</span>`;
+  }
+}
+function renderViolationsPanel(violations) {
+  const panel = $("violations-panel");
+  if (!violations || violations.length === 0) {
+    panel.innerHTML = `<div class="violation-row"><span class="v-desc">${t("violations_none")}</span></div>`;
+    return;
+  }
+  panel.innerHTML = violations
+    .map(
+      (v) => `<div class="violation-row">
+        <span class="v-badge ${v.severity}">${v.severity === "block" ? "BLOCK" : "WARN"}</span>
+        <span class="v-rule">${v.rule_id}</span>
+        <span class="v-desc">${escapeHtml(v.message)}</span>
+        <span class="v-node">${escapeHtml(v.node)}</span>
+      </div>`
+    )
+    .join("");
+}
+async function convertNow() {
+  const md = $("editor").value;
+  if (!invoke) {
+    try {
+      $("preview").srcdoc = await fetch("demo-preview.html").then((r) => r.text());
+      updateRuleChip([]);
+    } catch (e) {}
+    return;
+  }
+  try {
+    const res = await invoke("convert_preview", { markdown: md, themeId: currentTheme });
+    lastResult = res;
+    $("preview").srcdoc = wrapPreviewHtml(res.html);
+    updateStats(res.stats, res.violations);
+    if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
+    $("status-text").textContent = t("ready");
+  } catch (e) {
+    $("status-text").textContent = String(e);
+  }
+}
+function scheduleConvert() {
+  $("status-text").textContent = t("converting");
+  clearTimeout(convertTimer);
+  convertTimer = setTimeout(convertNow, 220);
+}
+
+async function loadThemesText() {
+  if (!invoke) return;
+  try {
+    const themes = await invoke("list_themes");
+    $("theme-select").innerHTML = themes
+      .map((x) => `<option value="${x.id}">${escapeHtml(lang === "zh-CN" ? x.name_zh || x.name : x.name)}</option>`)
+      .join("");
+    $("theme-select").value = currentTheme;
+  } catch (e) {}
+}
+
+/* -------------------------------------------------------------- library */
+function autoTitle(md) {
+  const m = md.match(/^#\s+(.+)$/m);
+  return m ? m[1].trim() : (lang === "zh-CN" ? "未命名文章" : "Untitled");
+}
+async function refreshLibrary() {
+  const list = $("article-list");
+  if (!invoke) {
+    list.innerHTML = `<div class="article-item" data-id="demo"><div class="a-main"><div class="a-title">${lang === "zh-CN" ? "wxwright 一分钟上手（演示）" : "wxwright quickstart (demo)"}</div><div class="a-date">2026-09-25</div></div></div>`;
+    return;
+  }
+  let articles = await invoke("list_articles");
+  if (libraryFilter) {
+    const f = libraryFilter.toLowerCase();
+    articles = articles.filter((a) => a.title.toLowerCase().includes(f));
+  }
+  if (articles.length === 0) {
+    list.innerHTML = `<div class="sidebar-empty">${t("empty_library")}</div>`;
+    return;
+  }
+  list.innerHTML = articles
+    .map(
+      (a) => `<div class="article-item${a.id === currentArticleId ? " active" : ""}" data-id="${escapeHtml(a.id)}" title="${escapeHtml(a.title)}">
+        <div class="a-main">
+          <div class="a-title">${escapeHtml(a.title)}</div>
+          <div class="a-date">${escapeHtml((a.updated || a.created).replace("T", " "))}</div>
+        </div>
+        <button class="a-act" title="${t("rename")}" data-rename="${escapeHtml(a.id)}"><svg class="icon icon-sm"><use href="#i-edit"/></svg></button>
+        <button class="a-act" title="${t("duplicate")}" data-dup="${escapeHtml(a.id)}"><svg class="icon icon-sm"><use href="#i-copy"/></svg></button>
+        <button class="a-act danger" title="delete" data-del="${escapeHtml(a.id)}"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+      </div>`
+    )
+    .join("");
+  list.querySelectorAll(".article-item").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".a-act")) return;
+      openArticle(el.dataset.id);
+    });
+  });
+  list.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await invoke("delete_article", { id: btn.dataset.del });
+      if (currentArticleId === btn.dataset.del) currentArticleId = null;
+      toast(t("deleted_ok"), "ok");
+      refreshLibrary();
+    });
+  });
+  list.querySelectorAll("[data-rename]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const art = await invoke("read_article", { id: btn.dataset.rename });
+      const newTitle = await uiPrompt(t("prompt_rename"), art.meta.title);
+      if (newTitle && newTitle.trim() && newTitle !== art.meta.title) {
+        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, markdown: art.markdown });
+        toast(t("renamed_ok"), "ok");
+        refreshLibrary();
+      }
+    });
+  });
+  list.querySelectorAll("[data-dup]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const art = await invoke("read_article", { id: btn.dataset.dup });
+      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, markdown: art.markdown });
+      toast(t("duplicated_ok"), "ok");
+      refreshLibrary();
+    });
+  });
+}
+let loadedTitle = null; // title of the article currently open (library truth)
+async function persistCurrent(silent = false) {
+  if (!invoke) return;
+  const md = $("editor").value;
+  if (md.trim().length === 0) return;
+  // Title rules: a library article keeps its stored title (renames survive
+  // edits); a brand-new unsaved doc takes its first heading.
+  const title = currentArticleId && loadedTitle ? loadedTitle : autoTitle(md);
+  const isNew = !currentArticleId;
+  const meta = await invoke("save_article", {
+    id: currentArticleId,
+    title,
+    theme: currentTheme,
+    markdown: md,
+  });
+  currentArticleId = meta.id;
+  loadedTitle = meta.title;
+  dirty = false;
+  $("stat-saved").textContent = t("saved");
+  if (!silent) {
+    toast(isNew ? t("saved_new_ok", meta.title) : t("saved_ok", meta.title), "ok");
+  } else if (isNew) {
+    toast(t("saved_new_ok", meta.title));
+  }
+  window.Mozai && Mozai.celebrate();
+  refreshLibrary();
+}
+async function openArticle(id) {
+  if (!invoke) return;
+  if (dirty) {
+    // An opened library article updates itself; a never-saved draft is
+    // stored as a NEW article - tell the user that's what happened.
+    if (currentArticleId === null) {
+      const md = $("editor").value;
+      if (md.trim().length > 0) {
+        const meta = await invoke("save_article", { id: null, title: autoTitle(md), theme: currentTheme, markdown: md });
+        toast(t("saved_new_ok", meta.title));
+      }
+    } else {
+      await persistCurrent(true);
+    }
+  }
+  const art = await invoke("read_article", { id });
+  currentArticleId = art.meta.id;
+  loadedTitle = art.meta.title;
+  $("editor").value = art.markdown;
+  dirty = false;
+  $("stat-saved").textContent = t("saved");
+  if (art.meta.theme) {
+    currentTheme = art.meta.theme;
+    $("theme-select").value = currentTheme;
+    localStorage.setItem("wxwright-theme", currentTheme);
+  }
+  refreshLibrary();
+  convertNow();
+}
+async function newArticle() {
+  if (invoke && $("editor").value.trim().length > 0 && dirty) await persistCurrent(true);
+  currentArticleId = null;
+  loadedTitle = null;
+  $("editor").value = "# " + (lang === "zh-CN" ? "新文章" : "New article") + "\n\n";
+  $("stat-saved").textContent = t("not_saved");
+  dirty = false;
+  refreshLibrary();
+  $("editor").focus();
+  convertNow();
+}
+async function importMdFiles() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  try {
+    const { open } = window.__TAURI__.dialog;
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+    });
+    if (!path) return;
+    const content = await invoke("read_text_file", { path });
+    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, markdown: content });
+    toast(t("imported_ok"), "ok");
+    refreshLibrary();
+  } catch (e) {
+    toast(String(e), "err");
+  }
+}
+
+/* --------------------------------------------------------- prompt modal */
+function uiPrompt(title, value = "") {
+  return new Promise((resolve) => {
+    $("prompt-title").textContent = title;
+    $("prompt-input").value = value;
+    openModal("modal-prompt");
+    $("prompt-input").focus();
+    $("prompt-input").select();
+    const done = (v) => {
+      closeModal("modal-prompt");
+      $("prompt-ok").removeEventListener("click", okH);
+      $("prompt-cancel").removeEventListener("click", cancelH);
+      $("prompt-input").removeEventListener("keydown", keyH);
+      resolve(v);
+    };
+    const okH = () => done($("prompt-input").value.trim() || null);
+    const cancelH = () => done(null);
+    const keyH = (e) => {
+      if (e.key === "Enter") okH();
+      if (e.key === "Escape") done(null);
+    };
+    $("prompt-ok").addEventListener("click", okH);
+    $("prompt-cancel").addEventListener("click", cancelH);
+    $("prompt-input").addEventListener("keydown", keyH);
+  });
+}
+
+/* -------------------------------------------------------------- actions */
+async function doCopy() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  const btn = $("btn-copy");
+  btn.disabled = true;
+  try {
+    const res = await invoke("copy_rich", { markdown: $("editor").value, themeId: currentTheme });
+    if (res.copied) {
+      toast(res.html_flavor ? t("copied_ok") : t("copied_plain"), "ok");
+      window.Mozai && Mozai.celebrate();
+    } else if (res.reason === "blocking violations" && res.blocking.length > 0) {
+      const list = `<ul class="toast-list">${res.blocking.slice(0, 5).map((v) => `<li>${v.rule_id}: ${escapeHtml(v.message)}</li>`).join("")}</ul>`;
+      toast(t("copy_blocked_rules"), "err", list);
+    } else if (res.reason === "paste-hostile images" && res.paste_hostile_images.length > 0) {
+      const list = `<ul class="toast-list">${res.paste_hostile_images.slice(0, 5).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`;
+      toast(t("copy_blocked_images"), "err", list);
+    } else {
+      toast(t("copy_failed") + (res.reason || "unknown"), "err");
+    }
+  } catch (e) {
+    toast(t("copy_failed") + String(e), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function doExport() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  try {
+    const { save } = window.__TAURI__.dialog;
+    const path = await save({
+      title: "Export HTML",
+      defaultPath: "wxwright-export.html",
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+    if (!path) return;
+    const saved = await invoke("export_html", { markdown: $("editor").value, themeId: currentTheme, path });
+    toast(t("exported_ok") + saved, "ok");
+  } catch (e) {
+    toast(t("copy_failed") + String(e), "err");
+  }
+}
+async function doValidate() {
+  await convertNow();
+  $("violations-panel").hidden = false;
+  renderViolationsPanel(lastResult ? lastResult.violations : []);
+}
+
+/* ------------------------------------------------------------- AI chat */
+function renderMd(src) {
+  const blocks = [];
+  let s = escapeHtml(src).replace(/```(\w*)\n?([\s\S]*?)```/g, (m, l, c) => {
+    blocks.push(`<pre class="md-pre"><code>${c.replace(/\n+$/, "")}</code></pre>`);
+    return "\u0000" + (blocks.length - 1) + "\u0000";
+  });
+  s = s.replace(/`([^`\n]+)`/g, "<code class='md-icode'>$1</code>");
+  s = s.replace(/^###?\s+(.+)$/gm, "<div class='md-h'>$1</div>");
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(/^[-*]\s+(.+)$/gm, "<div class='md-li'>&bull;&nbsp;$1</div>");
+  s = s.replace(/^\d+\.\s+(.+)$/gm, (m) => `<div class='md-li'>${escapeHtml(m.match(/^\d+/)[0])}.&nbsp;${m.replace(/^\d+\.\s+/, "")}</div>`);
+  s = s.replace(/\n{2,}/g, "<div class='md-gap'></div>");
+  s = s.replace(/\n/g, "<br/>");
+  s = s.replace(/\u0000(\d+)\u0000/g, (m, i) => blocks[+i]);
+  return s;
+}
+function aiProviderChip(settings) {
+  const s = settings || { providers: [], active: null };
+  const p = s.providers.find((x) => x.id === s.active);
+  $("ai-provider-chip").textContent = p ? `${p.name} / ${p.model}` : (lang === "zh-CN" ? "未配置" : "not configured");
+  return p;
+}
+async function refreshProviderChip() {
+  if (!invoke) {
+    $("ai-provider-chip").textContent = lang === "zh-CN" ? "未配置" : "not configured";
+    return;
+  }
+  aiProviderChip(await invoke("ai_settings"));
+}
+let aiStopped = false;
+let aiStartedAt = 0;
+let aiModelName = "";
+let msgPinned = true;
+
+function msgScrollPinned() {
+  const host = $("ai-messages");
+  return host.scrollHeight - host.scrollTop - host.clientHeight < 72;
+}
+function msgScrollBottom(force) {
+  const host = $("ai-messages");
+  if (force || msgPinned) host.scrollTop = host.scrollHeight;
+}
+function updateJumpChip() {
+  const chip = $("ai-jump");
+  if (!chip) return;
+  chip.hidden = msgPinned || !$("ai-messages").children.length;
+}
+
+function appendAiMessage(role, content, streaming = false) {
+  const host = $("ai-messages");
+  const el = document.createElement("div");
+  el.className = `ai-msg ${role}`;
+  const meta = role === "assistant" && aiModelName ? `${aiModelName}` : (role === "user" ? (lang === "zh-CN" ? "你" : "You") : "AI");
+  el.innerHTML = `<div class="role">${meta}</div>
+    <div class="bubble"><span class="content"></span>${streaming ? '<span class="ai-typing"><i></i><i></i><i></i></span>' : ""}</div>`;
+  if (content) el.querySelector(".content").textContent = content;
+  host.appendChild(el);
+  msgScrollBottom(true);
+  return el;
+}
+
+function aiThinkingTimer(el, intervalHandleRef) {
+  const role = el.querySelector(".role");
+  intervalHandleRef.t = setInterval(() => {
+    const secs = ((Date.now() - aiStartedAt) / 1000).toFixed(0);
+    role.textContent = `${aiModelName || "AI"} · ${lang === "zh-CN" ? "思考中" : "thinking"} ${secs}s`;
+  }, 500);
+}
+
+function finalizeAiMessage(el, content, info = {}) {
+  el.querySelector(".cursor")?.remove();
+  el.querySelector(".ai-typing")?.remove();
+  const dur = aiStartedAt ? ((Date.now() - aiStartedAt) / 1000).toFixed(1) : null;
+  const usage = info.usage;
+  const tokens = usage && usage.completion_tokens ? `${usage.completion_tokens} tok` : null;
+  const role = el.querySelector(".role");
+  role.textContent = [aiModelName || "AI", info.stopped ? (lang === "zh-CN" ? "已停止" : "stopped") : null, dur ? dur + "s" : null, tokens]
+    .filter(Boolean).join(" · ");
+  const contentEl = el.querySelector(".content");
+  contentEl.classList.add("md");
+  contentEl.innerHTML = renderMd(content);
+  const actions = document.createElement("div");
+  actions.className = "msg-actions";
+  const actionsSpec = [
+    [t("ai_insert"), () => insertAtCursor(content)],
+    [t("ai_replace"), () => { $("editor").value = content; dirty = true; $("stat-saved").textContent = t("not_saved"); convertNow(); }],
+    [t("ai_copy"), async () => { await copyPlain(content); toast(t("copied_text"), "ok"); }],
+  ];
+  for (const [label, fn] of actionsSpec) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    actions.appendChild(b);
+  }
+  el.appendChild(actions);
+  msgScrollBottom();
+}
+
+function insertAtCursor(text) {
+  const ed = $("editor");
+  const start = ed.selectionStart ?? ed.value.length;
+  const before = ed.value.slice(0, start);
+  const after = ed.value.slice(ed.selectionEnd ?? start);
+  ed.value = before + text + after;
+  dirty = true;
+  $("stat-saved").textContent = t("not_saved");
+  if (window.Mozai) Mozai.typing();
+  scheduleConvert();
+}
+function buildQuickPrompt(kind) {
+  const md = $("editor").value;
+  const ctx = md.trim().length > 0 ? `
+
+当前文章内容：
+
+${md.slice(0, 6000)}` : "";
+  const zh = lang === "zh-CN";
+  switch (kind) {
+    case "polish": return (zh ? "请润色下面这篇公众号文章，保持 Markdown 格式与结构，直接输出润色后的全文。" : "Polish this article, keep Markdown format, output the full text.") + ctx;
+    case "continue": return (zh ? "请为下面的公众号文章续写 2-3 个段落，保持风格一致，直接输出续写内容。" : "Continue this article by 2-3 paragraphs in the same style.") + ctx;
+    case "title": return (zh ? "为下面的公众号文章起 5 个吸引人的标题，每行一个，不要编号。" : "Propose 5 catchy titles for this article, one per line.") + ctx;
+    case "outline": return (zh ? "我想写一篇公众号文章，请给出一份结构清晰的文章提纲（Markdown 列表）。主题：请结合我的描述。" : "Draft a clear article outline (Markdown list). Topic: see my description.") + ctx;
+    case "poster": return (zh ? "为公众号头图写一句主标题文案与一句副标题文案（共两行，直接输出，不要解释），主题结合当前文章。" : "Write one headline and one subline for an MP cover image, two lines only.") + ctx;
+    default: return kind;
+  }
+}
+const AI_SYSTEM = () => lang === "zh-CN"
+  ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。"
+  : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables.";
+
+
+async function aiSend(text) {
+  if (!invoke) { demoStream(text); return; }
+  if (aiBusy) return;
+  const baseText = text.trim();
+  if (!baseText) return;
+  aiBusy = true;
+  aiStopped = false;
+  aiStartedAt = Date.now();
+  if (window.Mozai) Mozai.setBusy(true);
+  // attachments become part of the user message (file name + content)
+  let content = baseText;
+  if (pendingAttachments.length > 0) {
+    const blocks = pendingAttachments
+      .map((a) => `${lang === "zh-CN" ? "【附件" : "[Attachment"} ${a.name}】\n${a.content}`)
+      .join("\n\n");
+    content = `${blocks}\n\n${content}`;
+    pendingAttachments = [];
+    renderAttachRow();
+  }
+  try {
+    const st = await invoke("ai_settings");
+    aiModelName = st.providers.find((p) => p.id === st.active)?.model || "AI";
+  } catch (e) { aiModelName = "AI"; }
+  const sendBtn = $("btn-ai-send");
+  sendBtn.innerHTML = '<svg class="icon"><use href="#i-stop"/></svg>';
+  sendBtn.classList.add("stopping");
+  sendBtn.title = lang === "zh-CN" ? "停止生成" : "Stop";
+  appendAiMessage("user", content);
+  aiHistory.push({ role: "user", content });
+  const el = appendAiMessage("assistant", "", true);
+  const contentEl = el.querySelector(".content");
+  const timerRef = {};
+  aiThinkingTimer(el, timerRef);
+  let acc = "";
+  let gotFirst = false;
+  // incremental append: a dedicated text node (no full-text rewrites)
+  let textNode = document.createTextNode("");
+  const onChunk = (ev) => {
+    if (!gotFirst) {
+      gotFirst = true;
+      clearInterval(timerRef.t);
+      el.querySelector(".ai-typing")?.remove();
+      contentEl.appendChild(textNode);
+    }
+    textNode.appendData(ev.payload);
+    acc += ev.payload;
+    requestAnimationFrame(() => msgScrollBottom());
+  };
+  const onDone = (ev) => {
+    cleanup();
+    const stopped = !!(ev && ev.payload && ev.payload.stopped);
+    const usage = ev && ev.payload ? ev.payload.usage : null;
+    if (!acc) acc = stopped ? (lang === "zh-CN" ? "（已停止）" : "(stopped)") : "";
+    finalizeAiMessage(el, acc, { stopped, usage });
+    if (!stopped) {
+      aiHistory.push({ role: "assistant", content: acc });
+      if (aiHistory.length > 24) aiHistory = aiHistory.slice(-24);
+    }
+  };
+  const onError = (ev) => {
+    cleanup();
+    el.classList.add("error");
+    contentEl.textContent = acc || (ev.payload || "error");
+    el.querySelector(".ai-typing")?.remove();
+    el.querySelector(".cursor")?.remove();
+  };
+  const un1 = listen("ai-chunk", onChunk);
+  const un2 = listen("ai-done", onDone);
+  const un3 = listen("ai-error", onError);
+  function cleanup() {
+    aiBusy = false;
+    if (window.Mozai) Mozai.setBusy(false);
+    clearInterval(timerRef.t);
+    sendBtn.innerHTML = '<svg class="icon"><use href="#i-send"/></svg>';
+    sendBtn.classList.remove("stopping");
+    sendBtn.title = lang === "zh-CN" ? "发送" : "Send";
+    un1.then((f) => f());
+    un2.then((f) => f());
+    un3.then((f) => f());
+    updateJumpChip();
+  }
+  try {
+    await invoke("ai_chat", {
+      messages: [{ role: "system", content: AI_SYSTEM() }, ...aiHistory],
+      temperature: 0.7,
+    });
+  } catch (e) {
+    // errors surface via ai-error; keep partial text visible
+  }
+}
+
+/* demo harness: canned markdown streamed locally so the whole UX is
+   verifiable without a backend */
+async function demoStream(text) {
+  if (aiBusy) return;
+  aiBusy = true;
+  aiStartedAt = Date.now();
+  aiModelName = "demo";
+  const sendBtn = $("btn-ai-send");
+  sendBtn.innerHTML = '<svg class="icon"><use href="#i-stop"/></svg>';
+  sendBtn.classList.add("stopping");
+  appendAiMessage("user", text);
+  const el = appendAiMessage("assistant", "", true);
+  const contentEl = el.querySelector(".content");
+  let acc = "";
+  let gotFirst = false;
+  let textNode = document.createTextNode("");
+  const demoText = [
+    "# 墨仔写作建议\n",
+    "把这段改成**三段式**：开头一句话给结论，中间给证据，结尾给行动。\n\n",
+    "- 先写烂，再改好\n- 删掉一半，文章就活了\n\n",
+    "```rust\nfn main() {\n    println!(\"hello 码聋\");\n}\n```\n\n",
+    "需要我把这套结构直接**替换进文章**吗？",
+  ].join("");
+  let i = 0;
+  const timer = setInterval(() => {
+    if (aiStopped) { clearInterval(timer); finish(true); return; }
+    if (i >= demoText.length) { clearInterval(timer); finish(false); return; }
+    if (!gotFirst) {
+      gotFirst = true;
+      el.querySelector(".ai-typing")?.remove();
+      contentEl.appendChild(textNode);
+    }
+    textNode.appendData(demoText[i]);
+    acc += demoText[i];
+    i++;
+    requestAnimationFrame(() => msgScrollBottom());
+  }, 28);
+  function finish(stopped) {
+    aiBusy = false;
+    sendBtn.innerHTML = '<svg class="icon"><use href="#i-send"/></svg>';
+    sendBtn.classList.remove("stopping");
+    if (!acc) acc = "(stopped)";
+    finalizeAiMessage(el, acc, { stopped });
+  }
+}
+
+/* ---------------------------------------------------------- AI settings */
+function openModal(id) { $(id).hidden = false; }
+function closeModal(id) { $(id).hidden = true; }
+async function renderProviderList() {
+  const host = $("provider-list");
+  if (!invoke) {
+    host.innerHTML = `<div class="provider-row"><div class="p-main"><div class="p-name">DeepSeek（演示）</div><div class="p-meta">https://api.deepseek.com · deepseek-chat</div></div></div>`;
+    return;
+  }
+  const s = await invoke("ai_settings");
+  aiProviderChip(s);
+  host.innerHTML =
+    s.providers.length === 0
+      ? `<div class="sidebar-empty">${lang === "zh-CN" ? "尚未添加 Provider" : "No provider yet"}</div>`
+      : s.providers
+          .map(
+            (p) => `<div class="provider-row${p.id === s.active ? " active" : ""}" data-id="${escapeHtml(p.id)}">
+              <span class="brand-tile p-logo">${brandTileHTML(p, 22)}</span>
+              <div class="p-main">
+                <div class="p-name">${escapeHtml(p.name)}</div>
+                <div class="p-meta">${escapeHtml(p.base_url)} · ${escapeHtml(p.model)} · ${escapeHtml(p.key_hint)}</div>
+              </div>
+              ${p.id === s.active ? `<span class="p-badge">${t("active_badge")}</span>` : ""}
+              <button type="button" class="btn btn-ghost btn-icon p-edit" title="edit" data-edit="${escapeHtml(p.id)}"><svg class="icon icon-sm"><use href="#i-gear"/></svg></button>
+              <button type="button" class="p-del" title="delete" data-del="${escapeHtml(p.id)}"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+            </div>`
+          )
+          .join("");
+  host.querySelectorAll(".provider-row").forEach((row) => {
+    row.addEventListener("click", async (e) => {
+      if (e.target.closest(".p-del") || e.target.closest(".p-edit")) return;
+      const s2 = await invoke("ai_set_active", { id: row.dataset.id });
+      renderProviderList();
+      aiProviderChip(s2);
+    });
+  });
+  host.querySelectorAll("[data-edit]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const s2 = await invoke("ai_settings");
+      const p = s2.providers.find((x) => x.id === btn.dataset.edit);
+      if (!p) return;
+      $("pf-id").value = p.id;
+      $("pf-name").value = p.name;
+      $("pf-model").value = p.model;
+      $("pf-base").value = p.base_url;
+      $("pf-key").value = "";
+      $("pf-logo").value = p.logo || "";
+      $("pf-key").placeholder = t("f_key_hint");
+    });
+  });
+  host.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const s2 = await invoke("ai_delete_provider", { id: btn.dataset.del });
+      renderProviderList();
+      aiProviderChip(s2);
+    });
+  });
+}
+async function saveProviderFromForm() {
+  const provider = {
+    id: $("pf-id").value || "",
+    name: $("pf-name").value.trim(),
+    base_url: $("pf-base").value.trim(),
+    model: $("pf-model").value.trim(),
+  };
+  const key = $("pf-key").value.trim();
+  provider.logo = $("pf-logo").value.trim() || null;
+  const s = key
+    ? await invoke("ai_save_provider_with_key", { provider, apiKey: key })
+    : await invoke("ai_save_provider", { provider });
+  ["pf-id", "pf-name", "pf-model", "pf-base", "pf-key", "pf-logo"].forEach((id) => ($(id).value = ""));
+  renderProviderList();
+  aiProviderChip(s);
+  return s;
+}
+async function hasProvider() {
+  if (!invoke) return false;
+  const s = await invoke("ai_settings");
+  return !!(s.active && s.providers.find((p) => p.id === s.active));
+}
+
+/* ---------------------------------------------------------- agent panel */
+async function loadAgentCard() {
+  const pre = $("agent-card-pre");
+  if (pre.dataset.loaded === "1") return;
+  if (invoke) {
+    pre.textContent = await invoke("agent_card_markdown");
+  } else {
+    try {
+      pre.textContent = await fetch("demo-agent-card.md").then((r) => r.text());
+    } catch (e) {
+      pre.textContent = "demo";
+    }
+  }
+  pre.dataset.loaded = "1";
+}
+
+/* ------------------------------------------------------- AI theme modal */
+async function generateTheme() {
+  const desc = $("theme-desc").value.trim();
+  if (!desc) { toast(lang === "zh-CN" ? "请先描述想要的风格" : "Describe the style first", "err"); return; }
+  if (!(await hasProvider())) { toast(t("theme_need_ai"), "err"); return; }
+  const btn = $("btn-theme-generate");
+  btn.disabled = true;
+  $("theme-status").textContent = t("theme_generating");
+  try {
+    const res = await invoke("ai_generate_theme", { description: desc });
+    // refresh theme list and apply
+    const themes = await invoke("list_themes");
+    $("theme-select").innerHTML = themes
+      .map((x) => `<option value="${x.id}">${escapeHtml(lang === "zh-CN" ? x.name_zh || x.name : x.name)}</option>`)
+      .join("");
+    currentTheme = res.id;
+    $("theme-select").value = currentTheme;
+    localStorage.setItem("wxwright-theme", currentTheme);
+    $("theme-status").textContent = "";
+    toast(t("theme_done", res.name_zh || res.name), "ok");
+    window.Mozai && Mozai.celebrate();
+    convertNow();
+    if (res.warnings && res.warnings.length > 0) {
+      toast((lang === "zh-CN" ? "提示：" : "Warnings: ") + res.warnings.slice(0, 3).join("; "));
+    }
+  } catch (e) {
+    $("theme-status").textContent = String(e);
+    toast(String(e), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* --------------------------------------------------------- poster studio */
+const POSTER_PRESETS = {
+  "1080x460": { w: 1080, h: 460, scene: "公众号头图 2.35:1" },
+  "1080x1080": { w: 1080, h: 1080, scene: "公众号次图 1:1" },
+  "500x500": { w: 500, h: 500, scene: "小方图 1:1" },
+  "1280x720": { w: 1280, h: 720, scene: "正文横图 16:9" },
+  "1080x1440": { w: 1080, h: 1440, scene: "正文竖图 3:4" },
+};
+function posterSize() {
+  const v = $("poster-preset").value;
+  if (v === "custom") {
+    return { w: Math.max(100, Math.min(4096, parseInt($("poster-w").value) || 800)), h: Math.max(100, Math.min(4096, parseInt($("poster-h").value) || 600)), scene: "自定义海报" };
+  }
+  return POSTER_PRESETS[v];
+}
+function posterTemplate(w, h, tpl = "cover") {
+  if (tpl === "quote") return posterQuoteCard(w, h);
+  if (tpl === "pic") return posterPictureCard(w, h);
+  const zh = lang === "zh-CN";
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: ${w}px; height: ${h}px; overflow: hidden;
+    font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; }
+  .hero {
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, #2F6CEA 0%, #6C9BFF 60%, #EFF4FE 100%);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 ${Math.round(w * 0.08)}px; color: #fff;
+  }
+  .kicker { font-size: ${Math.round(h * 0.05)}px; letter-spacing: 4px; opacity: 0.85; }
+  .title { font-size: ${Math.round(h * 0.16)}px; font-weight: 700; margin: ${Math.round(h * 0.03)}px 0; }
+  .sub { font-size: ${Math.round(h * 0.07)}px; opacity: 0.92; }
+  .sign { position: absolute; right: ${Math.round(w * 0.05)}px; bottom: ${Math.round(h * 0.07)}px;
+    font-size: ${Math.round(h * 0.045)}px; opacity: 0.85; }
+</style></head>
+<body>
+  <div class="hero">
+    <div class="kicker">WXWRIGHT STUDIO</div>
+    <div class="title">${zh ? "在这里写下你的标题" : "Write your title here"}</div>
+    <div class="sub">${zh ? "副标题：一句话讲清楚这篇文章" : "One sentence that sells the article"}</div>
+    <div class="sign">AI瑶 · 公众号 码聋</div>
+  </div>
+</body></html>`;
+}
+function posterQuoteCard(w, h) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: ${w}px; height: ${h}px; overflow: hidden;
+    font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; }
+  .card { width: 100%; height: 100%; background: #FBF7F0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 0 ${Math.round(w * 0.1)}px; position: relative; }
+  .mark { font-size: ${Math.round(h * 0.14)}px; color: #B45309; font-weight: 700; line-height: 1; }
+  .quote { font-size: ${Math.round(h * 0.062)}px; color: #292524; line-height: 1.9;
+    text-align: center; margin: ${Math.round(h * 0.04)}px 0; }
+  .rule { width: ${Math.round(w * 0.14)}px; height: 3px; background: #B45309; margin: ${Math.round(h * 0.035)}px auto; }
+  .sign { position: absolute; bottom: ${Math.round(h * 0.06)}px;
+    font-size: ${Math.round(h * 0.032)}px; color: #A8A29E; letter-spacing: 2px; }
+</style></head>
+<body><div class="card">
+  <div class="mark">"</div>
+  <div class="quote">写作是把噪音调成静音，<br>留白是文章的呼吸。</div>
+  <div class="rule"></div>
+  <div class="sign">AI瑶 · 公众号 码聋</div>
+</div></body></html>`;
+}
+
+function posterPictureCard(w, h) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: ${w}px; height: ${h}px; overflow: hidden;
+    font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; }
+  .card { width: 100%; height: 100%; background: #FFFFFF;
+    display: flex; flex-direction: column; }
+  .pic { flex: 1 1 auto; background: #EFF4FE; display: flex; align-items: center;
+    justify-content: center; color: #2F6CEA; font-size: ${Math.round(w * 0.035)}px;
+    /* 把下面的占位换成 data URI 图片：<img src="data:image/png;base64,..."> */
+  }
+  .bar { flex: 0 0 auto; padding: ${Math.round(h * 0.045)}px ${Math.round(w * 0.07)}px;
+    background: #FFFFFF; border-top: 1px solid #E4E7EC; }
+  .t1 { font-size: ${Math.round(w * 0.045)}px; font-weight: 700; color: #1F2328; }
+  .t2 { font-size: ${Math.round(w * 0.028)}px; color: #57606A; margin-top: ${Math.round(h * 0.012)}px; }
+  .sign { position: absolute; right: ${Math.round(w * 0.05)}px; bottom: ${Math.round(h * 0.025)}px;
+    font-size: ${Math.round(w * 0.022)}px; color: #8B949E; }
+</style></head>
+<body><div class="card" style="position: relative;">
+  <div class="pic">图片区域：将 img.src 换成 data URI 或在海报工坊中改写</div>
+  <div class="bar">
+    <div class="t1">在这里写贴图标题</div>
+    <div class="t2">一行说明文字，放在图片下方更聚焦</div>
+  </div>
+  <div class="sign">AI瑶 · 公众号 码聋</div>
+</div></body></html>`;
+}
+
+function posterSystemPrompt(w, h, scene) {
+  return `你是公众号海报设计师。输出一个完整自包含的 HTML 文档：单文件、全部样式内联在 <style> 中、严禁任何外部资源（外链图片/字体/脚本都不允许，图片只能内嵌 data URI）。html 与 body 尺寸固定为 ${w}px × ${h}px，overflow hidden。可以使用系统字体（font-family 不受限，因为产物是图片）。设计需高级、极简、留白充分，适合微信公众号${scene}。若内容适合，在角落加署名「AI瑶 · 公众号 码聋」。只输出 HTML 代码，不要任何解释。`;
+}
+function updatePosterPreview() {
+  const { w, h } = posterSize();
+  const iframe = $("poster-preview");
+  iframe.srcdoc = $("poster-html").value;
+  iframe.style.width = w + "px";
+  iframe.style.height = h + "px";
+  const box = $("poster-preview-box");
+  const bw = (box.clientWidth || 460) - 20;
+  const bh = (box.clientHeight || 350) - 20;
+  const scale = Math.min(1, bw / w, bh / h);
+  iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  $("poster-preview-meta").textContent = `${w} × ${h} px · 预览 ${(scale * 100).toFixed(0)}%`;
+}
+async function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+async function htmlToPngBlob(html, w, h, scale) {
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = `position:fixed;left:-99999px;top:0;width:${w}px;height:${h}px;border:0;`;
+  document.body.appendChild(iframe);
+  await new Promise((res) => { iframe.onload = res; iframe.srcdoc = html; });
+  await new Promise((r) => setTimeout(r, 150));
+  const doc = iframe.contentDocument;
+  const serialized = new XMLSerializer().serializeToString(doc.documentElement);
+  iframe.remove();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}"><foreignObject width="${w}" height="${h}">${serialized}</foreignObject></svg>`;
+  const img = new Image();
+  const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error(lang === "zh-CN" ? "光栅化失败：HTML 需自包含，不能引用外部资源" : "Rasterization failed: HTML must be self-contained"));
+    img.src = url;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.drawImage(img, 0, 0, w, h);
+  return await new Promise((res) => canvas.toBlob(res, "image/png"));
+}
+async function posterExport(insert) {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  const { w, h } = posterSize();
+  try {
+    $("status-text").textContent = t("poster_rasterizing");
+    const blob = await htmlToPngBlob($("poster-html").value, w, h, 1);
+    const b64 = await blobToBase64(blob);
+    const name = `poster-${w}x${h}-${Date.now()}.png`;
+    const path = await invoke("import_image_bytes", { filename: name, base64Data: b64 });
+    if (insert) {
+      insertAtCursor(`\n![海报](${path})\n`);
+      closeModal("modal-poster");
+      toast(t("poster_inserted"), "ok");
+      window.Mozai && Mozai.celebrate();
+    } else {
+      const { save } = window.__TAURI__.dialog;
+      const target = await save({ title: "Save PNG", defaultPath: name, filters: [{ name: "PNG", extensions: ["png"] }] });
+      if (target) {
+        await invoke("write_file_base64", { path: target, base64Data: b64 });
+        toast(t("poster_saved") + " " + target, "ok");
+      }
+    }
+    $("status-text").textContent = t("ready");
+  } catch (e) {
+    $("status-text").textContent = t("ready");
+    toast(String(e), "err");
+  }
+}
+async function posterAiGenerate() {
+  if (!(await hasProvider())) { toast(t("poster_need_ai"), "err"); return; }
+  const { w, h, scene } = posterSize();
+  const desc = $("poster-desc").value.trim();
+  if (!desc) { toast(lang === "zh-CN" ? "请先描述海报内容与风格" : "Describe the poster first", "err"); return; }
+  const btn = $("btn-poster-ai");
+  btn.disabled = true;
+  $("status-text").textContent = t("poster_generating");
+  try {
+    const html = await invoke("ai_complete", {
+      system: posterSystemPrompt(w, h, scene),
+      user: `设计要求：${desc}\n场景：公众号${scene}，尺寸 ${w}×${h}。`,
+      maxTokens: 4096,
+    });
+    $("poster-html").value = html.trim();
+    updatePosterPreview();
+    toast(lang === "zh-CN" ? "HTML 已生成，可直接编辑后导出" : "HTML generated; edit freely before export", "ok");
+  } catch (e) {
+    toast(String(e), "err");
+  } finally {
+    btn.disabled = false;
+    $("status-text").textContent = t("ready");
+  }
+}
+
+/* ------------------------------------------------------------- svg kit */
+const SVG_SNIPPETS = {
+  blink_btn: {
+    label: () => (lang === "zh-CN" ? "闪烁引导按钮" : "Blinking CTA"),
+    svg: `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="240" height="56" viewBox="0 0 240 56" style="display: inline-block;"><rect x="2" y="2" width="236" height="52" rx="26" fill="#2F6CEA"><animate attributeName="opacity" values="1;0.45;1" dur="1.1s" begin="touchstart; click" repeatCount="2"/></rect><text x="120" y="35" text-anchor="middle" font-size="20" font-weight="600" fill="#FFFFFF">点击查看</text></svg></section>`,
+  },
+  draw_border: {
+    label: () => (lang === "zh-CN" ? "描边绘制卡" : "Stroke-draw card"),
+    svg: `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 140" style="width: 100%; display: block;"><rect x="2" y="2" width="673" height="136" rx="14" fill="#F7F8FA" stroke="#2F6CEA" stroke-width="3" stroke-dasharray="2000" stroke-dashoffset="0"><animate attributeName="stroke-dashoffset" values="2000;0" dur="1.4s" begin="touchstart; click" fill="freeze"/></rect><text x="30" y="62" font-size="24" font-weight="600" fill="#1F2328">点击绘制边框</text><text x="30" y="100" font-size="17" fill="#57606A">微信内点击卡片即可看到描边动画</text></svg></section>`,
+  },
+  fade_in: {
+    label: () => (lang === "zh-CN" ? "渐显标语" : "Fade-in slogan"),
+    svg: `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="640" height="120" viewBox="0 0 640 120" style="width: 100%; max-width: 640px;"><text x="320" y="70" text-anchor="middle" font-size="30" font-weight="700" fill="#1F2328" opacity="1">写作是把噪音调成静音<animate attributeName="opacity" values="0;1" dur="1.2s" begin="touchstart; click" fill="freeze"/></text></svg></section>`,
+  },
+};
+
+/* -------------------------------------------------------- image import */
+const IMG_EXT = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+async function importDroppedImages(paths) {
+  const imgs = paths.filter((p) => IMG_EXT.some((x) => p.toLowerCase().endsWith(x)));
+  for (const p of imgs) {
+    try {
+      const asset = await invoke("import_image_from_path", { path: p });
+      insertAtCursor(`\n![图片](${asset})\n`);
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  }
+  if (imgs.length > 0) {
+    toast(t("img_imported", imgs.length), "ok");
+    return true;
+  }
+  return false;
+}
+
+/* ----------------------------------------------------------------- init */
+function autoGrow(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
+/* --------------------------------------------------------- fit studio */
+let fitSourcePath = null;
+let fitImage = null;
+
+function fitDraw() {
+  if (!fitImage) return;
+  const [w, h] = $("fit-preset").value.split("x").map((x) => parseInt(x));
+  const mode = $("fit-mode").value;
+  const scale = parseInt($("fit-scale").value) || 1;
+  const canvas = $("fit-canvas");
+  const box = canvas.parentElement.clientWidth - 28 || 320;
+  const dispScale = Math.min(1, box / w);
+  canvas.style.width = w * dispScale + "px";
+  canvas.style.height = h * dispScale + "px";
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  if (mode === "contain") {
+    ctx.fillStyle = $("fit-bg").value || "#FFFFFF";
+    ctx.fillRect(0, 0, w, h);
+  }
+  let dw, dh;
+  if (mode === "cover") {
+    const sc = Math.max(w / fitImage.width, h / fitImage.height);
+    dw = fitImage.width * sc;
+    dh = fitImage.height * sc;
+  } else {
+    const sc = Math.min(w / fitImage.width, h / fitImage.height);
+    dw = fitImage.width * sc;
+    dh = fitImage.height * sc;
+  }
+  ctx.drawImage(fitImage, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  $("fit-meta").textContent = `${w} × ${h} px · ${scale}x · ${mode === "cover" ? (lang === "zh-CN" ? "裁切填满" : "cover") : (lang === "zh-CN" ? "完整置入" : "contain")}`;
+}
+async function openFitStudio(path) {
+  fitSourcePath = path;
+  openModal("modal-fit");
+  const uri = await invoke("asset_data_uri", { path });
+  fitImage = await new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = uri;
+  });
+  fitDraw();
+}
+async function fitExport() {
+  if (!fitImage || !invoke) return;
+  const [w, h] = $("fit-preset").value.split("x").map((x) => parseInt(x));
+  const scale = parseInt($("fit-scale").value) || 1;
+  const mode = $("fit-mode").value;
+  const canvas = document.createElement("canvas");
+  canvas.width = w * scale;
+  canvas.height = h * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  if (mode === "contain") {
+    ctx.fillStyle = $("fit-bg").value || "#FFFFFF";
+    ctx.fillRect(0, 0, w, h);
+  }
+  let dw, dh;
+  if (mode === "cover") {
+    const sc = Math.max(w / fitImage.width, h / fitImage.height);
+    dw = fitImage.width * sc;
+    dh = fitImage.height * sc;
+  } else {
+    const sc = Math.min(w / fitImage.width, h / fitImage.height);
+    dw = fitImage.width * sc;
+    dh = fitImage.height * sc;
+  }
+  ctx.drawImage(fitImage, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const b64 = canvas.toDataURL("image/png").split(",")[1];
+  const name = `fit-${w}x${h}-${Date.now()}.png`;
+  const out = await invoke("import_image_bytes", { filename: name, base64Data: b64 });
+  insertAtCursor(`
+![配图](${out})
+`);
+  closeModal("modal-fit");
+  toast(t("poster_inserted"), "ok");
+  window.Mozai && Mozai.celebrate();
+}
+
+/* Device frames */
+const DEVICE_OUTER = { ios: [413, 872], android: [432, 935] };
+function applyDevice() {
+  const kind = localStorage.getItem("wxwright-device") || "ios";
+  document.querySelectorAll(".seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.device === kind);
+  });
+  const device = $("device");
+  device.classList.remove("ios", "android");
+  device.classList.add(kind);
+  fitDevice();
+}
+function fitDevice() {
+  const stage = $("device-stage");
+  const pane = stage.closest(".pane-preview");
+  if (!pane) return;
+  const kind = localStorage.getItem("wxwright-device") || "ios";
+  const [w, h] = DEVICE_OUTER[kind];
+  const availH = pane.clientHeight - 86;
+  const availW = pane.clientWidth - 32;
+  const scale = Math.max(0.3, Math.min(1, availH / h, availW / w));
+  const scaler = $("device-scaler");
+  scaler.style.width = w * scale + "px";
+  scaler.style.height = h * scale + "px";
+  const dev = $("device");
+  dev.style.transform = "scale(" + scale + ")";
+  dev.style.transformOrigin = "top left";
+}
+function toggleDark() {
+  darkPreview = !darkPreview;
+  $("device").classList.toggle("dark", darkPreview);
+  $("btn-device-dark").querySelector("use").setAttribute("href", darkPreview ? "#i-sun" : "#i-moon");
+  localStorage.setItem("wxwright-dark", darkPreview ? "1" : "0");
+  if (darkPreview) toast(t("dark_hint"));
+}
+
+/* ---------------------------------------------------------- attachments */
+let pendingAttachments = [];
+function renderAttachRow() {
+  const row = $("attach-row");
+  row.innerHTML = "";
+  row.hidden = pendingAttachments.length === 0;
+  for (const a of pendingAttachments) {
+    const chip = document.createElement("span");
+    chip.className = "attach-chip";
+    chip.innerHTML = `<svg class="icon icon-sm"><use href="#i-clip"/></svg><span class="a-name">${escapeHtml(a.name)}</span><button type="button" title="remove"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>`;
+    chip.querySelector("button").addEventListener("click", () => {
+      pendingAttachments = pendingAttachments.filter((x) => x !== a);
+      renderAttachRow();
+    });
+    row.appendChild(chip);
+  }
+}
+async function addAttachment() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  if (pendingAttachments.length >= 3) { toast(lang === "zh-CN" ? "最多 3 个附件" : "Max 3 attachments", "err"); return; }
+  try {
+    const { open } = window.__TAURI__.dialog;
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Text", extensions: ["md", "markdown", "txt"] }],
+    });
+    if (!path) return;
+    let content = await invoke("read_text_file", { path });
+    if (content.length > 6000) content = content.slice(0, 6000) + (lang === "zh-CN" ? "\n…（超长截断）" : "\n…(truncated)");
+    const name = String(path).split(/[\\/]/).pop();
+    pendingAttachments.push({ name, content });
+    renderAttachRow();
+  } catch (e) {
+    toast(String(e), "err");
+  }
+}
+
+/* ------------------------------------------------------ brand marks */
+/* Hand-drawn inline marks in official brand colors (zero external requests).
+   A provider can override with a custom `logo` data URI in settings. */
+const BRAND_MARKS = {
+  openai: {
+    match: ["openai"],
+    bg: "#0D0D0D",
+    mark: '<g fill="#FFFFFF"><path d="M12 3.4c2.6 0 4.1 2.2 3.5 4.5l-.3 1.1a4.9 4.9 0 0 1 3.5 6.8 4.9 4.9 0 0 1-6.9 6.9A4.9 4.9 0 0 1 5.3 19 4.9 4.9 0 0 1 5 12.4a4.9 4.9 0 0 1 3.2-6.9C8.7 3.6 10.2 3.4 12 3.4Z" opacity=".95"/></g>',
+  },
+  anthropic: {
+    match: ["anthropic", "claude"],
+    bg: "#CC785C",
+    mark: '<path fill="#FFFFFF" d="M12 3.6 14 10l6.4 2L14 14l-2 6.4L10 14l-6.4-2L10 10Z"/>',
+  },
+  gemini: {
+    match: ["gemini", "google"],
+    bg: "#1C69FF",
+    mark: '<path fill="#FFFFFF" d="M12 2.6c.7 5.2 4.2 8.7 9.4 9.4-5.2.7-8.7 4.2-9.4 9.4-.7-5.2-4.2-8.7-9.4-9.4 5.2-.7 8.7-4.2 9.4-9.4Z"/>',
+  },
+  deepseek: {
+    match: ["deepseek"],
+    bg: "#4D6BFE",
+    mark: '<path fill="#FFFFFF" d="M20.5 8.2c-2.7-3.2-7.9-3.6-11-.9-2.7 2.3-3.3 6-1.7 8.9-.9.4-1.9 1.1-2.4 2 1.4.1 2.8-.3 3.8-1 3.4 1.8 7.8 1.1 10.2-1.7 1.6-1.9 1.9-4.5 1.1-7.3ZM15 12.4a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/>',
+  },
+  qwen: {
+    match: ["qwen", "tongyi", "dashscope"],
+    bg: "#6236FF",
+    mark: '<g fill="none" stroke="#FFFFFF" stroke-width="2"><circle cx="12" cy="12" r="6.4"/></g><path fill="#FFFFFF" d="M11 11.2h2v6h-2z"/><circle cx="12" cy="12" r="2.2" fill="#FFFFFF"/>',
+  },
+  kimi: {
+    match: ["kimi", "moonshot"],
+    bg: "#16191E",
+    mark: '<path fill="#FFFFFF" d="M9 5v14h2.2v-5.4L15.4 19H18l-4.6-6.2L17.8 5h-2.7l-3.9 6V5Z"/>',
+  },
+  zhipu: {
+    match: ["zhipu", "glm", "chatglm"],
+    bg: "#3859FF",
+    mark: '<path fill="#FFFFFF" d="M6 6h12v2.6h-8.6v3.2H16v2.4H9.4v3.2H18V20H6Z"/>',
+  },
+  ollama: {
+    match: ["ollama"],
+    bg: "#0F0F0F",
+    mark: '<path fill="#FFFFFF" d="M12 3.6c3.9 0 6.8 2.9 6.8 6.7 0 2.4-1.2 4.4-3 5.6V20h-2.2v-2.2h-3.2V20H8.2v-4.1c-1.8-1.2-3-3.2-3-5.6 0-3.8 2.9-6.7 6.8-6.7Zm-2.4 6.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Zm4.8 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Z"/>',
+  },
+  lmstudio: {
+    match: ["lmstudio", "lm-studio", "localhost:1234"],
+    bg: "#4B87FF",
+    mark: '<path fill="#FFFFFF" d="M5 5h3.2v9.6H19V18H5Z"/>',
+  },
+  agnes: {
+    match: ["agnes"],
+    bg: "#111827",
+    mark: '<path fill="#FFFFFF" d="M6 19 11 5h2l5 14h-2.4l-1.2-3.4H9.6L8.4 19Zm4.3-5.6h3.4L12 8.4Z"/>',
+  },
+  openrouter: {
+    match: ["openrouter"],
+    bg: "#6467F2",
+    mark: '<path fill="#FFFFFF" d="M5 5h9a5 5 0 0 1 1.6 9.7L19 19h-2.8l-3-4H7.8V19H5.8L5 5Zm2.8 2.2v3.6H14a1.8 1.8 0 0 0 0-3.6Z"/>',
+  },
+};
+
+function brandFor(provider) {
+  const hay = [provider && provider.name, provider && provider.base_url, provider && provider.model]
+    .filter(Boolean).join(" ").toLowerCase();
+  for (const [key, brand] of Object.entries(BRAND_MARKS)) {
+    if (brand.match.some((m) => hay.includes(m))) return { key, ...brand };
+  }
+  return null;
+}
+
+function brandTileHTML(provider, size) {
+  size = size || 18;
+  const radius = Math.max(3, Math.round(size * 0.28));
+  const font = Math.max(8, Math.round(size * 0.5));
+  // 1. custom logo wins
+  if (provider && provider.logo) {
+    return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:transparent;border-radius:${radius}px;">
+      <img src="${escapeHtml(provider.logo)}" style="width:100%;height:100%;object-fit:contain;" alt="" />
+    </span>`;
+  }
+  const brand = brandFor(provider || {});
+  const letter = ((provider && provider.name) || "?").trim().charAt(0).toUpperCase();
+  if (!brand) {
+    return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:var(--border-strong);border-radius:${radius}px;font-size:${font}px">${escapeHtml(letter)}</span>`;
+  }
+  // official data-URI logo (e.g. Agnes): white tile, transparent vendor PNG
+  if (brand.dataUri) {
+    return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:#FFFFFF;border:1px solid var(--border);border-radius:${radius}px">
+      <img src="${escapeHtml(brand.dataUri)}" style="width:78%;height:78%;object-fit:contain;" alt="" />
+    </span>`;
+  }
+  // official SVG path (Simple Icons): brand-color tile + mark
+  if (brand.path) {
+    const fg = brand.dark ? "#1F2328" : "#FFFFFF";
+    return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:${brand.color};border-radius:${radius}px">
+      <svg width="${Math.round(size * 0.74)}" height="${Math.round(size * 0.74)}" viewBox="0 0 24 24" aria-hidden="true"><path fill="${fg}" d="${brand.path}"/></svg>
+    </span>`;
+  }
+  // legacy hand-drawn fallback
+  return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:${brand.bg || "var(--border-strong)"};border-radius:${radius}px">
+    <svg width="${Math.round(size * 0.72)}" height="${Math.round(size * 0.72)}" viewBox="0 0 24 24" aria-hidden="true">${brand.mark || ""}</svg>
+  </span>`;
+}
+
+/* ------------------------------------------------------ model quick-select */
+let modelMenuState = { providers: [], active: null };
+async function refreshModelSelect() {
+  const btn = $("ai-model-select");
+  if (!invoke) {
+    // browser demo: sample providers so the brand marks/menu are visible
+    modelMenuState = {
+      providers: [
+        { id: "openai", name: "OpenAI", model: "gpt-4o", logo: null },
+        { id: "claude", name: "Anthropic", model: "claude-sonnet-4", logo: null },
+        { id: "deepseek", name: "DeepSeek", model: "deepseek-chat", logo: null },
+        { id: "kimi", name: "Kimi", model: "kimi-latest", logo: null },
+        { id: "ollama", name: "Ollama 本地", model: "qwen2.5:14b", logo: null },
+      ],
+      active: "openai",
+    };
+    const active = modelMenuState.providers.find((p) => p.id === modelMenuState.active);
+    btn.innerHTML = `${brandTileHTML(active, 15)}<span>${escapeHtml(active.name)}</span><svg class="m-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+    return;
+  }
+  try {
+    const st = await invoke("ai_settings");
+    modelMenuState = { providers: st.providers, active: st.active };
+    const active = st.providers.find((p) => p.id === st.active);
+    // mainstream: closed state shows brand mark + provider (vendor) name only
+    btn.innerHTML = `${brandTileHTML(active, 15)}<span>${escapeHtml(active ? active.name : (lang === "zh-CN" ? "未配置" : "no model"))}</span><svg class="m-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+    aiProviderChip(st);
+  } catch (e) { /* settings unreadable: leave as-is */ }
+}
+
+function renderModelMenu() {
+  const menu = $("ai-model-menu");
+  if (!menu.children.length || true) {
+    menu.innerHTML = modelMenuState.providers
+      .map(
+        (pr) => `<div class="mm-item${pr.id === modelMenuState.active ? " active" : ""}" data-id="${escapeHtml(pr.id)}">
+          ${brandTileHTML(pr, 20)}
+          <div class="mm-main">
+            <div class="mm-name">${escapeHtml(pr.name)}</div>
+            <div class="mm-model">${escapeHtml(pr.model)}</div>
+          </div>
+          <svg class="mm-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </div>`
+      )
+      .join("");
+    menu.querySelectorAll(".mm-item").forEach((row) => {
+      row.addEventListener("click", async () => {
+        if (!invoke) return;
+        try {
+          const st = await invoke("ai_set_active", { id: row.dataset.id });
+          modelMenuState = { providers: st.providers, active: st.active };
+          aiProviderChip(st);
+          $("ai-model-menu").hidden = true;
+          $("ai-model-select").classList.remove("open");
+          await refreshModelSelect();
+          toast(lang === "zh-CN" ? "已切换模型" : "Model switched", "ok");
+        } catch (err) {
+          toast(String(err), "err");
+        }
+      });
+    });
+  }
+}
+
+/* ------------------------------------------------------ comfy image src */
+let comfyImgSrc = "comfy"; // comfy | cloud
+function setComfyImgSrc(src) {
+  comfyImgSrc = src;
+  $("imgsrc-comfy").classList.toggle("active", src === "comfy");
+  $("imgsrc-cloud").classList.toggle("active", src === "cloud");
+  $("comfy-cloud-block").hidden = src !== "cloud";
+  $("comfy-i2i-row").hidden = src !== "comfy" || comfyMode !== "i2i";
+}
+
+/* --------------------------------------------------------- svg kit */
+let svgKitCustom = [];
+try { svgKitCustom = JSON.parse(localStorage.getItem("wxwright-svgkit-custom") || "[]"); } catch (e) { svgKitCustom = []; }
+function saveCustomSvg() {
+  try { localStorage.setItem("wxwright-svgkit-custom", JSON.stringify(svgKitCustom.slice(0, 30))); } catch (e) {}
+}
+
+const SVG_KIT = {
+  blink: {
+    name: () => (lang === "zh-CN" ? "闪烁引导按钮" : "Blinking CTA"),
+    desc: () => (lang === "zh-CN" ? "读者点击/触摸时按钮闪烁两次，常用于引导关注与点击。" : "Blinks twice on tap; use for CTAs."),
+    params: { text: "点击查看", color: "#2F6CEA", textColor: "#FFFFFF" },
+    fields: [
+      ["text", "按钮文字"],
+      ["color", "背景色（色值）"],
+      ["textColor", "文字颜色"],
+    ],
+    build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="240" height="56" viewBox="0 0 240 56" style="display: inline-block;"><rect x="2" y="2" width="236" height="52" rx="26" fill="${p.color}"><animate attributeName="opacity" values="1;0.45;1" dur="1.1s" begin="touchstart; click" repeatCount="2"/></rect><text x="120" y="35" text-anchor="middle" font-size="20" font-weight="600" fill="${p.textColor}">${escapeHtml(p.text)}</text></svg></section>`,
+  },
+  fade: {
+    name: () => (lang === "zh-CN" ? "渐显金句" : "Fade-in slogan"),
+    desc: () => (lang === "zh-CN" ? "点击后金句渐显，适合做章节金句与强调。" : "Fades the line in on tap."),
+    params: { text: "写作是把噪音调成静音。", color: "#1F2328" },
+    fields: [
+      ["text", "金句文字"],
+      ["color", "文字颜色"],
+    ],
+    build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="640" height="120" viewBox="0 0 640 120" style="width: 100%; max-width: 640px;"><text x="320" y="70" text-anchor="middle" font-size="30" font-weight="700" fill="${p.color}" opacity="1">${escapeHtml(p.text)}<animate attributeName="opacity" values="0;1" dur="1.2s" begin="touchstart; click" fill="freeze"/></text></svg></section>`,
+  },
+  expand: {
+    name: () => (lang === "zh-CN" ? "点击展开卡" : "Tap-to-reveal card"),
+    desc: () => (lang === "zh-CN" ? "点击卡片后描边逐渐画出，暗示有隐藏内容。" : "Stroke draws itself on tap."),
+    params: { title: "点我看详情", body: "这段内容在微信里点击卡片即可看到描边动画。", color: "#2F6CEA" },
+    fields: [
+      ["title", "标题"],
+      ["body", "正文"],
+      ["color", "描边颜色"],
+    ],
+    build: (p) => `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 140" style="width: 100%; display: block;"><rect x="2" y="2" width="673" height="136" rx="14" fill="#F7F8FA" stroke="${p.color}" stroke-width="3" stroke-dasharray="2000" stroke-dashoffset="0"><animate attributeName="stroke-dashoffset" values="2000;0" dur="1.4s" begin="touchstart; click" fill="freeze"/></rect><text x="30" y="62" font-size="24" font-weight="600" fill="#1F2328">${escapeHtml(p.title)}</text><text x="30" y="100" font-size="17" fill="#57606A">${escapeHtml(p.body)}</text></svg></section>`,
+  },
+  swap: {
+    name: () => (lang === "zh-CN" ? "点击切换 (A/B)" : "A/B tap swap"),
+    desc: () => (lang === "zh-CN" ? "点击在两句话之间切换，适合做对比、投票感或反转梗。" : "Swap between two lines on tap."),
+    params: { textA: "写公众号最难的是什么？", textB: "是点击之后你看到了答案。", color: "#2F6CEA" },
+    fields: [
+      ["textA", "第一句（A）"],
+      ["textB", "第二句（B）"],
+      ["color", "强调色"],
+    ],
+    build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 150" style="width: 100%; max-width: 677px;"><rect x="1" y="1" width="675" height="148" rx="12" fill="${p.color}" opacity="0.06"/><text x="338" y="70" text-anchor="middle" font-size="24" font-weight="600" fill="${p.color}">${escapeHtml(p.textA)}<animate attributeName="opacity" values="1;0" dur="0.4s" begin="touchstart; click" fill="freeze"/></text><text x="338" y="70" text-anchor="middle" font-size="24" font-weight="600" fill="#1F2328" opacity="0">${escapeHtml(p.textB)}<animate attributeName="opacity" values="0;1" dur="0.4s" begin="touchstart; click" fill="freeze"/></text><text x="338" y="126" text-anchor="middle" font-size="14" fill="#8B949E">点击切换</text></svg></section>`,
+  },
+  countdown: {
+    name: () => (lang === "zh-CN" ? "点击点亮进度条" : "Tap-to-fill bar"),
+    desc: () => (lang === "zh-CN" ? "点击后进度条从 0 涨到 100%，适合进度、完成度、投票结果。" : "Bar fills up on tap."),
+    params: { label: "本期阅读完成率", color: "#2F6CEA" },
+    fields: [
+      ["label", "标签文字"],
+      ["color", "进度条颜色"],
+    ],
+    build: (p) => `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 110" style="width: 100%; display: block;"><text x="2" y="34" font-size="18" font-weight="600" fill="#1F2328">${escapeHtml(p.label)}</text><rect x="2" y="54" width="673" height="18" rx="9" fill="#E4E7EC"/><rect x="2" y="54" width="673" height="18" rx="9" fill="${p.color}"><animate attributeName="width" values="0;640" dur="1.6s" begin="touchstart; click" fill="freeze"/></rect><text x="2" y="98" font-size="14" fill="#8B949E">点击查看</text></svg></section>`,
+  },
+  picfade: {
+    name: () => (lang === "zh-CN" ? "图片渐显卡（可传图）" : "Image fade card"),
+    desc: () => (lang === "zh-CN" ? "上传一张图，点击后在公众号里渐显并带文案条——图文互动的基础组件。" : "Upload an image; it fades in with a caption on tap."),
+    params: { image: "", text: "点击查看图片", color: "#2F6CEA" },
+    fields: [
+      ["image", "上传图片（自动内嵌 data URI）"],
+      ["text", "图片下方文案"],
+      ["color", "文案颜色"],
+    ],
+    build: (p) => {
+      // unique clip id per instance (two picfades in one article must not collide)
+      const uid = "wc" + Math.abs([...(p.text + p.color)].reduce((a, c) => a + c.charCodeAt(0), 7)) + Date.now().toString(36).slice(-4);
+      const imgTag = p.image
+        ? `<image href="${p.image}" xlink:href="${p.image}" x="8" y="8" width="661" height="360" preserveAspectRatio="xMidYMid slice" clip-path="url(#${uid})"><animate attributeName="opacity" values="0.25;1" dur="0.9s" begin="touchstart; click" fill="freeze"/></image>`
+        : `<rect x="8" y="8" width="661" height="360" fill="#EFF4FE"/><text x="338" y="200" text-anchor="middle" font-size="20" fill="#8B949E">${escapeHtml(lang === "zh-CN" ? "先上传一张图片" : "Upload an image first")}</text>`;
+      return `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 677 430" style="width: 100%; display: block;"><defs><clipPath id="${uid}"><rect x="8" y="8" width="661" height="360" rx="12"/></clipPath></defs>${imgTag}<text x="8" y="404" font-size="18" font-weight="600" fill="${p.color}">${escapeHtml(p.text)}</text></svg></section>`;
+    },
+  },
+};
+
+let svgKitKey = "blink";
+let svgKitParams = {};
+
+function currentSvgMarkup() {
+  if (svgKitKey.startsWith("c")) {
+    const idx = parseInt(svgKitKey.slice(1));
+    return svgKitCustom[idx] ? svgKitCustom[idx].svg : "";
+  }
+  const kit = SVG_KIT[svgKitKey];
+  return kit ? kit.build(svgKitParams) : "";
+}
+
+async function svgKitAiGenerate() {
+  const desc = $("svgkit-desc").value.trim();
+  if (!desc) { toast(lang === "zh-CN" ? "请先描述想要的互动效果" : "Describe the effect first", "err"); return; }
+  if (!(await hasProvider())) { toast(lang === "zh-CN" ? "请先在设置中配置 AI Provider" : "Configure an AI provider first", "err"); return; }
+  const btn = $("svgkit-ai-generate");
+  btn.disabled = true;
+  $("svgkit-ai-status").textContent = lang === "zh-CN" ? "AI 生成组件中（自动通过合规校验）..." : "Generating (auto-validated)...";
+  try {
+    const svg = await invoke("ai_generate_svg", { description: desc });
+    svgKitCustom.unshift({ id: "c" + Date.now(), name: desc.slice(0, 14), svg });
+    saveCustomSvg();
+    $("svgkit-ai-status").textContent = "";
+    svgKitKey = "c0";
+    svgKitParams = {};
+    renderSvgKit();
+    toast(lang === "zh-CN" ? "组件已生成，预览后即可插入" : "Component generated", "ok");
+    if (window.Mozai) Mozai.celebrate();
+  } catch (e) {
+    $("svgkit-ai-status").textContent = String(e);
+    toast(String(e), "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderSvgKit() {
+  const list = $("svgkit-list");
+  list.innerHTML = "";
+  const mkItem = (key, name, desc, badge, delIdx) => {
+    const item = document.createElement("div");
+    item.className = "svgkit-item" + (key === svgKitKey ? " active" : "");
+    item.innerHTML = `<span class="k-name">${escapeHtml(name)}${badge ? `<span class="k-badge">${badge}</span>` : ""}</span><span class="k-desc">${escapeHtml(desc)}</span>${delIdx !== null ? `<button type="button" class="k-del" data-del="${delIdx}">删除</button>` : ""}`;
+    item.addEventListener("click", (e) => {
+      if (e.target.closest(".k-del")) return;
+      svgKitKey = key;
+      svgKitParams = key.startsWith("c") ? {} : { ...SVG_KIT[key].params };
+      renderSvgKit();
+    });
+    list.appendChild(item);
+  };
+  for (const key of Object.keys(SVG_KIT)) {
+    mkItem(key, SVG_KIT[key].name(), SVG_KIT[key].desc(), null, null);
+  }
+  svgKitCustom.forEach((c, i) => {
+    mkItem("c" + i, c.name, lang === "zh-CN" ? "AI 生成的自定义组件" : "AI-generated custom", "AI", i);
+  });
+  list.querySelectorAll("[data-del]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      svgKitCustom.splice(parseInt(btn.dataset.del), 1);
+      saveCustomSvg();
+      if (svgKitKey.startsWith("c")) svgKitKey = "blink";
+      renderSvgKit();
+    });
+  });
+
+  const isCustom = svgKitKey.startsWith("c");
+  let kit;
+  if (isCustom) {
+    const idx = parseInt(svgKitKey.slice(1));
+    kit = { fields: [] };
+  } else {
+    kit = SVG_KIT[svgKitKey] || SVG_KIT.blink;
+    svgKitParams = { ...kit.params, ...svgKitParams };
+  }
+  const form = $("svgkit-params");
+  form.innerHTML = "";
+  if (isCustom) {
+    form.innerHTML = `<div class="section-hint" style="margin:0;">${lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting."}</div>`;
+  } else {
+    for (const [key, label] of kit.fields) {
+      const wrap = document.createElement("label");
+      wrap.className = key.includes("Color") || key === "color" ? "" : "span2";
+      if (key === "image") {
+        wrap.innerHTML = `<span>${label}</span>
+          <div class="form-actions" style="margin-top: 0;">
+            <input data-param="${key}" readonly placeholder="${lang === "zh-CN" ? "尚未上传" : "no image yet"}" style="flex: 1;" />
+            <button type="button" class="btn btn-ghost" data-imgpick="${key}">${lang === "zh-CN" ? "上传图片" : "Upload"}</button>
+          </div>`;
+        form.appendChild(wrap);
+      } else {
+        wrap.innerHTML = `<span>${label}</span><input data-param="${key}" value="${escapeHtml(svgKitParams[key] ?? "")}" />`;
+        form.appendChild(wrap);
+      }
+    }
+    form.querySelectorAll("input[data-param]").forEach((inp) => {
+      inp.addEventListener("input", () => {
+        svgKitParams[inp.dataset.param] = inp.value;
+        renderSvgKitPreview();
+      });
+    });
+    form.querySelectorAll("button[data-imgpick]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const inpEl = document.createElement("input");
+        inpEl.type = "file";
+        inpEl.accept = "image/png,image/jpeg,image/webp";
+        inpEl.onchange = () => {
+          const f = inpEl.files && inpEl.files[0];
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => {
+            svgKitParams[btn.dataset.imgpick] = String(r.result);
+            renderSvgKit();
+          };
+          r.readAsDataURL(f);
+        };
+        inpEl.click();
+      });
+    });
+  }
+  renderSvgKitPreview();
+}
+
+function renderSvgKitPreview() {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:18px;display:flex;align-items:center;justify-content:center;background:#fff;}</style></head><body>${currentSvgMarkup()}</body></html>`;
+  $("svgkit-preview").innerHTML = `<iframe srcdoc="${escapeHtml(html)}"></iframe>`;
+}
+
+/* ------------------------------------------------------ assets panel */
+let assetsSelectResolve = null;
+let pendingAssetsCache = null;
+
+async function openAssetsPanel(opts = {}) {
+  opts = opts || {};
+  openModal("modal-assets");
+  const grid = $("assets-grid");
+  $("assets-open-folder").onclick = () => {
+    if (window.__TAURI__ && window.__TAURI__.opener) {
+      invoke("library_dir").then((d) => {
+        const dir = d.replace(/articles$/, "assets");
+        window.__TAURI__.opener.openPath(dir).catch(() => {
+          window.__TAURI__.opener.revealItemInDir(dir).catch(() => {});
+        });
+      });
+    } else {
+      toast(t("demo_mode"), "err");
+    }
+  };
+  if (opts.selectMode) grid.dataset.selectMode = "1";
+  else delete grid.dataset.selectMode;
+
+  if (!invoke) {
+    // Browser demo: placeholder cards so the grid design is verifiable.
+    $("assets-path").textContent = "C:\\Users\\you\\Documents\\wxwright\\assets（演示）";
+    $("assets-count").textContent = "3 张";
+    const names = ["poster-1080x460.png", "t2i-8841-0.png", "paste-771.png"];
+    grid.innerHTML = "";
+    for (const n of names) {
+      const item = document.createElement("div");
+      item.className = "asset-item";
+      item.innerHTML = `<div style="height:96px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);background:var(--bg-subtle);">
+          <svg class="icon" style="width:26px;height:26px;"><use href="#i-image"/></svg></div>
+        <div class="a-meta">${escapeHtml(n)} · demo</div>
+        <div class="a-tools">
+          <button type="button" class="ins"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button>
+          <button type="button" class="fit"><svg class="icon icon-sm"><use href="#i-crop"/></svg></button>
+          <button type="button" class="del"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+        </div>`;
+      grid.appendChild(item);
+    }
+    return;
+  }
+
+  const dir = await invoke("library_dir").then((d) => d.replace(/articles$/, "assets")).catch(() => "");
+  $("assets-path").textContent = dir;
+  const assets = await invoke("list_assets");
+  $("assets-count").textContent = `${assets.length} ${lang === "zh-CN" ? "张" : "items"}`;
+  if (assets.length === 0) {
+    grid.innerHTML = `<div class="assets-empty">
+      <svg class="icon"><use href="#i-image"/></svg>
+      <div class="t">${lang === "zh-CN" ? "素材库还是空的" : "The asset library is empty"}</div>
+      <div class="s">${lang === "zh-CN" ? "海报工坊导出的头图、ComfyUI 生成的图片、粘贴的截图、拖进窗口的图片，都会自动收进这里。" : "Exported posters, ComfyUI images, pasted screenshots and dropped images all land here."}</div>
+      <button class="btn btn-ghost" id="assets-goto-poster">${lang === "zh-CN" ? "去海报工坊生成一张" : "Open Poster Studio"}</button>
+    </div>`;
+    const gotoBtn = grid.querySelector("#assets-goto-poster");
+    if (gotoBtn) gotoBtn.addEventListener("click", () => { closeModal("modal-assets"); $("btn-poster").click(); });
+    return;
+  }
+
+  grid.innerHTML = "";
+  const shown = assets.slice(0, 60);
+  for (const a of shown) {
+    const item = document.createElement("div");
+    item.className = "asset-item";
+    item.dataset.path = a.path;
+    item.innerHTML = `<img alt="${escapeHtml(a.name)}" />
+      <div class="a-meta" title="${escapeHtml(a.path)}">${escapeHtml(a.name)} · ${(a.size / 1024).toFixed(0)}KB</div>
+      <div class="a-tools">
+        <button type="button" class="ins" title="${t("insert_article")}"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button>
+        <button type="button" class="fit" title="${lang === "zh-CN" ? "尺寸工坊" : "Fit to MP sizes"}"><svg class="icon icon-sm"><use href="#i-crop"/></svg></button>
+        <button type="button" class="del" title="delete"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+      </div>`;
+    grid.appendChild(item);
+    invoke("asset_thumb", { path: a.path, size: 320 }).then((uri) => {
+      const im = item.querySelector("img");
+      if (im) im.src = uri;
+    }).catch(() => {
+      invoke("asset_data_uri", { path: a.path }).then((uri) => {
+        const im = item.querySelector("img");
+        if (im) im.src = uri;
+      }).catch(() => {});
+    });
+    item.addEventListener("click", async (e) => {
+      if (e.target.closest(".a-tools")) return;
+      if (grid.dataset.selectMode === "1") {
+        item.classList.add("selected");
+        const picked = a.path;
+        if (assetsSelectResolve) { assetsSelectResolve(picked); assetsSelectResolve = null; }
+        closeModal("modal-assets");
+        return;
+      }
+      insertAtCursor(`\n![图片](${a.path})\n`);
+      toast(t("poster_inserted"), "ok");
+    });
+    item.querySelector(".ins").addEventListener("click", () => {
+      insertAtCursor(`\n![图片](${a.path})\n`);
+      toast(t("poster_inserted"), "ok");
+    });
+    item.querySelector(".fit").addEventListener("click", () => openFitStudio(a.path));
+    item.querySelector(".del").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await invoke("delete_asset", { path: a.path });
+      toast(t("deleted_ok"), "ok");
+      openAssetsPanel({ selectMode: grid.dataset.selectMode === "1" });
+    });
+  }
+}
+
+/* ------------------------------------------------------ comfy panel */
+let comfyMode = "t2i";
+function setComfyMode(mode) {
+  comfyMode = mode;
+  $("comfy-mode-t2i").style.background = mode === "t2i" ? "var(--accent)" : "";
+  $("comfy-mode-t2i").style.color = mode === "t2i" ? "#fff" : "";
+  $("comfy-mode-i2i").style.background = mode === "i2i" ? "var(--accent)" : "";
+  $("comfy-mode-i2i").style.color = mode === "i2i" ? "#fff" : "";
+  $("comfy-i2i-row").hidden = mode !== "i2i";
+}
+function renderComfyStatus(st) {
+  const line = $("comfy-status-line");
+  const chip = $("comfy-chip");
+  const text = `${st.url} · ${st.model} · ${st.online ? (lang === "zh-CN" ? "在线" : "online") : (lang === "zh-CN" ? "离线" : "offline")}`;
+  if (line) line.textContent = (st.online ? "[OK] " : "[--] ") + text;
+  if (chip) {
+    chip.textContent = st.online ? (lang === "zh-CN" ? "ComfyUI 在线" : "ComfyUI online") : (lang === "zh-CN" ? "ComfyUI 离线" : "ComfyUI offline");
+    chip.style.color = st.online ? "var(--ok)" : "var(--text-tertiary)";
+  }
+  return st.online;
+}
+async function openComfyPanel() {
+  openModal("modal-comfy");
+  if (!invoke) {
+    $("comfy-status-line").textContent = t("demo_mode");
+    return;
+  }
+  try {
+    const st = await invoke("comfy_status");
+    $("comfy-url").value = st.url;
+    $("comfy-model").value = st.model;
+    if ($("comfy-launch-path")) $("comfy-launch-path").value = st.launch_path || "";
+    renderComfyStatus(st);
+  } catch (e) {
+    $("comfy-status-line").textContent = String(e);
+  }
+}
+
+let currentTpl = "cover";
+
+/* ------------------------------------------------------------- bind UI */
+function bindUI() {
+  /* editor + preview */
+  $("editor").addEventListener("input", () => {
+    dirty = true;
+    $("stat-saved").textContent = t("not_saved");
+    scheduleConvert();
+    window.Mozai && Mozai.typing();
+  });
+  $("editor").addEventListener("paste", async (e) => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.type && it.type.startsWith("image/")) {
+        e.preventDefault();
+        if (!invoke) { toast(t("demo_mode"), "err"); return; }
+        const blob = it.getAsFile();
+        if (!blob) return;
+        const b64 = await blobToBase64(blob);
+        const ext = (it.type.split("/")[1] || "png").replace("jpeg", "jpg");
+        try {
+          const path = await invoke("import_image_bytes", { filename: `paste-${Date.now()}.${ext}`, base64Data: b64 });
+          insertAtCursor(`\n![图片](${path})\n`);
+          toast(t("img_imported", 1), "ok");
+        } catch (err) {
+          toast(String(err), "err");
+        }
+        return;
+      }
+    }
+  });
+  $("theme-select").addEventListener("change", (e) => {
+    currentTheme = e.target.value;
+    localStorage.setItem("wxwright-theme", currentTheme);
+    convertNow();
+  });
+  $("btn-copy").addEventListener("click", doCopy);
+  $("btn-export").addEventListener("click", doExport);
+  $("btn-validate").addEventListener("click", doValidate);
+  $("rule-chip").addEventListener("click", () => {
+    const panel = $("violations-panel");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) renderViolationsPanel((lastResult && lastResult.violations) || []);
+  });
+
+  /* device frame */
+  document.querySelectorAll(".seg-btn[data-device]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      localStorage.setItem("wxwright-device", btn.dataset.device);
+      applyDevice();
+    });
+  });
+  $("btn-device-dark").addEventListener("click", toggleDark);
+  window.addEventListener("resize", fitDevice);
+
+  /* library */
+  $("btn-library").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
+  $("btn-new-article").addEventListener("click", newArticle);
+  $("btn-import").addEventListener("click", importMdFiles);
+  $("btn-save").addEventListener("click", () => persistCurrent(false));
+  $("library-search").addEventListener("input", (e) => {
+    libraryFilter = e.target.value.trim();
+    refreshLibrary();
+  });
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      persistCurrent(false);
+    }
+  });
+
+  /* AI drawer */
+  $("btn-ai").addEventListener("click", () => {
+    const d = $("ai-drawer");
+    d.hidden = !d.hidden;
+    if (!d.hidden) $("ai-input").focus();
+  });
+  $("btn-ai-close").addEventListener("click", () => { $("ai-drawer").hidden = true; });
+  $("btn-ai-clear").addEventListener("click", () => {
+    aiHistory = [];
+    $("ai-messages").innerHTML = "";
+  });
+  $("btn-ai-send").addEventListener("click", () => {
+    if (aiBusy) {
+      aiStopped = true;
+      invoke("ai_stop").catch(() => {});
+      return;
+    }
+    const v = $("ai-input").value;
+    $("ai-input").value = "";
+    autoGrow($("ai-input"));
+    aiSend(v);
+  });
+  $("ai-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const v = $("ai-input").value;
+      $("ai-input").value = "";
+      autoGrow($("ai-input"));
+      aiSend(v);
+    }
+  });
+  $("ai-input").addEventListener("input", (e) => autoGrow(e.target));
+  $("btn-ai-attach").addEventListener("click", addAttachment);
+  // quick prompts: scoped to the drawer only (theme presets reuse .chip)
+  document.querySelectorAll("#ai-drawer .ai-quick .chip[data-prompt]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const kind = chip.dataset.prompt;
+      if (kind === "poster") {
+        $("poster-desc").value = buildQuickPrompt("poster").split("\n")[0];
+        openModal("modal-poster");
+        updatePosterPreview();
+        return;
+      }
+      aiSend(buildQuickPrompt(kind));
+    });
+  });
+  const jump = document.createElement("button");
+  jump.id = "ai-jump";
+  jump.className = "chip ai-jump";
+  jump.hidden = true;
+  jump.textContent = lang === "zh-CN" ? "回到底部" : "Jump to latest";
+  jump.addEventListener("click", () => { msgPinned = true; msgScrollBottom(true); updateJumpChip(); });
+  $("ai-messages").insertAdjacentElement("afterend", jump);
+  $("ai-messages").addEventListener("scroll", () => {
+    msgPinned = msgScrollPinned();
+    updateJumpChip();
+  });
+  $("ai-model-select").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = $("ai-model-menu");
+    if (menu.hidden) { renderModelMenu(); menu.hidden = false; $("ai-model-select").classList.add("open"); }
+    else { menu.hidden = true; $("ai-model-select").classList.remove("open"); }
+  });
+  document.addEventListener("click", (e) => {
+    const menu = $("ai-model-menu");
+    if (!menu.hidden && !e.target.closest("#ai-model-menu") && !e.target.closest("#ai-model-select")) {
+      menu.hidden = true;
+      $("ai-model-select").classList.remove("open");
+    }
+  });
+
+  /* settings modal */
+  $("btn-settings").addEventListener("click", async () => {
+    openModal("modal-settings");
+    renderProviderList();
+    if (invoke) {
+      try {
+        const st = await invoke("comfy_status");
+        $("comfy-url").value = st.url;
+        $("comfy-model").value = st.model;
+        renderComfyStatus(st);
+      } catch (e) {}
+    }
+  });
+  $("provider-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await saveProviderFromForm();
+    toast(t("provider_saved"), "ok");
+    refreshModelSelect();
+  });
+  $("pf-logo-pick").addEventListener("click", () => {
+    const inpEl = document.createElement("input");
+    inpEl.type = "file";
+    inpEl.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
+    inpEl.onchange = () => {
+      const f = inpEl.files && inpEl.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { $("pf-logo").value = String(r.result); };
+      r.readAsDataURL(f);
+    };
+    inpEl.click();
+  });
+  $("pf-logo-clear").addEventListener("click", () => { $("pf-logo").value = ""; });
+  $("pf-cancel").addEventListener("click", () => {
+    ["pf-id", "pf-name", "pf-model", "pf-base", "pf-key", "pf-logo"].forEach((id) => ($(id).value = ""));
+  });
+  // Fixed: only save when the form is complete; otherwise test the active provider.
+  $("pf-test").addEventListener("click", async () => {
+    try {
+      const name = $("pf-name").value.trim();
+      const base = $("pf-base").value.trim();
+      const model = $("pf-model").value.trim();
+      let id;
+      if (name && base && model) {
+        const st = await saveProviderFromForm();
+        id = st.active;
+      } else {
+        const st = await invoke("ai_settings");
+        if (!st.active) throw new Error(lang === "zh-CN" ? "表单未填写，且没有已启用的 Provider" : "Form is empty and no active provider");
+        id = st.active;
+      }
+      $("pf-test").disabled = true;
+      const reply = await invoke("ai_test", { id });
+      toast(t("connected") + reply, "ok");
+    } catch (e) {
+      toast(String(e), "err");
+    } finally {
+      $("pf-test").disabled = false;
+    }
+  });
+
+  /* ComfyUI: config / launch / image source */
+  const comfySave = async () => {
+    try {
+      const st = await invoke("comfy_save_config", {
+        url: $("comfy-url").value,
+        model: $("comfy-model").value,
+        launchPath: $("comfy-launch-path").value,
+      });
+      renderComfyStatus(st);
+      toast(lang === "zh-CN" ? "ComfyUI 配置已保存" : "ComfyUI config saved", "ok");
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  };
+  $("comfy-save").addEventListener("click", comfySave);
+  const comfyStart = async () => {
+    const btns = [$("comfy-start")];
+    btns.forEach((b) => b && (b.disabled = true));
+    if (invoke) {
+      try {
+        await invoke("comfy_save_config", {
+          url: $("comfy-url").value,
+          model: $("comfy-model").value,
+          launchPath: $("comfy-launch-path").value,
+        });
+      } catch (e) {}
+    }
+    if (!invoke) { toast(t("demo_mode"), "err"); btns.forEach((b) => b && (b.disabled = false)); return; }
+    $("comfy-progress").textContent = lang === "zh-CN" ? "正在启动 ComfyUI..." : "Starting ComfyUI...";
+    try {
+      const st = await invoke("comfy_launch", { launchPath: $("comfy-launch-path").value });
+      renderComfyStatus(st);
+      toast(lang === "zh-CN" ? "ComfyUI 已在线" : "ComfyUI online", "ok");
+    } catch (e) {
+      toast(String(e), "err");
+    } finally {
+      btns.forEach((b) => b && (b.disabled = false));
+      $("comfy-progress").textContent = "";
+    }
+  };
+  const sBtn = document.getElementById("comfy-start");
+  if (sBtn) sBtn.addEventListener("click", comfyStart);
+
+  /* agent modal */
+  $("btn-agent").addEventListener("click", () => { openModal("modal-agent"); loadAgentCard(); });
+  $("btn-copy-card").addEventListener("click", async () => {
+    if (invoke) {
+      await invoke("copy_agent_card");
+    } else {
+      const pre = $("agent-card-pre");
+      if (pre.dataset.loaded !== "1") await loadAgentCard();
+      await copyPlain(pre.textContent);
+    }
+    toast(t("copied_text"), "ok");
+  });
+  $("btn-toggle-card").addEventListener("click", async () => {
+    const pre = $("agent-card-pre");
+    await loadAgentCard();
+    pre.hidden = !pre.hidden;
+    $("btn-toggle-card").textContent = pre.hidden ? t("preview_card") : t("hide_card");
+  });
+  document.querySelectorAll(".mcp-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      try {
+        const o = await invoke("mcp_install", { target: btn.dataset.target });
+        const r = $("mcp-result");
+        r.hidden = false;
+        r.textContent = `${o.config_path}  (key: ${o.key}${o.backup_created ? ", .bak" : ""})`;
+        toast(t("mcp_installed", o.config_path), "ok");
+      } catch (e) {
+        toast(String(e), "err");
+      }
+    });
+  });
+  document.querySelectorAll(".cli-row").forEach((row) => {
+    row.addEventListener("click", async () => {
+      await copyPlain(row.dataset.cmd);
+      toast(t("copied_text"), "ok");
+    });
+  });
+
+  /* theme AI modal */
+  $("btn-theme-ai").addEventListener("click", () => openModal("modal-theme"));
+  document.querySelectorAll(".theme-preset").forEach((chip) => {
+    chip.addEventListener("click", () => { $("theme-desc").value = chip.dataset.desc; });
+  });
+  $("btn-theme-generate").addEventListener("click", generateTheme);
+
+  /* poster modal */
+  $("btn-poster").addEventListener("click", () => {
+    if (!$("poster-html").value.trim()) $("poster-html").value = posterTemplate(1080, 460, "cover");
+    openModal("modal-poster");
+    updatePosterPreview();
+  });
+  $("poster-preset").addEventListener("change", () => {
+    $("poster-custom").hidden = $("poster-preset").value !== "custom";
+    updatePosterPreview();
+  });
+  $("btn-poster-ai").addEventListener("click", posterAiGenerate);
+  $("btn-poster-reset").addEventListener("click", () => {
+    const { w, h } = posterSize();
+    $("poster-html").value = posterTemplate(w, h, currentTpl);
+    updatePosterPreview();
+  });
+  $("btn-poster-insert").addEventListener("click", () => posterExport(true));
+  $("btn-poster-save").addEventListener("click", () => posterExport(false));
+  $("poster-html").addEventListener("input", () => {
+    clearTimeout($("poster-html")._t);
+    $("poster-html")._t = setTimeout(updatePosterPreview, 400);
+  });
+  window.addEventListener("resize", () => {
+    if (!$("modal-poster").hidden) updatePosterPreview();
+  });
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (!$("modal-poster").hidden) updatePosterPreview();
+    }).observe($("poster-preview-box"));
+  }
+  document.querySelectorAll(".tpl-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      currentTpl = chip.dataset.tpl;
+      document.querySelectorAll(".tpl-chip").forEach((c) => c.classList.toggle("active", c === chip));
+      const preset = { cover: "1080x460", quote: "1080x1440", pic: "1080x1440" }[currentTpl] || "1080x460";
+      $("poster-preset").value = preset;
+      $("poster-custom").hidden = preset !== "custom";
+      const { w, h } = posterSize();
+      $("poster-html").value = posterTemplate(w, h, currentTpl);
+      updatePosterPreview();
+    });
+  });
+
+  /* fit studio */
+  $("fit-preset").addEventListener("change", fitDraw);
+  $("fit-mode").addEventListener("change", () => {
+    $("fit-bg-row").hidden = $("fit-mode").value !== "contain";
+    fitDraw();
+  });
+  $("fit-scale").addEventListener("change", fitDraw);
+  $("fit-bg").addEventListener("input", fitDraw);
+  document.querySelectorAll("#fit-bg-row .chip[data-bg]").forEach((chip) => {
+    chip.addEventListener("click", () => { $("fit-bg").value = chip.dataset.bg; fitDraw(); });
+  });
+  $("fit-export").addEventListener("click", fitExport);
+
+  /* assets panel */
+  $("btn-assets").addEventListener("click", () => openAssetsPanel());
+  $("assets-open-folder").addEventListener("click", () => {
+    if (window.__TAURI__ && window.__TAURI__.opener) {
+      invoke("library_dir").then((d) => {
+        const dir = d.replace(/articles$/, "assets");
+        window.__TAURI__.opener.openPath(dir).catch(() => {
+          window.__TAURI__.opener.revealItemInDir(dir).catch(() => {});
+        });
+      });
+    } else {
+      toast(t("demo_mode"), "err");
+    }
+  });
+
+  /* comfy dialog */
+  $("btn-comfy").addEventListener("click", () => { openComfyPanel(); });
+  document.querySelectorAll("#modal-comfy .chip[data-mode]").forEach((chip) => {
+    chip.addEventListener("click", () => setComfyMode(chip.dataset.mode));
+  });
+  document.querySelectorAll("#modal-comfy .seg-btn[data-imgsrc]").forEach((btn) => {
+    btn.addEventListener("click", () => setComfyImgSrc(btn.dataset.imgsrc));
+  });
+  $("comfy-cloud-save").addEventListener("click", async () => {
+    if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    try {
+      await invoke("ai_save_image_model", { model: $("comfy-cloud-model").value });
+      toast(lang === "zh-CN" ? "图像模型已保存" : "Image model saved", "ok");
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  });
+  $("comfy-pick").addEventListener("click", () => openAssetsPanel({ selectMode: true }));
+  $("comfy-generate").addEventListener("click", comfyGenerate);
+  const mStart = document.getElementById("comfy-start-modal");
+  if (mStart) mStart.addEventListener("click", comfyStart);
+
+  /* svg kit modal */
+  $("btn-svgkit").addEventListener("click", () => { openModal("modal-svgkit"); renderSvgKit(); });
+  $("svgkit-insert").addEventListener("click", () => {
+    const svg = currentSvgMarkup();
+    if (!svg) { toast(lang === "zh-CN" ? "当前组件为空" : "Nothing to insert", "err"); return; }
+    // Block-level embed: append as a standalone block at the end (cursor
+    // insertion would nest it inside lists/code and break the classification)
+    const ed = $("editor");
+    ed.value = ed.value.replace(/\s*$/, "") + "\n\n" + svg + "\n";
+    ed.selectionStart = ed.selectionEnd = ed.value.length;
+    dirty = true;
+    $("stat-saved").textContent = t("not_saved");
+    if (window.Mozai) Mozai.typing();
+    scheduleConvert();
+    closeModal("modal-svgkit");
+    toast(lang === "zh-CN" ? "组件已插入（引擎已复核合规）" : "Inserted (re-validated by the engine)", "ok");
+    if (window.Mozai) Mozai.celebrate();
+  });
+  $("svgkit-ai-generate").addEventListener("click", svgKitAiGenerate);
+
+  /* prompt modal */
+  $("prompt-ok").addEventListener("click", () => {});
+  $("prompt-cancel").addEventListener("click", () => {});
+
+  /* modal close */
+  document.querySelectorAll(".modal-close").forEach((btn) => {
+    btn.addEventListener("click", () => closeModal(btn.dataset.close));
+  });
+  document.querySelectorAll(".modal-overlay").forEach((ov) => {
+    ov.addEventListener("mousedown", (e) => { if (e.target === ov) ov.hidden = true; });
+  });
+
+  /* drag & drop */
+  if (listen) {
+    listen("dropped-files", async (ev) => {
+      const paths = ev.payload || [];
+      const handled = await importDroppedImages(paths);
+      if (handled) return;
+      const mdFile = paths.find((p) => p.toLowerCase().endsWith(".md") || p.toLowerCase().endsWith(".markdown"));
+      if (mdFile) {
+        try {
+          if (dirty) await persistCurrent(true);
+          $("editor").value = await invoke("read_text_file", { path: mdFile });
+          currentArticleId = null;
+          dirty = false;
+          $("stat-saved").textContent = t("not_saved");
+          scheduleConvert();
+        } catch (e) {
+          toast(String(e), "err");
+        }
+      }
+    });
+  }
+
+  /* splitter */
+  const splitter = $("splitter");
+  let dragging = false;
+  splitter.addEventListener("mousedown", () => { dragging = true; splitter.classList.add("dragging"); });
+  window.addEventListener("mouseup", () => { dragging = false; splitter.classList.remove("dragging"); });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const total = $("workspace").getBoundingClientRect().width;
+    const left = Math.min(Math.max(e.clientX / total, 0.2), 0.78);
+    $("workspace").querySelector(".pane-editor").style.flex = `0 0 ${left * 100}%`;
+  });
+
+  /* QR code modal */
+  $("malong-btn").addEventListener("click", () => openModal("modal-qr"));
+
+  /* github link */
+  $("link-github").addEventListener("click", (e) => {
+    e.preventDefault();
+    if (window.__TAURI__ && window.__TAURI__.opener) {
+      window.__TAURI__.opener.openUrl("https://github.com/YaoIsAI");
+    } else {
+      window.open("https://github.com/YaoIsAI", "_blank");
+    }
+  });
+
+}
+
+/* ------------------------------------------------------ comfy generation */
+async function comfyGenerate() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  const prompt = $("comfy-prompt").value.trim();
+  if (!prompt) return;
+  const [w, h] = $("comfy-size").value.split("x").map((x) => parseInt(x));
+  const steps = Math.max(4, parseInt($("comfy-steps").value) || 20);
+  const btn = $("comfy-generate");
+  btn.disabled = true;
+  $("comfy-progress").textContent =
+    comfyImgSrc === "cloud"
+      ? lang === "zh-CN" ? "云端生成中..." : "Generating in the cloud..."
+      : lang === "zh-CN" ? "已提交 ComfyUI 队列，生成中（最多等待 10 分钟）..." : "Queued in ComfyUI (up to 10 min)...";
+  $("comfy-results").innerHTML = "";
+  try {
+    let paths;
+    if (comfyImgSrc === "cloud") {
+      paths = await invoke("ai_image", { prompt, width: w, height: h });
+    } else if (comfyMode === "i2i") {
+      const src = $("comfy-source").value.trim();
+      if (!src) throw new Error(lang === "zh-CN" ? "请先从素材库选择源图" : "Pick a source image first");
+      paths = await invoke("comfy_img2img", { sourcePath: src, prompt, negative: $("comfy-negative").value, denoise: parseFloat($("comfy-denoise").value) || 0.55, steps });
+    } else {
+      paths = await invoke("comfy_txt2img", { prompt, negative: $("comfy-negative").value, width: w, height: h, steps });
+    }
+    renderComfyResults(paths);
+    toast(paths.length === 1
+      ? (lang === "zh-CN" ? "生成完成，点击图片插入文章" : "Done, click the image to insert it")
+      : (lang === "zh-CN" ? `生成完成（${paths.length} 张）` : `Done (${paths.length})`), "ok");
+    window.Mozai && Mozai.celebrate();
+  } catch (e) {
+    toast(String(e), "err");
+  } finally {
+    btn.disabled = false;
+    $("comfy-progress").textContent = "";
+  }
+}
+
+function renderComfyResults(paths) {
+  for (const p of paths) {
+    const item = document.createElement("div");
+    item.className = "asset-item";
+    item.innerHTML = `<img alt="result" /><div class="a-meta">${escapeHtml(p.split(/[\\/]/).pop())}</div>
+      <div class="a-tools"><button type="button" class="ins" title="${t("insert_article")}"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button></div>`;
+    invoke("asset_thumb", { path: p, size: 320 }).then((uri) => { item.querySelector("img").src = uri; }).catch(() => {});
+    item.querySelector(".ins").addEventListener("click", () => {
+      insertAtCursor(`\n![AI 绘图](${p})\n`);
+      toast(t("poster_inserted"), "ok");
+    });
+    item.addEventListener("click", () => {
+      insertAtCursor(`\n![AI 绘图](${p})\n`);
+      toast(t("poster_inserted"), "ok");
+    });
+    $("comfy-results").appendChild(item);
+  }
+}
+
+/* ------------------------------------------------------ init (crash-proof) */
+async function init() {
+  lang = localStorage.getItem("wxwright-lang") || "zh-CN";
+  applyI18n();
+  currentTheme = localStorage.getItem("wxwright-theme") || "minimal";
+
+  // 1. bind every listener first: a failing async load can no longer leave
+  //    the UI half-wired (the reported blank-open + dead quick-chips bug).
+  try {
+    bindUI();
+  } catch (e) {
+    console.error("bindUI failed:", e);
+    toast(`${lang === "zh-CN" ? "界面初始化失败" : "UI init failed"}: ${e.message}`, "err");
+  }
+
+  if (!invoke) {
+    // browser demo mode
+    $("theme-select").innerHTML = `<option value="minimal">${lang === "zh-CN" ? "素黑" : "Minimal"}</option>`;
+    $("theme-select").value = "minimal";
+    try {
+      const [demo, demoMd] = await Promise.all([
+        fetch("demo-preview.html").then((r) => r.text()),
+        fetch("demo-article.md").then((r) => r.text()),
+      ]);
+      $("preview").srcdoc = demo;
+      $("editor").value = demoMd;
+    } catch (e) {}
+    refreshLibrary();
+    refreshModelSelect();
+    applyDevice();
+    window.Mozai && Mozai.setState("idle");
+    await convertNow();
+    return;
+  }
+
+  // 2. async loads, each isolated: one failure never kills the rest
+  const steps = [
+    async () => {
+      $("editor").value = await invoke("load_sample");
+      currentArticleId = null;
+      loadedTitle = null;
+    },
+    async () => {
+      const themes = await invoke("list_themes");
+      $("theme-select").innerHTML = themes
+        .map((x) => `<option value="${x.id}">${escapeHtml(lang === "zh-CN" ? x.name_zh || x.name : x.name)}</option>`)
+        .join("");
+      $("theme-select").value = currentTheme;
+    },
+    () => refreshLibrary(),
+    () => refreshModelSelect(),
+    async () => {
+      const st = await invoke("comfy_status");
+      $("comfy-url").value = st.url;
+      $("comfy-model").value = st.model;
+      $("comfy-launch-path").value = st.launch_path || "";
+      renderComfyStatus(st);
+    },
+    async () => {
+      const im = await invoke("ai_settings").then((x) => x.image_model).catch(() => "");
+      if (im) $("comfy-cloud-model").value = im;
+    },
+    async () => {
+      const p = await invoke("library_dir");
+      $("library-path").textContent = p;
+      $("library-path").title = p;
+    },
+  ];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (e) {
+      console.error("init step failed:", e);
+      toast(`${lang === "zh-CN" ? "初始化部分失败" : "Init step failed"}: ${e}`, "err");
+    }
+  }
+
+  if (!localStorage.getItem("wxwright-hint")) {
+    setTimeout(() => toast(t("first_run_hint")), 1200);
+    localStorage.setItem("wxwright-hint", "1");
+  }
+
+  // 3. first render + one retry against startup races (blank-open fix)
+  await convertNow();
+  if (!lastResult) {
+    setTimeout(async () => {
+      try { await convertNow(); } catch (e) {}
+    }, 900);
+  }
+  applyDevice();
+  window.Mozai && Mozai.setState("idle");
+}
+
+init();

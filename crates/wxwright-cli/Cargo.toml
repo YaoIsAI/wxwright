@@ -1,0 +1,21 @@
+[package]
+name = "wxwright-cli"
+description = "wxwright CLI: convert/validate/fix/copy/theme/doctor/mcp/draft for humans and AI agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "wxwright"
+path = "src/main.rs"
+
+[dependencies]
+wxwright-core = { path = "../wxwright-core" }
+wxwright-mp = { path = "../wxwright-mp" }
+wxwright-mcp = { path = "../wxwright-mcp" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+dirs = { workspace = true }
+sys-locale = { workspace = true }

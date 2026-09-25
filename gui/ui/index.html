@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wxwright</title>
+  <link rel="stylesheet" href="styles.css?v=17" />
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 1024 1024">
+        <rect width="1024" height="1024" rx="225" fill="var(--accent)"/>
+        <path d="M232,344 L386,678 L512,398 L638,678 L727,484" fill="none" stroke="#FFFFFF" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="792" cy="344" r="60" fill="#FFFFFF"/>
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 24 24">
+        <path d="M12 7v14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M5 12h14M12 5v14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="12" y1="15" x2="12" y2="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24">
+        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M12 9v4m0 4h.01" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24">
+        <path d="M12 8V4H8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="4" y="8" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M2 14h2m16 0h2M15 13v2M9 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M19 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <line x1="21" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="10" y1="4" x2="3" y2="4" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="21" y1="12" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="8" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="21" y1="20" x2="16" y2="20" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="12" y1="20" x2="3" y2="20" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="14" y1="2" x2="14" y2="6" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="8" y1="10" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="16" y1="18" x2="16" y2="22" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-send" viewBox="0 0 24 24">
+        <path d="m22 2-7 20-4-9-9-4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M22 2 11 13" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24">
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24">
+        <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" fill="currentColor" stroke="none"/>
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="9" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M3 9h18M9 21V9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-clip" viewBox="0 0 24 24">
+        <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-crop" viewBox="0 0 24 24">
+        <path d="M6 2v14a2 2 0 0 0 2 2h14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M18 22V8a2 2 0 0 0-2-2H2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </symbol>
+      <symbol id="i-code" viewBox="0 0 24 24">
+        <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-wand" viewBox="0 0 24 24">
+        <path d="M3 21 15.5 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M15 3l.9 2.1L18 6l-2.1.9L15 9l-.9-2.1L12 6l2.1-.9zM20 11l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7zM6.5 3.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4L4.5 5.5l1.4-.6z" fill="currentColor" stroke="none"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-logo" id="logo-btn" role="button" tabindex="0" aria-label="wxwright"><use href="#i-logo"/></svg>
+      <span class="brand-name">wxwright</span>
+      <button id="btn-library" class="btn btn-ghost" title="文章库">
+        <svg class="icon"><use href="#i-book"/></svg>
+        <span data-i18n="library">文章库</span>
+      </button>
+    </div>
+    <div class="toolbar">
+      <label class="field">
+        <span class="field-label" data-i18n="theme">主题</span>
+        <select id="theme-select" class="select"></select>
+      </label>
+      <button id="btn-theme-ai" class="btn btn-ghost btn-icon" title="AI 生成主题">
+        <svg class="icon"><use href="#i-spark"/></svg>
+      </button>
+      <button id="btn-validate" class="btn btn-ghost btn-icon" title="校验" aria-label="validate">
+        <svg class="icon"><use href="#i-shield"/></svg>
+      </button>
+      <button id="btn-export" class="btn btn-ghost btn-icon" title="导出 HTML" aria-label="export">
+        <svg class="icon"><use href="#i-download"/></svg>
+      </button>
+      <button id="btn-poster" class="btn btn-ghost btn-icon" title="海报工坊（HTML 生成图片）">
+        <svg class="icon"><use href="#i-layout"/></svg>
+      </button>
+      <button id="btn-comfy" class="btn btn-ghost btn-icon" title="AI 绘图（ComfyUI 本地）">
+        <svg class="icon"><use href="#i-wand"/></svg>
+      </button>
+      <button id="btn-svgkit" class="btn btn-ghost btn-icon" title="SVG 互动组件库">
+        <svg class="icon"><use href="#i-code"/></svg>
+      </button>
+      <button id="btn-assets" class="btn btn-ghost btn-icon" title="素材库">
+        <svg class="icon"><use href="#i-image"/></svg>
+      </button>
+      <button id="btn-copy" class="btn btn-primary">
+        <svg class="icon"><use href="#i-copy"/></svg>
+        <span data-i18n="copy">复制富文本</span>
+      </button>
+      <span class="tb-divider"></span>
+      <button id="btn-ai" class="btn btn-ghost" title="AI 助手">
+        <svg class="icon"><use href="#i-spark"/></svg>
+        <span data-i18n="ai">AI 助手</span>
+      </button>
+      <button id="btn-agent" class="btn btn-ghost btn-icon" title="Agent 接入">
+        <svg class="icon"><use href="#i-bot"/></svg>
+      </button>
+      <button id="btn-lang" class="btn btn-ghost btn-lang" title="Language">EN</button>
+      <button id="btn-settings" class="btn btn-ghost btn-icon" title="设置">
+        <svg class="icon"><use href="#i-gear"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span data-i18n="library">文章库</span>
+        <span class="spacer"></span>
+        <button id="btn-import" class="btn btn-ghost btn-icon" title="导入 .md 文件">
+          <svg class="icon"><use href="#i-download"/></svg>
+        </button>
+        <button id="btn-new-article" class="btn btn-ghost btn-icon" title="新建文章">
+          <svg class="icon"><use href="#i-plus"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-search">
+        <input id="library-search" placeholder="搜索文章..." data-i18n-placeholder="search_ph" />
+      </div>
+      <div class="sidebar-list" id="article-list"></div>
+      <div class="sidebar-foot" id="library-path" title=""></div>
+    </aside>
+
+    <section class="pane pane-editor">
+      <textarea id="editor" class="editor" spellcheck="false" placeholder="Markdown..."></textarea>
+      <div class="editor-status">
+        <span id="stat-chars">0</span>
+        <span class="dot"></span>
+        <span id="stat-words">0</span>
+        <span class="dot"></span>
+        <span id="stat-images">0</span>
+        <span class="dot"></span>
+        <span id="stat-saved" data-i18n="not_saved">未保存</span>
+        <span class="spacer"></span>
+        <button id="rule-chip" class="rule-chip" hidden></button>
+        <button id="btn-save" class="linklike" data-i18n="save">保存</button>
+      </div>
+
+      <div id="violations-panel" class="violations-panel" hidden></div>
+
+      <div id="ai-drawer" class="ai-drawer" hidden>
+        <div class="ai-head">
+          <svg class="icon"><use href="#i-spark"/></svg>
+          <span data-i18n="ai_assistant">AI 助手</span>
+          <span id="ai-provider-chip" class="ai-provider-chip"></span>
+          <span class="spacer"></span>
+          <button id="btn-ai-clear" class="linklike" data-i18n="clear">清空</button>
+          <button id="btn-ai-close" class="btn btn-ghost btn-icon">
+            <svg class="icon"><use href="#i-x"/></svg>
+          </button>
+        </div>
+        <div class="ai-messages" id="ai-messages"></div>
+        <div class="ai-quick">
+          <button class="chip" data-prompt="polish" data-i18n="q_polish">润色当前文章</button>
+          <button class="chip" data-prompt="continue" data-i18n="q_continue">续写</button>
+          <button class="chip" data-prompt="title" data-i18n="q_title">起 5 个标题</button>
+          <button class="chip" data-prompt="outline" data-i18n="q_outline">帮我列提纲</button>
+          <button class="chip" data-prompt="poster" data-i18n="q_poster">生成头图文案</button>
+        </div>
+        <div id="attach-row" class="attach-row" hidden></div>
+        <div class="ai-input-row">
+          <div class="ai-input-box">
+            <textarea id="ai-input" rows="1" placeholder="向 AI 描述你的需求，Enter 发送，Shift+Enter 换行"></textarea>
+            <div class="ai-box-bar">
+              <button type="button" id="btn-ai-attach" class="ai-bar-btn" title="上传附件（.md/.txt 作为上下文）">
+                <svg class="icon icon-sm"><use href="#i-clip"/></svg>
+              </button>
+              <button type="button" id="ai-model-select" class="ai-model-select" title="切换模型"></button>
+              <span class="spacer"></span>
+              <button id="btn-ai-send" class="ai-send" title="发送" aria-label="send">
+                <svg class="icon"><use href="#i-send"/></svg>
+              </button>
+            </div>
+            <div id="ai-model-menu" class="ai-model-menu" hidden></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="splitter" id="splitter"></div>
+
+    <section class="pane pane-preview">
+      <div class="device-stage" id="device-stage">
+        <div class="device-scaler" id="device-scaler">
+          <div class="device ios" id="device">
+            <span class="dkey key-mute"></span>
+            <span class="dkey key-volu"></span>
+            <span class="dkey key-vold"></span>
+            <span class="dkey key-power"></span>
+            <div class="device-body">
+              <div class="device-status">
+                <span class="status-time">9:41</span>
+                <svg width="52" height="12" viewBox="0 0 52 12" fill="currentColor" aria-hidden="true">
+                  <rect x="0" y="7" width="2.6" height="4" rx="0.8"/><rect x="3.8" y="5" width="2.6" height="6" rx="0.8"/><rect x="7.6" y="3" width="2.6" height="8" rx="0.8"/><rect x="11.4" y="1" width="2.6" height="10" rx="0.8"/>
+                  <path d="M20 5.2a7 7 0 0 1 8.6 0l-1.5 1.8a4.8 4.8 0 0 0-5.6 0z"/>
+                  <circle cx="24.3" cy="9.6" r="1.7"/>
+                  <rect x="34" y="2.5" width="14" height="7.4" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+                  <rect x="35.4" y="4" width="9" height="4.4" rx="1"/>
+                  <rect x="48.8" y="4.6" width="1.9" height="3.2" rx="0.9"/>
+                </svg>
+              </div>
+              <div class="device-notch"></div>
+              <div class="device-screen">
+                <iframe id="preview" title="preview" sandbox=""></iframe>
+              </div>
+              <div class="home-bar"></div>
+            </div>
+          </div>
+        </div>
+        <div class="device-controls">
+          <div class="seg">
+            <button class="seg-btn" data-device="android">Pixel 8</button>
+            <button class="seg-btn active" data-device="ios">iPhone 15 Pro</button>
+          </div>
+          <button id="btn-device-dark" class="btn btn-ghost btn-icon" title="深色 / 浅色">
+            <svg class="icon"><use href="#i-moon"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <div id="pet" title="墨仔（点击摸摸，双击换形态）">
+      <img id="pet-img" src="pet/idle.jpg" alt="墨仔" draggable="false" />
+      <svg class="pet-svg" viewBox="0 0 64 64" aria-hidden="true" hidden>
+        <!-- tail curls from behind the body -->
+        <path class="pet-tail" d="M46 54 C57 54 60 42 52 37" fill="none" stroke="var(--accent)" stroke-width="5.5" stroke-linecap="round"/>
+        <!-- sitting body -->
+        <path class="pet-body" d="M32 34 C41 34 47 42 47 55 L17 55 C17 42 23 34 32 34 Z" fill="var(--accent)"/>
+        <!-- chest patch -->
+        <ellipse cx="32" cy="50" rx="8.5" ry="8" fill="#FFFFFF" opacity="0.92"/>
+        <!-- head -->
+        <circle class="pet-body" cx="32" cy="21" r="13.5" fill="var(--accent)"/>
+        <!-- ears -->
+        <path class="pet-body" d="M20.5 13 L17.5 2.5 L28.5 8.5 Z" fill="var(--accent)"/>
+        <path class="pet-body" d="M43.5 13 L46.5 2.5 L35.5 8.5 Z" fill="var(--accent)"/>
+        <path d="M22.6 10.4 L21 5.4 L26 8.2 Z" fill="#FFFFFF" opacity="0.9"/>
+        <path d="M41.4 10.4 L43 5.4 L38 8.2 Z" fill="#FFFFFF" opacity="0.9"/>
+        <!-- face: eyes blink via class -->
+        <g class="pet-face">
+          <ellipse class="pet-eye" cx="26.6" cy="20" rx="2.3" ry="2.9"/>
+          <ellipse class="pet-eye" cx="37.4" cy="20" rx="2.3" ry="2.9"/>
+          <path d="M30.8 25.4 L33.2 25.4 L32 27 Z" fill="#FFFFFF"/>
+          <path d="M32 27 Q30.4 29.2 28.6 28.2 M32 27 Q33.6 29.2 35.4 28.2" stroke="#FFFFFF" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        </g>
+        <!-- whiskers -->
+        <g stroke="#FFFFFF" stroke-width="1.1" opacity="0.85" stroke-linecap="round">
+          <path d="M18 20 L11 19"/><path d="M18.5 23 L11.5 24"/><path d="M19.5 25.8 L13 28"/>
+          <path d="M46 20 L53 19"/><path d="M45.5 23 L52.5 24"/><path d="M44.5 25.8 L51 28"/>
+        </g>
+      </svg>
+      <span class="pet-zz" hidden>z z</span>
+    </div>
+    <div id="pet-bubble" hidden></div>
+    <span id="status-text" data-i18n="ready">就绪</span>
+    <span class="spacer"></span>
+    <span class="status-author">by <b>AI瑶</b> · 公众号 <button id="malong-btn" class="linklike malong" title="公众号二维码">码聋</button> ·
+      <a href="https://github.com/YaoIsAI" id="link-github">github.com/YaoIsAI</a>
+    </span>
+    <span class="status-meta">wxwright 0.9.0</span>
+  </footer>
+
+  <!-- ---------------------------------------------------- settings modal -->
+  <div id="modal-settings" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <span data-i18n="settings">设置</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-settings">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <section class="modal-section">
+          <div class="section-title" data-i18n="ai_providers">AI Providers（OpenAI 兼容协议）</div>
+          <p class="section-hint" data-i18n="ai_hint">
+            支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串。
+          </p>
+          <div id="provider-list" class="provider-list"></div>
+          <form id="provider-form" class="provider-form">
+            <input type="hidden" id="pf-id" />
+            <input type="hidden" id="pf-brand" />
+            <div class="form-grid">
+              <label class="span2"><span>预设厂商（选择后自动填充）</span>
+                <select id="pf-vendor" class="select" style="min-width: 0; max-width: 100%;">
+                  <option value="">— 选择厂商自动填充 —</option>
+                </select>
+              </label>
+              <label><span data-i18n="f_name">名称</span><input id="pf-name" placeholder="DeepSeek" required /></label>
+              <label><span data-i18n="f_model">模型</span><input id="pf-model" placeholder="deepseek-chat" required /></label>
+              <label class="span2"><span data-i18n="f_baseurl">Base URL</span><input id="pf-base" placeholder="https://api.deepseek.com" required /></label>
+              <label class="span2"><span data-i18n="f_key">API Key</span><input id="pf-key" type="password" placeholder data-i18n-placeholder="f_key_hint" /></label>
+              <label class="span2"><span data-i18n="f_logo">自定义图标（可选，data URI / 上传）</span>
+                <div class="form-actions" style="margin-top: 0;">
+                  <input id="pf-logo" readonly placeholder="留空使用内置品牌标" style="flex: 1;" />
+                  <button type="button" id="pf-logo-pick" class="btn btn-ghost">上传图标</button>
+                  <button type="button" id="pf-logo-clear" class="btn btn-ghost">清除</button>
+                </div>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="pf-test" class="btn btn-ghost" data-i18n="test">测试连接</button>
+              <span class="spacer"></span>
+              <button type="button" id="pf-cancel" class="btn btn-ghost" data-i18n="cancel">取消</button>
+              <button type="submit" class="btn btn-primary" data-i18n="save_provider">保存 Provider</button>
+            </div>
+          </form>
+        </section>
+        <section class="modal-section">
+          <div class="freetokens-card">
+            <svg class="icon"><use href="#i-spark"/></svg>
+            <div>
+              <div class="ft-title" data-i18n="ft_title">没有 API Key？</div>
+              <div class="ft-body" data-i18n="ft_body">作者的另一个项目 <b>Free Tokens</b> 持续收录免费模型额度——去逛逛，一起实现 Token 自由。</div>
+            </div>
+            <button id="freetokens-link" class="btn btn-ghost">free-tokens.org</button>
+          </div>
+        </section>
+        <section class="modal-section">
+          <div class="section-title">ComfyUI（本地 AI 绘图）</div>
+          <p class="section-hint">检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。</p>
+          <div class="form-grid">
+            <label class="span2"><span>ComfyUI 地址</span><input id="comfy-url" placeholder="http://127.0.0.1:8188" /></label>
+            <label class="span2"><span>Checkpoint 模型</span><input id="comfy-model" placeholder="v1-5-pruned-emaonly.safetensors" /></label>
+            <label class="span2"><span>启动程序路径（用于一键启动）</span><input id="comfy-launch-path" placeholder="D:\\ComfyUI\\run_nvidia_gpu.bat" /></label>
+          </div>
+          <div class="form-actions">
+            <span id="comfy-chip" class="ai-provider-chip"></span>
+            <span class="spacer"></span>
+            <button type="button" id="comfy-start" class="btn btn-ghost">一键启动</button>
+            <button type="button" id="comfy-save" class="btn btn-primary">保存</button>
+          </div>
+        </section>
+        <section class="modal-section about">
+          <div class="section-title" data-i18n="about">关于</div>
+          <div class="about-line">wxwright 0.9.0 · by <b>AI瑶</b>（微信公众号：<b>码聋</b>）</div>
+          <div class="about-line">写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。</div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ agent modal -->
+  <div id="modal-agent" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <span data-i18n="agent_title">Agent 接入</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-agent">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <section class="modal-section">
+          <div class="section-title"><span class="step-num">1</span> <span data-i18n="agent_mcp">MCP 一键接入</span></div>
+          <p class="section-hint" data-i18n="agent_mcp_hint">点击对应客户端，wxwright 的 MCP 配置（wxwright mcp serve）会自动写入；写入后重启客户端即可看到 wxwright 工具。</p>
+          <div class="mcp-grid">
+            <button class="btn btn-ghost mcp-btn" data-target="claude">Claude Desktop</button>
+            <button class="btn btn-ghost mcp-btn" data-target="cursor">Cursor</button>
+            <button class="btn btn-ghost mcp-btn" data-target="vscode">VS Code</button>
+            <button class="btn btn-ghost mcp-btn" data-target="opencode">OpenCode</button>
+          </div>
+          <div id="mcp-result" class="mcp-result" hidden></div>
+        </section>
+        <section class="modal-section">
+          <div class="section-title"><span class="step-num">2</span> <span data-i18n="agent_card">Agent 接手卡</span></div>
+          <p class="section-hint" data-i18n="agent_card_hint">把整段卡片复制进任意 AI Agent 的系统提示，Agent 即刻接手；或让它直接调用 CLI / MCP。</p>
+          <div class="form-actions" style="margin-bottom: 8px;">
+            <button id="btn-copy-card" class="btn btn-primary">
+              <svg class="icon"><use href="#i-copy"/></svg>
+              <span data-i18n="copy_card">复制整段卡片</span>
+            </button>
+            <span class="spacer"></span>
+            <button id="btn-toggle-card" class="btn btn-ghost" data-i18n="preview_card">预览卡片</button>
+          </div>
+          <pre id="agent-card-pre" class="card-pre" hidden></pre>
+        </section>
+        <section class="modal-section">
+          <div class="section-title"><span class="step-num">3</span> <span data-i18n="agent_cli">CLI 速查（点击复制）</span></div>
+          <div class="cli-table" id="cli-table">
+            <div class="cli-row" data-cmd="wxwright copy article.md"><code>wxwright copy article.md</code><span data-i18n="c_copy">全链路：转换-图片-校验-剪贴板</span></div>
+            <div class="cli-row" data-cmd="wxwright convert article.md --out article.html"><code>wxwright convert article.md --out article.html</code><span data-i18n="c_convert">转换为公众号 HTML</span></div>
+            <div class="cli-row" data-cmd="wxwright validate article.md --strict"><code>wxwright validate article.md --strict</code><span data-i18n="c_validate">规范校验（退出码 0/1/2）</span></div>
+            <div class="cli-row" data-cmd="wxwright mcp serve"><code>wxwright mcp serve</code><span data-i18n="c_serve">手动启动 MCP server（stdio）</span></div>
+            <div class="cli-row" data-cmd="wxwright agent-card --md"><code>wxwright agent-card --md</code><span data-i18n="c_card">输出 Agent 接手卡</span></div>
+            <div class="cli-row" data-cmd="wxwright doctor"><code>wxwright doctor</code><span data-i18n="c_doctor">环境体检</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ theme modal -->
+  <div id="modal-theme" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <span data-i18n="theme_ai_title">AI 生成主题</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-theme">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="section-hint" data-i18n="theme_ai_hint">描述你想要的主题风格，AI 会生成全新配色与排版，并自动通过公众号官方规范校验（font-family 禁用、对比度约束）。生成结果保存为用户主题，CLI 也能使用。</p>
+        <div class="ai-quick" style="padding: 0 0 8px;">
+          <button class="chip theme-preset" data-desc="日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺">日系手账</button>
+          <button class="chip theme-preset" data-desc="赛博科技感，深色代码面板，霓虹青蓝强调色，等宽律动">赛博科技</button>
+          <button class="chip theme-preset" data-desc="复古杂志编辑风，暖纸色，朱红强调色，居中大标题与双细线">复古杂志</button>
+          <button class="chip theme-preset" data-desc="墨绿学院风，米白纸面，墨绿与金色点缀，庄重书卷气">墨绿学院</button>
+        </div>
+        <textarea id="theme-desc" rows="3" placeholder="例如：奶茶铺子配色，奶咖色底、焦糖强调色，圆角卡片，元气手写感"></textarea>
+        <div class="form-actions">
+          <span id="theme-status" class="section-hint" style="margin: 0;"></span>
+          <span class="spacer"></span>
+          <button id="btn-theme-generate" class="btn btn-primary">
+            <svg class="icon"><use href="#i-spark"/></svg>
+            <span data-i18n="generate">生成主题</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------- poster modal -->
+  <div id="modal-poster" class="modal-overlay" hidden>
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <span data-i18n="poster_title">海报工坊（HTML 生成图片）</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-poster">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="poster-toolbar">
+          <label class="field">
+            <span class="field-label" data-i18n="preset">尺寸</span>
+            <select id="poster-preset" class="select select-sm">
+              <option value="1080x460" data-scene="公众号头图 2.35:1">头图 1080×460（2.35:1）</option>
+              <option value="1080x1080" data-scene="公众号次图 1:1">次图 1080×1080（1:1）</option>
+              <option value="500x500" data-scene="小方图 1:1">小方图 500×500</option>
+              <option value="1280x720" data-scene="正文横图 16:9">横图 1280×720（16:9）</option>
+              <option value="1080x1440" data-scene="正文竖图 3:4">竖图 1080×1440（3:4）</option>
+              <option value="custom">自定义...</option>
+            </select>
+          </label>
+          <span class="field">
+            <button type="button" class="chip tpl-chip" data-tpl="cover">头图模板</button>
+            <button type="button" class="chip tpl-chip" data-tpl="quote">金句贴图卡</button>
+            <button type="button" class="chip tpl-chip" data-tpl="pic">图文贴图卡</button>
+          </span>
+          <span id="poster-custom" class="field" hidden>
+            <input id="poster-w" class="input-sm" type="number" min="100" max="4096" value="800" /> ×
+            <input id="poster-h" class="input-sm" type="number" min="100" max="4096" value="600" />
+          </span>
+          <span class="spacer"></span>
+          <input id="poster-desc" class="input-grow" placeholder="描述海报内容与风格，点「AI 生成」" data-i18n-placeholder="poster_desc_ph" />
+          <button id="btn-poster-ai" class="btn btn-primary">
+            <svg class="icon"><use href="#i-spark"/></svg>
+            <span data-i18n="ai_generate">AI 生成</span>
+          </button>
+        </div>
+        <div class="poster-work">
+          <textarea id="poster-html" class="poster-html" spellcheck="false"></textarea>
+          <div class="poster-preview-wrap">
+            <div class="poster-preview-box" id="poster-preview-box">
+              <iframe id="poster-preview" title="poster preview" sandbox=""></iframe>
+            </div>
+            <div class="poster-preview-meta" id="poster-preview-meta"></div>
+          </div>
+        </div>
+        <p class="section-hint" data-i18n="poster_hint">本地光栅化（SVG foreignObject），完全离线。海报 HTML 必须自包含：禁止外部图片/字体/脚本，图片只能内嵌 data URI。适合做公众号头图、金句卡、正文场景图。</p>
+        <div class="form-actions">
+          <button id="btn-poster-reset" class="btn btn-ghost" data-i18n="reset_tpl">重置模板</button>
+          <button id="btn-poster-save" class="btn btn-ghost" data-i18n="save_img">保存图片...</button>
+          <span class="spacer"></span>
+          <button id="btn-poster-insert" class="btn btn-primary">
+            <svg class="icon"><use href="#i-plus"/></svg>
+            <span data-i18n="insert_article">导出并插入文章</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------- prompt modal -->
+  <div id="modal-prompt" class="modal-overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-head">
+        <span id="prompt-title">重命名</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-prompt">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input id="prompt-input" class="prompt-input" />
+        <div class="form-actions">
+          <span class="spacer"></span>
+          <button id="prompt-cancel" class="btn btn-ghost" data-i18n="cancel">取消</button>
+          <button id="prompt-ok" class="btn btn-primary" data-i18n="ok">确定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------- assets modal -->
+  <div id="modal-assets" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <span>素材库</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-assets">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="assets-top">
+          <span id="assets-path" class="section-hint" style="margin: 0;"></span>
+          <span class="spacer"></span>
+          <span id="assets-count" class="ai-provider-chip"></span>
+          <button id="assets-open-folder" class="btn btn-ghost btn-icon" title="打开素材文件夹">
+            <svg class="icon"><use href="#i-folder"/></svg>
+          </button>
+        </div>
+        <div id="assets-grid" class="assets-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ comfy modal -->
+  <div id="modal-comfy" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <span>AI 绘图（ComfyUI 本地）</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-comfy">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="seg" style="margin-bottom: 12px;">
+          <button type="button" class="seg-btn active" data-imgsrc="comfy" id="imgsrc-comfy">ComfyUI（本地）</button>
+          <button type="button" class="seg-btn" data-imgsrc="cloud" id="imgsrc-cloud">云端图像 API</button>
+        </div>
+        <div id="comfy-cloud-block" hidden>
+          <div class="form-grid" style="margin-bottom: 10px;">
+            <label class="span2"><span>图像模型（保存后即可用云端生成）</span>
+              <div class="form-actions" style="margin-top: 0;">
+                <input id="comfy-cloud-model" placeholder="例如 agnes-image-2.5-flash" style="flex: 1;" />
+                <button type="button" id="comfy-cloud-save" class="btn btn-ghost">保存模型</button>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="mcp-result" id="comfy-status-line" style="margin-bottom: 12px;"></div>
+        <div class="form-actions" style="margin: 0 0 10px;">
+          <input id="comfy-launch-path" placeholder="ComfyUI 启动程序路径（如 D:\\ComfyUI\\run_nvidia_gpu.bat）" style="flex: 1; font: inherit; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px;" />
+          <button type="button" id="comfy-start" class="btn btn-ghost">一键启动</button>
+        </div>
+        <div class="form-grid" style="margin-bottom: 10px;">
+          <label><span>尺寸</span>
+            <select id="comfy-size" class="select" style="min-width: 0;">
+              <option value="1080x460">1080 × 460（头图 2.35:1）</option>
+              <option value="1080x1080">1080 × 1080（次图 1:1）</option>
+              <option value="500x500">500 × 500（小方图）</option>
+              <option value="1280x720">1280 × 720（横图 16:9）</option>
+              <option value="1080x1440">1080 × 1440（竖图 3:4）</option>
+              <option value="512x512">512 × 512</option>
+              <option value="768x768">768 × 768</option>
+            </select>
+          </label>
+          <label><span>Steps</span><input id="comfy-steps" type="number" min="4" max="80" value="20" /></label>
+          <label class="span2"><span>提示词（正向）</span><textarea id="comfy-prompt" rows="3" placeholder="a minimal flat illustration of a writer cat, cobalt blue and cream, clean composition"></textarea></label>
+          <label class="span2"><span>反向提示词（留空用默认）</span><input id="comfy-negative" placeholder="默认：lowres, watermark, text..." /></label>
+          <label class="span2" id="comfy-i2i-row" hidden><span>图生图源图（从素材库选择）</span>
+            <div class="form-actions" style="margin-top: 0;">
+              <input id="comfy-source" readonly placeholder="..." style="flex:1" />
+              <button type="button" id="comfy-pick" class="btn btn-ghost">从素材库选</button>
+              <span class="dn-label">Denoise <input id="comfy-denoise" type="number" min="0.1" max="1" step="0.05" value="0.55" style="width: 70px;" /></span>
+            </div>
+          </label>
+        </div>
+        <div class="ai-quick" style="padding: 0 0 8px;">
+          <button type="button" class="chip" data-mode="t2i" id="comfy-mode-t2i">文生图</button>
+          <button type="button" class="chip" data-mode="i2i" id="comfy-mode-i2i">图生图</button>
+        </div>
+        <div id="comfy-results" class="assets-grid"></div>
+        <div class="form-actions">
+          <span id="comfy-progress" class="section-hint" style="margin: 0;"></span>
+          <span class="spacer"></span>
+          <button id="comfy-generate" class="btn btn-primary">
+            <svg class="icon"><use href="#i-wand"/></svg>
+            <span>生成</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- QR modal -->
+  <div id="modal-qr" class="modal-overlay" hidden>
+    <div class="modal modal-sm qr-modal">
+      <div class="modal-head">
+        <span>公众号 · 码聋</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-qr">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body qr-body">
+        <img id="qr-img" src="qrcode.jpg" alt="微信公众号 码聋 二维码" />
+        <div class="about-line">微信扫码关注 <b>码聋</b></div>
+        <div class="about-line" style="color: var(--text-tertiary);">AI瑶 的写作与技术专栏</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- fit modal -->
+  <div id="modal-fit" class="modal-overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-head">
+        <span>尺寸工坊（适配微信标准）</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-fit">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="fit-preview-wrap">
+          <canvas id="fit-canvas" width="270" height="200"></canvas>
+          <div class="poster-preview-meta" id="fit-meta"></div>
+        </div>
+        <div class="form-grid">
+          <label class="span2"><span>目标尺寸</span>
+            <select id="fit-preset" class="select" style="min-width: 0;">
+              <option value="1080x460">头图 1080 × 460（2.35:1）</option>
+              <option value="1080x1080">次图 1080 × 1080（1:1）</option>
+              <option value="500x500">小方图 500 × 500</option>
+              <option value="1280x720">横图 1280 × 720（16:9）</option>
+              <option value="1080x1440">竖图 1080 × 1440（3:4）</option>
+              <option value="900x383">贴图 900 × 383</option>
+              <option value="383x383">贴图 383 × 383</option>
+            </select>
+          </label>
+          <label><span>适配方式</span>
+            <select id="fit-mode" class="select" style="min-width: 0;">
+              <option value="cover">裁切填满（居中裁剪）</option>
+              <option value="contain">完整置入（补白）</option>
+            </select>
+          </label>
+          <label><span>导出倍数</span>
+            <select id="fit-scale" class="select" style="min-width: 0;">
+              <option value="1">1x</option>
+              <option value="2">2x（更清晰）</option>
+            </select>
+          </label>
+          <label class="span2" id="fit-bg-row" hidden><span>补白背景</span>
+            <div class="form-actions" style="margin-top: 0;">
+              <input type="color" id="fit-bg" value="#FFFFFF" style="width: 44px; height: 30px; border: 1px solid var(--border); border-radius: 4px; background: none; padding: 2px;" />
+              <button type="button" class="chip" data-bg="#FFFFFF">白</button>
+              <button type="button" class="chip" data-bg="#191919">黑</button>
+              <button type="button" class="chip" data-bg="#F7F8FA">浅灰</button>
+              <button type="button" class="chip" data-bg="#EFF4FE">品牌浅蓝</button>
+            </div>
+          </label>
+        </div>
+        <div class="form-actions">
+          <span class="section-hint" style="margin: 0;">导出后自动进入素材库</span>
+          <span class="spacer"></span>
+          <button id="fit-export" class="btn btn-primary">
+            <svg class="icon"><use href="#i-crop"/></svg>
+            <span>导出并插入文章</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------- svg kit modal -->
+  <div id="modal-svgkit" class="modal-overlay" hidden>
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <span>SVG 互动组件库</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-svgkit">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="section-hint">组件在公众号里由读者「点击 / 触摸」触发动画（自动满足官方 R-1.7 规则）。选组件、改文字与颜色、看右侧实时预览，然后插入文章；插入后引擎会再做一次合规校验。也可以直接让 AI 按描述生成全新组件，或上传自定义图片参与互动。</p>
+        <div class="svgkit-ai">
+          <input id="svgkit-desc" placeholder="描述想要的互动效果，例如：点击后头像放大并显示一句祝福语" data-i18n-placeholder="svg_desc_ph" />
+          <button id="svgkit-ai-generate" class="btn btn-primary">
+            <svg class="icon"><use href="#i-spark"/></svg>
+            <span>AI 生成</span>
+          </button>
+        </div>
+        <div id="svgkit-ai-status" class="section-hint" style="margin: 0 0 10px;"></div>
+        <div class="svgkit-layout">
+          <div class="svgkit-list" id="svgkit-list"></div>
+          <div class="svgkit-editor">
+            <div class="svgkit-preview" id="svgkit-preview"></div>
+            <div id="svgkit-params" class="svgkit-params"></div>
+            <div class="form-actions">
+              <span class="section-hint" style="margin: 0;" id="svgkit-desc"></span>
+              <span class="spacer"></span>
+              <button id="svgkit-insert" class="btn btn-primary">
+                <svg class="icon"><use href="#i-plus"/></svg>
+                <span>插入文章</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-host" class="toast-host"></div>
+  <script src="pet.js?v=17"></script>
+  <script src="brand-logos.js"></script>
+  <script src="app.js?v=17"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Rust
+target/
+
+# dist artifacts (built locally, released via CI)
+dist/
+
+# frontend deps (none expected - vanilla ui)
+node_modules/
+
+# local secrets / user data - NEVER commit
+# API keys live in the OS keychain; the fallback file lives in
+# %APPDATA%/wxwright (outside this repo). If you ever copy them here,
+# these rules keep them out of git:
+*.key
+*.secret
+.env
+.env.*
+settings.json
+config.toml
+secrets/
+
+# local article library / asset library copies (canonical stores live in Documents)
+articles/
+# runtime asset drop (ComfyUI/poster output) — ignore by default...
+assets/
+# ...but the icon master is a real source-of-truth, not runtime output:
+!assets/icon/
+!assets/icon/**
+
+# Agnes AI credentials - local only, never publish
+agnes ai.txt
+agnes-ai.txt
+agnes_ai.txt
+*.local.txt
+patch_*.py
