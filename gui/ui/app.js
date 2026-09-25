@@ -1,35 +1,3 @@
-async function addAttachment() {
-  if (!invoke) { toast(t("demo_mode"), "err"); return; }
-  if (pendingAttachments.length >= 4) { toast(lang === "zh-CN" ? "最多 4 个附件" : "Max 4 attachments", "err"); return; }
-  try {
-    const { open } = window.__TAURI__.dialog;
-    const path = await open({
-      multiple: false,
-      filters: [
-        { name: lang === "zh-CN" ? "文档与图片" : "Documents & images", extensions: ["md", "markdown", "txt", "html", "htm", "pdf", "docx", "csv", "json", "xml", "png", "jpg", "jpeg", "webp"] },
-      ],
-    });
-    if (!path) return;
-    const p = String(path);
-    const lower = p.toLowerCase();
-    const name = p.split(/[\\/]/).pop();
-    const IMG = ["png", "jpg", "jpeg", "webp"];
-    const ext = lower.includes(".") ? lower.split(".").pop() : "";
-    if (IMG.includes(ext)) {
-      // image -> vision attachment (base64 data URI, sent as image_url)
-      const b64 = await invoke("read_binary_file", { path: p });
-      const dataUri = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${b64}`;
-      pendingAttachments.push({ kind: "image", name, dataUri });
-    } else {
-      // document -> backend text extraction (pdf/docx/html/txt via extract)
-      const doc = await invoke("extract_document_text", { path: p });
-      pendingAttachments.push({ kind: "text", name, content: doc.text, truncated: doc.truncated });
-    }
-    renderAttachRow();
-  } catch (e) {
-    toast(String(e), "err");
-  }
-}
 
 /* wxwright GUI: library + editor + preview + AI assistant + agent panel
    + poster studio + device frames + writing pet (墨仔). */
@@ -1506,18 +1474,31 @@ function renderAttachRow() {
 }
 async function addAttachment() {
   if (!invoke) { toast(t("demo_mode"), "err"); return; }
-  if (pendingAttachments.length >= 3) { toast(lang === "zh-CN" ? "最多 3 个附件" : "Max 3 attachments", "err"); return; }
+  if (pendingAttachments.length >= 4) { toast(lang === "zh-CN" ? "最多 4 个附件" : "Max 4 attachments", "err"); return; }
   try {
     const { open } = window.__TAURI__.dialog;
     const path = await open({
       multiple: false,
-      filters: [{ name: "Text", extensions: ["md", "markdown", "txt"] }],
+      filters: [
+        { name: lang === "zh-CN" ? "文档与图片" : "Documents & images", extensions: ["md", "markdown", "txt", "html", "htm", "pdf", "docx", "csv", "json", "xml", "png", "jpg", "jpeg", "webp"] },
+      ],
     });
     if (!path) return;
-    let content = await invoke("read_text_file", { path });
-    if (content.length > 6000) content = content.slice(0, 6000) + (lang === "zh-CN" ? "\n…（超长截断）" : "\n…(truncated)");
-    const name = String(path).split(/[\\/]/).pop();
-    pendingAttachments.push({ name, content });
+    const p = String(path);
+    const lower = p.toLowerCase();
+    const name = p.split(/[\\/]/).pop();
+    const IMG = ["png", "jpg", "jpeg", "webp"];
+    const ext = lower.includes(".") ? lower.split(".").pop() : "";
+    if (IMG.includes(ext)) {
+      // image -> vision attachment (base64 data URI, sent as image_url)
+      const b64 = await invoke("read_binary_file", { path: p });
+      const dataUri = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${b64}`;
+      pendingAttachments.push({ kind: "image", name, dataUri });
+    } else {
+      // document -> backend text extraction (pdf/docx/html/txt via extract)
+      const doc = await invoke("extract_document_text", { path: p });
+      pendingAttachments.push({ kind: "text", name, content: doc.text, truncated: doc.truncated });
+    }
     renderAttachRow();
   } catch (e) {
     toast(String(e), "err");
@@ -2652,6 +2633,21 @@ function bindUI() {
       const paths = ev.payload || [];
       const handled = await importDroppedImages(paths);
       if (handled) return;
+      const DOCS = ["txt", "pdf", "docx", "html", "htm", "csv", "json", "xml"];
+      const docFiles = paths.filter((p) => {
+        const ext = p.toLowerCase().includes(".") ? p.toLowerCase().split(".").pop() : "";
+        return DOCS.includes(ext);
+      });
+      for (const df of docFiles) {
+        try {
+          if (pendingAttachments.length >= 4) { toast(lang === "zh-CN" ? "最多 4 个附件" : "Max 4 attachments", "err"); break; }
+          const doc = await invoke("extract_document_text", { path: df });
+          pendingAttachments.push({ kind: "text", name: df.split(/[\/]/).pop(), content: doc.text, truncated: doc.truncated });
+          renderAttachRow();
+          toast(lang === "zh-CN" ? "已加入 AI 附件" : "Added as AI attachment", "ok");
+        } catch (e) { toast(String(e), "err"); }
+      }
+      if (docFiles.length) return;
       const mdFile = paths.find((p) => p.toLowerCase().endsWith(".md") || p.toLowerCase().endsWith(".markdown"));
       if (mdFile) {
         try {
@@ -2682,6 +2678,19 @@ function bindUI() {
 
   /* QR code modal */
   $("malong-btn").addEventListener("click", () => openModal("modal-qr"));
+
+  /* easter egg: click the wxwright logo three times quickly -> Mozai party */
+  let logoClicks = 0, logoTimer = null;
+  $("logo-btn").addEventListener("click", () => {
+    logoClicks++;
+    clearTimeout(logoTimer);
+    logoTimer = setTimeout(() => { logoClicks = 0; }, 1500);
+    if (logoClicks >= 3) {
+      logoClicks = 0;
+      window.Mozai && Mozai.celebrate();
+      toast(lang === "zh-CN" ? "彩蛋：墨仔来派对啦！公众号「码聋」见。" : "Easter egg: Mozai party! See you at MP 码聋.", "ok");
+    }
+  });
 
   /* github link */
   $("link-github").addEventListener("click", (e) => {

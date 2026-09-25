@@ -354,26 +354,27 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
 
     let reader = std::io::BufReader::new(resp.into_reader());
     let mut lines: Vec<String> = Vec::new();
+    let mut saw_data = false;
+    let mut stopped = false;
+    let mut usage: Option<serde_json::Value> = None;
+    // Single pass: emit chunks as they arrive and check the stop flag
+    // between lines — breaking drops the reader, which closes the HTTP
+    // connection (stop is a real disconnect, not just a rendering stop).
     for line in reader.lines() {
-        match line {
-            Ok(l) => lines.push(l),
+        if STOP_GEN.load(Ordering::Relaxed) == my_gen {
+            stopped = true;
+            break;
+        }
+        let l = match line {
+            Ok(l) => l,
             Err(e) => {
                 let msg = format!("流中断: {}", e);
                 let _ = app.emit("ai-error", msg.clone());
                 return Err(msg);
             }
-        }
-    }
-
-    let mut saw_data = false;
-    let mut stopped = false;
-    let mut usage: Option<serde_json::Value> = None;
-    for line in &lines {
-        if STOP_GEN.load(Ordering::Relaxed) == my_gen {
-            stopped = true;
-            break;
-        }
-        let data = match line.strip_prefix("data:") {
+        };
+        lines.push(l.clone());
+        let data = match l.strip_prefix("data:") {
             Some(d) => d.trim(),
             None => continue,
         };

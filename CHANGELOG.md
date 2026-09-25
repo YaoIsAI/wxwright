@@ -10,6 +10,22 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Fixed
+- **Code-review sweep over all prior requests** (2026-09-25) found and fixed:
+  - `addAttachment` was defined twice in app.js; the later md/txt-only
+    definition shadowed the multi-format version, so PDF/DOCX/HTML/images
+    attachments never actually worked despite the backend being complete.
+    Deduped to the multi-format implementation (extract_document_text +
+    vision image parts).
+  - Drag-dropping documents (txt/pdf/docx/html/csv/json/xml) onto the window
+    now routes them into AI attachments (previously only images and .md were
+    handled); attachment button tooltip updated accordingly.
+  - The wxwright-logo triple-click easter egg (Mozai party) had been lost in
+    an earlier init rewrite; restored.
+  - AI chat "stop" now really disconnects: the SSE read loop checks the stop
+    flag between lines and drops the connection instead of only halting
+    rendering after the full download.
+
 ### Added
 - **Unified AI generation runtime (`jobs.rs` + `ai-jobs.js`)**: every GUI
   generation panel (AI theme, SVG component, poster HTML, cloud image,
