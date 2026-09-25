@@ -135,9 +135,6 @@
       <button id="btn-theme-ai" class="btn btn-ghost btn-icon" title="AI 生成主题">
         <svg class="icon"><use href="#i-spark"/></svg>
       </button>
-      <button id="btn-validate" class="btn btn-ghost btn-icon" title="校验" aria-label="validate">
-        <svg class="icon"><use href="#i-shield"/></svg>
-      </button>
       <button id="btn-export" class="btn btn-ghost btn-icon" title="导出 HTML" aria-label="export">
         <svg class="icon"><use href="#i-download"/></svg>
       </button>
@@ -203,7 +200,10 @@
         <span id="stat-saved" data-i18n="not_saved">未保存</span>
         <span class="spacer"></span>
         <button id="rule-chip" class="rule-chip" hidden></button>
-        <button id="btn-save" class="linklike" data-i18n="save">保存</button>
+        <button id="btn-validate" class="btn btn-validate" title="校验公众号规范" aria-label="validate">
+          <svg class="icon"><use href="#i-shield"/></svg><span data-i18n="validate">校验</span>
+        </button>
+        <button id="btn-save" class="btn btn-save" data-i18n="save">保存</button>
       </div>
 
       <div id="violations-panel" class="violations-panel" hidden></div>
@@ -292,7 +292,8 @@
 
   <footer class="statusbar">
     <div id="pet" title="墨仔（点击摸摸，双击换形态）">
-      <img id="pet-img" src="pet/idle.jpg" alt="墨仔" draggable="false" />
+      <img id="pet-img" class="show" src="pet/idle.jpg" alt="墨仔" draggable="false" />
+      <img id="pet-img-b" alt="" aria-hidden="true" draggable="false" />
       <svg class="pet-svg" viewBox="0 0 64 64" aria-hidden="true" hidden>
         <!-- tail curls from behind the body -->
         <path class="pet-tail" d="M46 54 C57 54 60 42 52 37" fill="none" stroke="var(--accent)" stroke-width="5.5" stroke-linecap="round"/>
@@ -340,72 +341,104 @@
           <svg class="icon"><use href="#i-x"/></svg>
         </button>
       </div>
-      <div class="modal-body">
-        <section class="modal-section">
-          <div class="section-title" data-i18n="ai_providers">AI Providers（OpenAI 兼容协议）</div>
-          <p class="section-hint" data-i18n="ai_hint">
-            支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串。
-          </p>
-          <div id="provider-list" class="provider-list"></div>
-          <form id="provider-form" class="provider-form">
-            <input type="hidden" id="pf-id" />
-            <input type="hidden" id="pf-brand" />
+      <div class="modal-body settings-body">
+        <aside class="settings-nav" id="settings-nav">
+          <button type="button" class="settings-nav-btn active" data-pane="pane-providers">
+            <svg class="icon"><use href="#i-spark"/></svg><span data-i18n="nav_providers">AI Providers</span>
+          </button>
+          <button type="button" class="settings-nav-btn" data-pane="pane-wx">
+            <svg class="icon"><use href="#i-check"/></svg><span data-i18n="nav_wx">公众号 API</span>
+          </button>
+          <button type="button" class="settings-nav-btn" data-pane="pane-comfy">
+            <svg class="icon"><use href="#i-image"/></svg><span>ComfyUI</span>
+          </button>
+          <button type="button" class="settings-nav-btn" data-pane="pane-about">
+            <svg class="icon"><use href="#i-book"/></svg><span data-i18n="about">关于</span>
+          </button>
+        </aside>
+        <div class="settings-panes">
+          <section class="modal-section settings-pane active" id="pane-providers">
+            <div class="section-title" data-i18n="ai_providers">AI Providers（OpenAI 兼容协议）</div>
+            <p class="section-hint" data-i18n="ai_hint">
+              支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串。
+            </p>
+            <div id="provider-list" class="provider-list"></div>
+            <form id="provider-form" class="provider-form">
+              <input type="hidden" id="pf-id" />
+              <input type="hidden" id="pf-brand" />
+              <div class="form-grid">
+                <label class="span2"><span>预设厂商（选择后自动填充）</span>
+                  <select id="pf-vendor" class="select" style="min-width: 0; max-width: 100%;">
+                    <option value="">— 选择厂商自动填充 —</option>
+                  </select>
+                </label>
+                <label><span data-i18n="f_name">名称</span><input id="pf-name" placeholder="DeepSeek" required /></label>
+                <label><span data-i18n="f_model">模型</span><input id="pf-model" placeholder="deepseek-chat" required /></label>
+                <label class="span2"><span data-i18n="f_baseurl">Base URL</span><input id="pf-base" placeholder="https://api.deepseek.com" required /></label>
+                <label class="span2"><span data-i18n="f_key">API Key</span><input id="pf-key" type="password" placeholder data-i18n-placeholder="f_key_hint" /></label>
+                <label class="span2"><span data-i18n="f_logo">自定义图标（可选，data URI / 上传）</span>
+                  <div class="form-actions" style="margin-top: 0;">
+                    <input id="pf-logo" readonly placeholder="留空使用内置品牌标" style="flex: 1;" />
+                    <button type="button" id="pf-logo-pick" class="btn btn-ghost">上传图标</button>
+                    <button type="button" id="pf-logo-clear" class="btn btn-ghost">清除</button>
+                  </div>
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="button" id="pf-test" class="btn btn-ghost" data-i18n="test">测试连接</button>
+                <span class="spacer"></span>
+                <button type="button" id="pf-cancel" class="btn btn-ghost" data-i18n="cancel">取消</button>
+                <button type="submit" class="btn btn-primary" data-i18n="save_provider">保存 Provider</button>
+              </div>
+            </form>
+            <div class="freetokens-card" style="margin-top: 18px;">
+              <svg class="icon"><use href="#i-spark"/></svg>
+              <div>
+                <div class="ft-title" data-i18n="ft_title">没有 API Key？</div>
+                <div class="ft-body" data-i18n="ft_body">作者的另一个项目 <b>Free Tokens</b> 持续收录免费模型额度——去逛逛，一起实现 Token 自由。</div>
+              </div>
+              <button id="freetokens-link" class="btn btn-ghost">free-tokens.org</button>
+            </div>
+          </section>
+          <section class="modal-section settings-pane" id="pane-wx">
+            <div class="section-title" data-i18n="wx_title">公众号 API 绑定</div>
+            <p class="section-hint" data-i18n="wx_hint">
+              绑定后可使用「推送草稿」直接把文章写入公众号草稿箱。AppID / AppSecret 存入系统钥匙串，仅保存在本机。
+            </p>
+            <div id="wx-status" class="ai-provider-chip" style="margin-bottom: 12px;"></div>
+            <form id="wx-form" class="provider-form">
+              <div class="form-grid">
+                <label class="span2"><span data-i18n="wx_appid">AppID</span><input id="wx-appid" placeholder="wx1234567890abcdef" /></label>
+                <label class="span2"><span data-i18n="wx_secret">AppSecret</span><input id="wx-secret" type="password" placeholder="仅保存到本机钥匙串" data-i18n-placeholder="wx_secret_ph" /></label>
+              </div>
+              <div class="form-actions">
+                <span class="spacer"></span>
+                <button type="button" id="wx-unbind" class="btn btn-ghost" data-i18n="wx_unbind">解除绑定</button>
+                <button type="submit" class="btn btn-primary" data-i18n="wx_bind">绑定</button>
+              </div>
+            </form>
+          </section>
+          <section class="modal-section settings-pane" id="pane-comfy">
+            <div class="section-title">ComfyUI（本地 AI 绘图）</div>
+            <p class="section-hint">检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。</p>
             <div class="form-grid">
-              <label class="span2"><span>预设厂商（选择后自动填充）</span>
-                <select id="pf-vendor" class="select" style="min-width: 0; max-width: 100%;">
-                  <option value="">— 选择厂商自动填充 —</option>
-                </select>
-              </label>
-              <label><span data-i18n="f_name">名称</span><input id="pf-name" placeholder="DeepSeek" required /></label>
-              <label><span data-i18n="f_model">模型</span><input id="pf-model" placeholder="deepseek-chat" required /></label>
-              <label class="span2"><span data-i18n="f_baseurl">Base URL</span><input id="pf-base" placeholder="https://api.deepseek.com" required /></label>
-              <label class="span2"><span data-i18n="f_key">API Key</span><input id="pf-key" type="password" placeholder data-i18n-placeholder="f_key_hint" /></label>
-              <label class="span2"><span data-i18n="f_logo">自定义图标（可选，data URI / 上传）</span>
-                <div class="form-actions" style="margin-top: 0;">
-                  <input id="pf-logo" readonly placeholder="留空使用内置品牌标" style="flex: 1;" />
-                  <button type="button" id="pf-logo-pick" class="btn btn-ghost">上传图标</button>
-                  <button type="button" id="pf-logo-clear" class="btn btn-ghost">清除</button>
-                </div>
-              </label>
+              <label class="span2"><span>ComfyUI 地址</span><input id="comfy-url" placeholder="http://127.0.0.1:8188" /></label>
+              <label class="span2"><span>Checkpoint 模型</span><input id="comfy-model" placeholder="v1-5-pruned-emaonly.safetensors" /></label>
+              <label class="span2"><span>启动程序路径（用于一键启动）</span><input id="comfy-launch-path" placeholder="D:\\ComfyUI\\run_nvidia_gpu.bat" /></label>
             </div>
             <div class="form-actions">
-              <button type="button" id="pf-test" class="btn btn-ghost" data-i18n="test">测试连接</button>
+              <span id="comfy-chip" class="ai-provider-chip"></span>
               <span class="spacer"></span>
-              <button type="button" id="pf-cancel" class="btn btn-ghost" data-i18n="cancel">取消</button>
-              <button type="submit" class="btn btn-primary" data-i18n="save_provider">保存 Provider</button>
+              <button type="button" id="comfy-start" class="btn btn-ghost">一键启动</button>
+              <button type="button" id="comfy-save" class="btn btn-primary">保存</button>
             </div>
-          </form>
-        </section>
-        <section class="modal-section">
-          <div class="freetokens-card">
-            <svg class="icon"><use href="#i-spark"/></svg>
-            <div>
-              <div class="ft-title" data-i18n="ft_title">没有 API Key？</div>
-              <div class="ft-body" data-i18n="ft_body">作者的另一个项目 <b>Free Tokens</b> 持续收录免费模型额度——去逛逛，一起实现 Token 自由。</div>
-            </div>
-            <button id="freetokens-link" class="btn btn-ghost">free-tokens.org</button>
-          </div>
-        </section>
-        <section class="modal-section">
-          <div class="section-title">ComfyUI（本地 AI 绘图）</div>
-          <p class="section-hint">检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。</p>
-          <div class="form-grid">
-            <label class="span2"><span>ComfyUI 地址</span><input id="comfy-url" placeholder="http://127.0.0.1:8188" /></label>
-            <label class="span2"><span>Checkpoint 模型</span><input id="comfy-model" placeholder="v1-5-pruned-emaonly.safetensors" /></label>
-            <label class="span2"><span>启动程序路径（用于一键启动）</span><input id="comfy-launch-path" placeholder="D:\\ComfyUI\\run_nvidia_gpu.bat" /></label>
-          </div>
-          <div class="form-actions">
-            <span id="comfy-chip" class="ai-provider-chip"></span>
-            <span class="spacer"></span>
-            <button type="button" id="comfy-start" class="btn btn-ghost">一键启动</button>
-            <button type="button" id="comfy-save" class="btn btn-primary">保存</button>
-          </div>
-        </section>
-        <section class="modal-section about">
-          <div class="section-title" data-i18n="about">关于</div>
-          <div class="about-line">wxwright 0.9.0 · by <b>AI瑶</b>（微信公众号：<b>码聋</b>）</div>
-          <div class="about-line">写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。</div>
-        </section>
+          </section>
+          <section class="modal-section settings-pane about" id="pane-about">
+            <div class="section-title" data-i18n="about">关于</div>
+            <div class="about-line">wxwright 0.9.0 · by <b>AI瑶</b>（微信公众号：<b>码聋</b>）</div>
+            <div class="about-line">写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。</div>
+          </section>
+        </div>
       </div>
     </div>
   </div>

@@ -313,8 +313,49 @@ pub fn delete_asset(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn read_binary_file(path: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let bytes = std::fs::read(&path).map_err(|e| format!("read failed: {}", e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+pub fn extract_document_text(path: String) -> Result<crate::extract::ExtractedDoc, String> {
+    crate::extract::extract(&path)
+}
+
+#[tauri::command]
 pub fn comfy_status() -> serde_json::Value {
     crate::comfy::status()
+}
+
+// ------------------------------------------------------ wechat mp binding ---
+#[tauri::command]
+pub fn wx_bind_status() -> serde_json::Value {
+    let creds = wxwright_mp::load_credentials();
+    match creds {
+        Some(c) => serde_json::json!({ "bound": true, "appid": wxwright_mp::mask(&c.appid) }),
+        None => serde_json::json!({ "bound": false, "appid": "" }),
+    }
+}
+
+#[tauri::command]
+pub fn wx_bind(appid: String, secret: String) -> Result<serde_json::Value, String> {
+    if appid.trim().is_empty() || secret.trim().is_empty() {
+        return Err("AppID 和 AppSecret 不能为空".into());
+    }
+    let creds = wxwright_mp::Credentials {
+        appid: appid.trim().to_string(),
+        secret: secret.trim().to_string(),
+    };
+    // keyring first; file fallback stays in %APPDATA% (outside any repo)
+    wxwright_mp::save_credentials(&creds, true).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "bound": true, "appid": wxwright_mp::mask(&creds.appid) }))
+}
+
+#[tauri::command]
+pub fn wx_unbind() -> Result<bool, String> {
+    wxwright_mp::clear_credentials().map(|_| true).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

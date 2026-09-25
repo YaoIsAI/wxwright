@@ -1,3 +1,36 @@
+async function addAttachment() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  if (pendingAttachments.length >= 4) { toast(lang === "zh-CN" ? "最多 4 个附件" : "Max 4 attachments", "err"); return; }
+  try {
+    const { open } = window.__TAURI__.dialog;
+    const path = await open({
+      multiple: false,
+      filters: [
+        { name: lang === "zh-CN" ? "文档与图片" : "Documents & images", extensions: ["md", "markdown", "txt", "html", "htm", "pdf", "docx", "csv", "json", "xml", "png", "jpg", "jpeg", "webp"] },
+      ],
+    });
+    if (!path) return;
+    const p = String(path);
+    const lower = p.toLowerCase();
+    const name = p.split(/[\\/]/).pop();
+    const IMG = ["png", "jpg", "jpeg", "webp"];
+    const ext = lower.includes(".") ? lower.split(".").pop() : "";
+    if (IMG.includes(ext)) {
+      // image -> vision attachment (base64 data URI, sent as image_url)
+      const b64 = await invoke("read_binary_file", { path: p });
+      const dataUri = `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${b64}`;
+      pendingAttachments.push({ kind: "image", name, dataUri });
+    } else {
+      // document -> backend text extraction (pdf/docx/html/txt via extract)
+      const doc = await invoke("extract_document_text", { path: p });
+      pendingAttachments.push({ kind: "text", name, content: doc.text, truncated: doc.truncated });
+    }
+    renderAttachRow();
+  } catch (e) {
+    toast(String(e), "err");
+  }
+}
+
 /* wxwright GUI: library + editor + preview + AI assistant + agent panel
    + poster studio + device frames + writing pet (墨仔). */
 "use strict";
@@ -57,6 +90,16 @@ const I18N = {
     poster_generating: "AI 生成 HTML 中...", poster_rasterizing: "正在导出 PNG...",
     rename: "重命名", duplicate: "创建副本", prompt_rename: "重命名文章",
     img_imported: (n) => `已导入 ${n} 张图片`,
+    nav_providers: "AI Providers", nav_wx: "公众号 API",
+    wx_title: "公众号 API 绑定",
+    wx_hint: "绑定后可使用「推送草稿」直接把文章写入公众号草稿箱。AppID / AppSecret 存入系统钥匙串，仅保存在本机。",
+    wx_appid: "AppID", wx_secret: "AppSecret",
+    wx_bind: "绑定", wx_unbind: "解除绑定",
+    wx_bind_ok: "已绑定公众号", wx_unbind_ok: "已解除绑定",
+    wx_demo_only: "浏览器演示模式下不可用",
+    wx_secret_ph: "仅保存到本机钥匙串",
+    validate: "校验",
+    wx_status_fail: "读取绑定状态失败",
   },
   en: {
     library: "Library", theme: "Theme", copy: "Copy rich text", ai: "AI",
@@ -107,6 +150,16 @@ const I18N = {
     poster_generating: "Generating HTML...", poster_rasterizing: "Exporting PNG...",
     rename: "Rename", duplicate: "Duplicate", prompt_rename: "Rename article",
     img_imported: (n) => `${n} image(s) imported`,
+    nav_providers: "AI Providers", nav_wx: "MP API",
+    wx_title: "Official Account API binding",
+    wx_hint: "After binding, \"Push draft\" writes articles straight to your MP draft box. AppID / AppSecret are stored in the system keychain, on this machine only.",
+    wx_appid: "AppID", wx_secret: "AppSecret",
+    wx_bind: "Bind", wx_unbind: "Unbind",
+    wx_bind_ok: "Official account bound", wx_unbind_ok: "Unbound",
+    wx_demo_only: "Unavailable in browser demo mode",
+    wx_secret_ph: "Keychain on this machine only",
+    validate: "Check",
+    wx_status_fail: "Failed to read binding status",
   },
 };
 let lang = "zh-CN";
@@ -115,6 +168,7 @@ let lang = "zh-CN";
 let currentTheme = "minimal";
 let darkPreview = false;
 let convertTimer = null;
+let aiLanding = false; // one-shot: pulse the preview's last block after AI insert/replace
 let lastResult = null;
 let currentArticleId = null;
 let dirty = false;
@@ -178,6 +232,16 @@ function applyI18n() {
 
 /* -------------------------------------------------------------- preview */
 function wrapPreviewHtml(dialect) {
+  // one-shot landing pulse on the newest last block after AI insert/replace
+  const pulse = aiLanding
+    ? `<style>
+  @keyframes wxland{0%{box-shadow:inset 4px 0 0 0 var(--accent,#2F6CEA);background:rgba(47,108,234,.10);transform:translateY(6px);opacity:.2}
+    60%{box-shadow:inset 4px 0 0 0 var(--accent,#2F6CEA);background:rgba(47,108,234,.08)}
+    100%{box-shadow:none;background:transparent;transform:none;opacity:1}}
+  body>*:last-child{animation:wxland 1.5s ease both;border-radius:6px;}
+</style>`
+    : "";
+  aiLanding = false;
   return `<!doctype html><html><head><meta charset="utf-8">
 <style>
   html,body{margin:0;padding:0;background:#fff;}
@@ -186,7 +250,7 @@ function wrapPreviewHtml(dialect) {
   /* phone-realistic: no visible scrollbars */
   ::-webkit-scrollbar{width:0;height:0;display:none;}
   html{scrollbar-width:none;}
-</style></head><body>${dialect}</body></html>`;
+</style>${pulse}</head><body>${dialect}</body></html>`;
 }
 function updateStats(stats, violations) {
   $("stat-chars").textContent = `${t("chars")} ${stats.chars}`;
@@ -578,7 +642,17 @@ function finalizeAiMessage(el, content, info = {}) {
   actions.className = "msg-actions";
   const actionsSpec = [
     [t("ai_insert"), () => insertAtCursor(content)],
-    [t("ai_replace"), () => { $("editor").value = content; dirty = true; $("stat-saved").textContent = t("not_saved"); convertNow(); }],
+    [t("ai_replace"), () => {
+      const ed = $("editor");
+      ed.value = content;
+      dirty = true;
+      $("stat-saved").textContent = t("not_saved");
+      ed.focus();
+      ed.setSelectionRange(0, Math.min(400, content.length));
+      flashEditor();
+      aiLanding = true;
+      convertNow();
+    }],
     [t("ai_copy"), async () => { await copyPlain(content); toast(t("copied_text"), "ok"); }],
   ];
   for (const [label, fn] of actionsSpec) {
@@ -600,8 +674,20 @@ function insertAtCursor(text) {
   ed.value = before + text + after;
   dirty = true;
   $("stat-saved").textContent = t("not_saved");
+  // visual guidance: select the inserted range + glow the editor
+  ed.focus();
+  ed.setSelectionRange(start, start + text.length);
+  flashEditor();
   if (window.Mozai) Mozai.typing();
+  aiLanding = true;
   scheduleConvert();
+}
+/* brief glow on the editor pane so the user sees where AI content landed */
+function flashEditor() {
+  const ed = $("editor");
+  ed.classList.add("land-flash");
+  clearTimeout(flashEditor._t);
+  flashEditor._t = setTimeout(() => ed.classList.remove("land-flash"), 1200);
 }
 function buildQuickPrompt(kind) {
   const md = $("editor").value;
@@ -621,8 +707,8 @@ ${md.slice(0, 6000)}` : "";
   }
 }
 const AI_SYSTEM = () => lang === "zh-CN"
-  ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。"
-  : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables.";
+  ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。需要展示数据时优先使用图表围栏：```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"标题\",\"labels\":[\"标签\"…],\"values\":[数值…],\"unit\":\"单位(可选)\"}\\n```，labels 与 values 数量必须一致，pie 的 values 表示占比。"
+  : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables. When presenting data, prefer chart fences: ```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"...\",\"labels\":[...],\"values\":[...],\"unit\":\"(optional)\"}\\n``` — labels and values must match in length; pie values are proportions.";
 
 
 async function aiSend(text) {
@@ -634,16 +720,22 @@ async function aiSend(text) {
   aiStopped = false;
   aiStartedAt = Date.now();
   if (window.Mozai) Mozai.setBusy(true);
-  // attachments become part of the user message (file name + content)
+  // attachments: text docs fold into the prompt; images become vision parts
   let content = baseText;
-  if (pendingAttachments.length > 0) {
-    const blocks = pendingAttachments
-      .map((a) => `${lang === "zh-CN" ? "【附件" : "[Attachment"} ${a.name}】\n${a.content}`)
-      .join("\n\n");
-    content = `${blocks}\n\n${content}`;
-    pendingAttachments = [];
-    renderAttachRow();
+  const visionParts = [];
+  const textAtts = [];
+  for (const a of pendingAttachments) {
+    if (a.kind === "image") {
+      visionParts.push({ type: "image_url", image_url: { url: a.dataUri } });
+    } else {
+      textAtts.push(`${lang === "zh-CN" ? "【附件" : "[Attachment"} ${a.name}】\n${a.content}`);
+    }
   }
+  if (textAtts.length > 0) {
+    content = textAtts.join("\n\n") + "\n\n" + content;
+  }
+  pendingAttachments = [];
+  renderAttachRow();
   try {
     const st = await invoke("ai_settings");
     aiModelName = st.providers.find((p) => p.id === st.active)?.model || "AI";
@@ -652,7 +744,14 @@ async function aiSend(text) {
   sendBtn.innerHTML = '<svg class="icon"><use href="#i-stop"/></svg>';
   sendBtn.classList.add("stopping");
   sendBtn.title = lang === "zh-CN" ? "停止生成" : "Stop";
-  appendAiMessage("user", content);
+  let userContent;
+  let userEcho = content;
+  if (visionParts.length > 0) {
+    userContent = [{ type: "text", text: content }, ...visionParts.map((v) => ({ type: "image_url", image_url: v.image_url }))];
+    appendAiMessage("user", content + (lang === "zh-CN" ? `（含 ${visionParts.length} 张图片）` : ` (with ${visionParts.length} image(s))`));
+  } else {
+    appendAiMessage("user", content);
+  }
   aiHistory.push({ role: "user", content });
   const el = appendAiMessage("assistant", "", true);
   const contentEl = el.querySelector(".content");
@@ -1265,7 +1364,7 @@ function toggleDark() {
 }
 
 /* ---------------------------------------------------------- attachments */
-let pendingAttachments = [];
+let pendingAttachments = []; // {kind:"text"|"image", name, content|dataUri}
 function renderAttachRow() {
   const row = $("attach-row");
   row.innerHTML = "";
@@ -1273,7 +1372,8 @@ function renderAttachRow() {
   for (const a of pendingAttachments) {
     const chip = document.createElement("span");
     chip.className = "attach-chip";
-    chip.innerHTML = `<svg class="icon icon-sm"><use href="#i-clip"/></svg><span class="a-name">${escapeHtml(a.name)}</span><button type="button" title="remove"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>`;
+    const icon = a.kind === "image" ? "i-image" : "i-clip";
+    chip.innerHTML = `<svg class="icon icon-sm"><use href="#${icon}"/></svg><span class="a-name">${escapeHtml(a.name)}</span><button type="button" title="remove"><svg class="icon icon-sm"><use href="#i-x"/></svg></button>`;
     chip.querySelector("button").addEventListener("click", () => {
       pendingAttachments = pendingAttachments.filter((x) => x !== a);
       renderAttachRow();
@@ -1682,13 +1782,32 @@ function renderSvgKit() {
           </div>`;
         form.appendChild(wrap);
       } else {
-        wrap.innerHTML = `<span>${label}</span><input data-param="${key}" value="${escapeHtml(svgKitParams[key] ?? "")}" />`;
+        const isColor = key === "color" || key.toLowerCase().endsWith("color");
+        if (isColor) {
+          const val = String(svgKitParams[key] ?? "");
+          const hex = /^#[0-9a-fA-F]{6}$/.test(val) ? val : "#2F6CEA";
+          wrap.innerHTML = `<span>${label}</span>
+            <div class="form-actions" style="margin-top: 0;">
+              <input data-param="${key}" value="${escapeHtml(val)}" style="flex: 1;" />
+              <input type="color" data-colorpick="${key}" value="${hex}" class="color-pick" title="${lang === "zh-CN" ? "取色器" : "Color picker"}" />
+            </div>`;
+        } else {
+          wrap.innerHTML = `<span>${label}</span><input data-param="${key}" value="${escapeHtml(svgKitParams[key] ?? "")}" />`;
+        }
         form.appendChild(wrap);
       }
     }
     form.querySelectorAll("input[data-param]").forEach((inp) => {
       inp.addEventListener("input", () => {
         svgKitParams[inp.dataset.param] = inp.value;
+        renderSvgKitPreview();
+      });
+    });
+    form.querySelectorAll("input[data-colorpick]").forEach((pick) => {
+      pick.addEventListener("input", () => {
+        svgKitParams[pick.dataset.colorpick] = pick.value;
+        const twin = form.querySelector(`input[data-param="${pick.dataset.colorpick}"]`);
+        if (twin) twin.value = pick.value;
         renderSvgKitPreview();
       });
     });
@@ -2004,8 +2123,31 @@ function bindUI() {
   $("ai-model-select").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("ai-model-menu");
-    if (menu.hidden) { renderModelMenu(); menu.hidden = false; $("ai-model-select").classList.add("open"); }
-    else { menu.hidden = true; $("ai-model-select").classList.remove("open"); }
+    const btn = $("ai-model-select");
+    if (menu.hidden) {
+      renderModelMenu();
+      menu.hidden = false;
+      $("ai-model-select").classList.add("open");
+      // anchor the menu to the trigger button: above when there is room,
+      // below otherwise; horizontally aligned to the button, clamped onscreen
+      const br = btn.getBoundingClientRect();
+      menu.style.visibility = "hidden";
+      menu.style.display = "block";
+      const mw = menu.offsetWidth || 280;
+      const mh = menu.offsetHeight || 260;
+      menu.style.display = "";
+      menu.style.visibility = "";
+      let left = Math.min(Math.max(8, br.left), window.innerWidth - mw - 8);
+      let top;
+      const spaceAbove = br.top - 8;
+      if (spaceAbove >= mh) top = br.top - mh - 6;
+      else top = Math.min(br.bottom + 6, window.innerHeight - mh - 8);
+      menu.style.left = `${Math.round(left)}px`;
+      menu.style.top = `${Math.round(top)}px`;
+    } else {
+      menu.hidden = true;
+      $("ai-model-select").classList.remove("open");
+    }
   });
   document.addEventListener("click", (e) => {
     const menu = $("ai-model-menu");
@@ -2019,6 +2161,7 @@ function bindUI() {
   $("btn-settings").addEventListener("click", async () => {
     openModal("modal-settings");
     renderProviderList();
+    refreshWxStatus();
     if (invoke) {
       try {
         const st = await invoke("comfy_status");
@@ -2026,6 +2169,68 @@ function bindUI() {
         $("comfy-model").value = st.model;
         renderComfyStatus(st);
       } catch (e) {}
+    }
+  });
+  // settings left-nav pane switching
+  document.querySelectorAll("#settings-nav .settings-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#settings-nav .settings-nav-btn").forEach((b) =>
+        b.classList.toggle("active", b === btn)
+      );
+      document.querySelectorAll("#modal-settings .settings-pane").forEach((p) =>
+        p.classList.toggle("active", p.id === btn.dataset.pane)
+      );
+    });
+  });
+  // wechat mp binding: status refresh + bind/unbind
+  async function refreshWxStatus() {
+    const chip = $("wx-status");
+    if (!chip) return;
+    if (!invoke) {
+      chip.textContent = lang === "zh-CN" ? "浏览器演示：未绑定" : "browser demo: not bound";
+      return;
+    }
+    try {
+      const st = await invoke("wx_bind_status");
+      chip.textContent = st.bound
+        ? lang === "zh-CN" ? `已绑定 · ${st.appid}` : `bound · ${st.appid}`
+        : lang === "zh-CN" ? "未绑定" : "not bound";
+      chip.style.color = st.bound ? "var(--ok)" : "var(--text-tertiary)";
+      $("wx-appid").value = "";
+      $("wx-secret").value = "";
+    } catch (e) {
+      chip.textContent = t("wx_status_fail");
+    }
+  }
+  $("wx-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!invoke) return toast(t("wx_demo_only"), "err");
+    const appid = $("wx-appid").value.trim();
+    const secret = $("wx-secret").value.trim();
+    try {
+      const st = await invoke("wx_bind", { appid, secret });
+      toast(t("wx_bind_ok"), "ok");
+      $("wx-secret").value = "";
+      chipSync(st);
+    } catch (err) {
+      toast(String(err), "err");
+    }
+    function chipSync(st) {
+      const chip = $("wx-status");
+      chip.textContent = lang === "zh-CN" ? `已绑定 · ${st.appid}` : `bound · ${st.appid}`;
+      chip.style.color = "var(--ok)";
+    }
+  });
+  $("wx-unbind").addEventListener("click", async () => {
+    if (!invoke) return;
+    try {
+      await invoke("wx_unbind");
+      toast(t("wx_unbind_ok"), "ok");
+      const chip = $("wx-status");
+      chip.textContent = lang === "zh-CN" ? "未绑定" : "not bound";
+      chip.style.color = "var(--text-tertiary)";
+    } catch (err) {
+      toast(String(err), "err");
     }
   });
   $("provider-form").addEventListener("submit", async (e) => {

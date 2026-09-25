@@ -6,7 +6,7 @@
 
 use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag};
 
-use crate::ir::{Align, Block, CardKind, ImageRef, Inline, InlineKind, ListItem};
+use crate::ir::{Align, Block, CardKind, ChartSpec, ImageRef, Inline, InlineKind, ListItem};
 
 pub fn parse_markdown(md: &str) -> Vec<Block> {
     let mut opts = Options::empty();
@@ -368,7 +368,17 @@ impl ParserState {
                     inlines,
                 });
             }
-            Frame::Code { lang, code } => self.push_block(Block::Code { lang, code }),
+            Frame::Code { lang, code } => {
+                if lang.as_deref() == Some("chart") {
+                    // ```chart fenced JSON becomes an inline SVG chart; on
+                    // malformed JSON fall back to a plain code block.
+                    if let Ok(spec) = serde_json::from_str::<ChartSpec>(&code) {
+                        self.push_block(Block::Chart { spec });
+                        return;
+                    }
+                }
+                self.push_block(Block::Code { lang, code });
+            }
             Frame::HtmlBuf(buf) => {
                 let html = buf.trim().to_string();
                 if html.is_empty() {
@@ -645,6 +655,28 @@ mod tests {
         assert!(matches!(&blocks[0], Block::Heading { level: 1, .. }));
         assert!(matches!(&blocks[1], Block::Paragraph { .. }));
         assert!(matches!(&blocks[2], Block::List { ordered: false, .. }));
+    }
+
+    #[test]
+    fn chart_fence_becomes_chart_block() {
+        let blocks = parse_markdown(
+            "```chart\n{\"kind\":\"bar\",\"title\":\"周下载\",\"labels\":[\"一\",\"二\"],\"values\":[3,5]}\n```\n",
+        );
+        assert!(matches!(&blocks[0], Block::Chart { .. }));
+    }
+
+    #[test]
+    fn chart_fence_bad_json_falls_back_to_code() {
+        let blocks = parse_markdown("```chart\nnot json\n```\n");
+        assert!(matches!(&blocks[0], Block::Code { .. }));
+    }
+
+    #[test]
+    fn chart_renders_inline_svg() {
+        let blocks = parse_markdown(
+            "```chart\n{\"kind\":\"pie\",\"labels\":[\"A\",\"B\"],\"values\":[2,1]}\n```\n",
+        );
+        assert!(matches!(&blocks[0], Block::Chart { .. }));
     }
 
     #[test]

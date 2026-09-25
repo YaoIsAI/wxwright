@@ -94,6 +94,26 @@ pub enum Inline {
     RawHtml(String),
 }
 
+/// Chart specification parsed from a ```chart fenced block (JSON).
+/// Rendered as inline SVG by the engine; AI can emit these directly.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChartSpec {
+    #[serde(default = "default_chart_kind")]
+    pub kind: String, // bar | line | pie
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub values: Vec<f64>,
+    #[serde(default)]
+    pub unit: String,
+}
+
+fn default_chart_kind() -> String {
+    "bar".into()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
     Heading {
@@ -145,6 +165,11 @@ pub enum Block {
     /// the validator. Never produced for arbitrary user HTML.
     SvgEmbed {
         html: String,
+    },
+    /// Data chart rendered as compliant inline SVG (bar/line/pie), from a
+    /// ```chart fenced block (JSON spec). AI can emit these directly.
+    Chart {
+        spec: ChartSpec,
     },
 }
 
@@ -211,6 +236,7 @@ fn walk_blocks(blocks: &[Block], s: &mut Stats) {
                 let _ = image;
             }
             Block::Rule | Block::Toc | Block::RawHtml { .. } | Block::SvgEmbed { .. } => {}
+            Block::Chart { spec } => s.chars += spec.title.chars().count() + 8,
             Block::Formula { latex } => s.chars += latex.chars().count(),
         }
     }

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::htmlutil::{build_style, escape_attr, escape_text};
 use crate::i18n;
 use crate::img::ImgPipeline;
-use crate::ir::{Align, Block, CardKind, Inline, InlineKind, ListItem};
+use crate::ir::{Align, Block, CardKind, ChartSpec, Inline, InlineKind, ListItem};
 use crate::theme::{CodeTheme, LinkStyle, Theme};
 
 pub struct RenderResult {
@@ -211,8 +211,204 @@ fn render_block(b: &Block, ctx: &Ctx, scope: &BodyCtx) -> String {
             )
         }
         Block::SvgEmbed { html } => html.clone(),
+        Block::Chart { spec } => render_chart(spec),
     }
 }
+
+// ---------------------------------------------------------------- charts ---
+// Data charts (```chart fenced blocks, JSON spec) rendered as compliant
+// inline SVG: brand palette, no font-family, no external resources. AI can
+// emit these directly via the system prompt schema.
+
+const CHART_PALETTE: [&str; 6] = ["#2F6CEA", "#7B9EF5", "#B45309", "#059669", "#7C3AED", "#DC2626"];
+
+fn fmt_value(v: f64) -> String {
+    if (v - v.round()).abs() < 1e-9 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{:.1}", v)
+    }
+}
+
+pub fn render_chart(spec: &ChartSpec) -> String {
+    let n = spec.labels.len().max(spec.values.len()).max(1);
+    let labels: Vec<String> = (0..n)
+        .map(|i| spec.labels.get(i).cloned().unwrap_or_default())
+        .collect();
+    let values: Vec<f64> = (0..n)
+        .map(|i| spec.values.get(i).copied().unwrap_or(0.0))
+        .collect();
+    let max = values.iter().cloned().fold(0.0_f64, f64::max).max(1.0);
+    let w = 677.0_f64;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "<section style=\"margin: 20px 0;\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 677 430\" style=\"width: 100%; display: block;\">"
+    ));
+    if !spec.title.is_empty() {
+        out.push_str(&format!(
+            "<text x=\"338\" y=\"36\" font-size=\"20\" font-weight=\"600\" fill=\"#1F2328\" text-anchor=\"middle\">{}</text>",
+            escape_text(&spec.title)
+        ));
+    }
+    match spec.kind.as_str() {
+        "line" => {
+            let px0 = 50.0;
+            let px1 = w - 30.0;
+            let py0 = 70.0;
+            let py1 = 360.0;
+            let step = if n > 1 { (px1 - px0) / (n - 1) as f64 } else { 0.0 };
+            for g in 0..5 {
+                let gy = py0 + (py1 - py0) * g as f64 / 4.0;
+                out.push_str(&format!(
+                    "<line x1=\"{px0:.1}\" y1=\"{gy:.1}\" x2=\"{px1:.1}\" y2=\"{gy:.1}\" stroke=\"#E4E7EC\" stroke-width=\"1\"/>"
+                ));
+                let gv = max * (4 - g) as f64 / 4.0;
+                out.push_str(&format!(
+                    "<text x=\"44\" y=\"{:.1}\" font-size=\"12\" fill=\"#8B949E\" text-anchor=\"end\">{}</text>",
+                    gy + 4.0,
+                    escape_text(&fmt_value(gv))
+                ));
+            }
+            let pts: Vec<(f64, f64)> = values
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    let x = if n > 1 { px0 + step * i as f64 } else { (px0 + px1) / 2.0 };
+                    let y = py1 - (v / max) * (py1 - py0);
+                    (x, y)
+                })
+                .collect();
+            let poly: String = pts
+                .iter()
+                .map(|(x, y)| format!("{:.1},{:.1}", x, y))
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.push_str(&format!(
+                "<polyline points=\"{poly}\" fill=\"none\" stroke=\"#2F6CEA\" stroke-width=\"3\" stroke-linejoin=\"round\"/>"
+            ));
+            for (i, (x, y)) in pts.iter().enumerate() {
+                out.push_str(&format!(
+                    "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"4.5\" fill=\"#FFFFFF\" stroke=\"#2F6CEA\" stroke-width=\"2.5\"/>",
+                    x, y
+                ));
+                out.push_str(&format!(
+                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"12\" fill=\"#1F2328\" text-anchor=\"middle\">{}</text>",
+                    x,
+                    y - 12.0,
+                    escape_text(&fmt_value(values[i]))
+                ));
+                if let Some(lb) = labels.get(i) {
+                    out.push_str(&format!(
+                        "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"13\" fill=\"#57606A\" text-anchor=\"middle\">{}</text>",
+                        x,
+                        py1 + 24.0,
+                        escape_text(lb)
+                    ));
+                }
+            }
+        }
+        "pie" => {
+            let cx = w * 0.32;
+            let cy = 225.0;
+            let r = 150.0;
+            let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
+            let total = if total <= 0.0 { 1.0 } else { total };
+            let mut angle = -std::f64::consts::FRAC_PI_2;
+            for (i, v) in values.iter().enumerate() {
+                let frac = (v.max(0.0) / total).min(1.0);
+                let sweep = frac * std::f64::consts::TAU;
+                let a0 = angle;
+                let a1 = angle + sweep;
+                angle = a1;
+                let x0 = cx + r * a0.cos();
+                let y0 = cy + r * a0.sin();
+                let x1 = cx + r * a1.cos();
+                let y1 = cy + r * a1.sin();
+                let large = if sweep > std::f64::consts::PI { 1 } else { 0 };
+                let color = CHART_PALETTE[i % CHART_PALETTE.len()];
+                if frac >= 0.9999 {
+                    out.push_str(&format!(
+                        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>",
+                        cx, cy, r, color
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "<path d=\"M{:.1} {:.1} L{:.1} {:.1} A{:.1} {:.1} 0 {} 1 {:.1} {:.1} Z\" fill=\"{}\" stroke=\"#FFFFFF\" stroke-width=\"2\"/>",
+                        cx, cy, x0, y0, r, r, large, x1, y1, color
+                    ));
+                }
+            }
+            let ly0 = 120.0;
+            for (i, v) in values.iter().enumerate() {
+                let ly = ly0 + i as f64 * 40.0;
+                let color = CHART_PALETTE[i % CHART_PALETTE.len()];
+                let name = labels.get(i).cloned().unwrap_or_default();
+                let pct = (v / total * 100.0).round() as i64;
+                out.push_str(&format!(
+                    "<rect x=\"419\" y=\"{:.1}\" width=\"16\" height=\"16\" rx=\"4\" fill=\"{}\"/>",
+                    ly, color
+                ));
+                out.push_str(&format!(
+                    "<text x=\"445\" y=\"{:.1}\" font-size=\"15\" fill=\"#1F2328\">{} · {}%</text>",
+                    ly + 13.0,
+                    escape_text(&name),
+                    pct
+                ));
+            }
+        }
+        _ => {
+            let px0 = 50.0;
+            let px1 = w - 30.0;
+            let py0 = 70.0;
+            let py1 = 360.0;
+            let slot = (px1 - px0) / n as f64;
+            let bw = (slot * 0.55).max(12.0);
+            for g in 0..5 {
+                let gy = py0 + (py1 - py0) * g as f64 / 4.0;
+                out.push_str(&format!(
+                    "<line x1=\"{px0:.1}\" y1=\"{gy:.1}\" x2=\"{px1:.1}\" y2=\"{gy:.1}\" stroke=\"#E4E7EC\" stroke-width=\"1\"/>"
+                ));
+                let gv = max * (4 - g) as f64 / 4.0;
+                out.push_str(&format!(
+                    "<text x=\"44\" y=\"{:.1}\" font-size=\"12\" fill=\"#8B949E\" text-anchor=\"end\">{}</text>",
+                    gy + 4.0,
+                    escape_text(&fmt_value(gv))
+                ));
+            }
+            for (i, v) in values.iter().enumerate() {
+                let cx = px0 + slot * (i as f64 + 0.5);
+                let bh = (v / max) * (py1 - py0);
+                let color = CHART_PALETTE[i % CHART_PALETTE.len()];
+                out.push_str(&format!(
+                    "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"6\" fill=\"{}\"><animate attributeName=\"height\" values=\"0;{:.1}\" dur=\"0.8s\" begin=\"touchstart; click\" fill=\"freeze\"/></rect>",
+                    cx - bw / 2.0,
+                    py1 - bh,
+                    bw,
+                    bh,
+                    color,
+                    bh
+                ));
+                out.push_str(&format!(
+                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"13\" font-weight=\"600\" fill=\"#1F2328\" text-anchor=\"middle\">{}</text>",
+                    cx,
+                    py1 - bh - 10.0,
+                    escape_text(&fmt_value(*v))
+                ));
+                if let Some(lb) = labels.get(i) {
+                    out.push_str(&format!(
+                        "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"13\" fill=\"#57606A\" text-anchor=\"middle\">{}</text>",
+                        cx,
+                        py1 + 24.0,
+                        escape_text(lb)
+                    ));
+                }
+            }
+        }
+    }
+    out.push_str("</svg></section>");
+    out
+}
+
 
 fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
     let _ = role;

@@ -473,6 +473,9 @@ wxwright — 让任何 AI Agent 一键把文章发进微信公众号（Rust · C
 | 合规徽标 | 状态行彩色徽标（阻断/提示计数）+ 明细面板（不遮挡 AI 助手） |
 | 写作宠物「墨仔」 | 独立组件（pet.js 自包含，形态内嵌 data URI 无路径依赖）；AI 生成的 5 形态（坐姿/敲键盘/瞌睡/跳跃/派对）；空闲小剧场轮播；打字/保存/复制状态反馈；点击摸摸（红心+语录）；双击换装；logo 三连彩蛋；状态栏「码聋」弹出公众号二维码 |
 | i18n | 界面 en/zh-CN 切换（顶栏按钮）；缺 key 回退 key 名（不显示 undefined） |
+| 图表引擎 | ```chart 围栏 JSON（bar/line/pie，标题/标签/数值/单位）→ 内联自包含 SVG 图表（677×430，6 色板），随正文一并通过官方规范校验；AI 系统提示词已接入 schema，AI 可直接输出数据图表 |
+| 公众号 API 绑定 | 设置弹窗重构为左侧导航四分区（AI Providers / 公众号 API / ComfyUI / 关于）；AppID/AppSecret 入系统钥匙串（wxwright-mp），状态脱敏显示，支持解绑 |
+| 交互润色 | 校验按钮移至保存旁（胶囊样式）；SVG 组件库颜色参数内置取色器；AI 插入/替换带编辑器落点高亮 + 预览末块脉冲；墨仔形态切换交叉淡入；应用图标超采样重生成（1024px 渲染→Lanczos3→8 帧 ICO）；官方品牌标扩至 17 家（新增 xAI、智谱） |
 | 发布自动化 | Tag 驱动 GitHub Actions：Windows NSIS+便携、macOS dmg+CLI 双架构、Linux deb/AppImage+musl CLI、SHA256SUMS（docs/release-automation.md） |
 
 ## 16. 海外社交媒体扩展方向（v2 评估）

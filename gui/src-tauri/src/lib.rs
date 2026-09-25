@@ -4,6 +4,7 @@
 mod ai;
 mod articles;
 mod comfy;
+mod extract;
 mod commands;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};
@@ -44,9 +45,14 @@ pub fn run() {
             commands::asset_data_uri,
             commands::asset_thumb,
             commands::delete_asset,
+            commands::extract_document_text,
+            commands::read_binary_file,
             commands::comfy_status,
             commands::comfy_save_config,
             commands::comfy_launch,
+            commands::wx_bind_status,
+            commands::wx_bind,
+            commands::wx_unbind,
             commands::ai_image,
             commands::ai_save_image_model,
             commands::comfy_txt2img,
