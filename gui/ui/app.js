@@ -355,10 +355,24 @@ function renderViolationsPanel(violations) {
 async function convertNow() {
   const md = $("editor").value;
   if (!invoke) {
-    try {
-      $("preview").srcdoc = await fetch("demo-preview.html").then((r) => r.text());
-      updateRuleChip([]);
-    } catch (e) {}
+    // Browser demo: channel shells still render so every platform shape is
+    // reviewable without the desktop shell (caption is derived from the editor).
+    if (currentPlatform !== "wechat") {
+      $("preview").srcdoc = currentPlatform === "zhihu"
+        ? zhihuArticleShell(demoPlainHtmlFromMd(md))
+        : renderChannelShell(currentPlatform, {
+            mode: "note",
+            platform: currentPlatform,
+            title: loadedTitle || autoTitle(md),
+            caption: demoCaptionFromMd(md),
+            images: [],
+          });
+    } else {
+      try {
+        $("preview").srcdoc = await fetch("demo-preview.html").then((r) => r.text());
+        updateRuleChip([]);
+      } catch (e) {}
+    }
     return;
   }
   try {
@@ -374,8 +388,8 @@ async function convertNow() {
           themeId: currentTheme,
         });
         $("preview").srcdoc = model.mode === "note"
-          ? noteShellHtml(model)
-          : plainShellHtml(model.html);
+          ? renderChannelShell(model.platform, model)
+          : zhihuArticleShell(model.html);
       } catch (e) {
         $("preview").srcdoc = wrapPreviewHtml(res.html); // fall back to dialect
       }
@@ -1226,7 +1240,8 @@ async function initPlatformSwitcher() {
     try { PLATFORMS = await invoke("list_platforms"); } catch (e) { PLATFORMS = []; }
   }
   if (!PLATFORMS.length) {
-    // browser demo fallback: keep the switcher meaningful (same shape as core)
+    // browser demo fallback: full platform set so every channel shell is
+    // reachable without the desktop shell (same shape as core)
     PLATFORMS = [
       { id: "wechat", name_zh: "微信公众号", name_en: "WeChat MP", rich_text: true, image_note: false, note: "",
         presets: [["头图 1080×460（2.35:1）", 1080, 460], ["次图 1080×1080（1:1）", 1080, 1080],
@@ -1234,6 +1249,16 @@ async function initPlatformSwitcher() {
                   ["正文竖图 1080×1440（3:4）", 1080, 1440], ["贴图 900×383", 900, 383], ["贴图 383×383", 383, 383]] },
       { id: "xhs", name_zh: "小红书", name_en: "Xiaohongshu", rich_text: false, image_note: true, note: "image-note",
         presets: [["封面 1080×1440（3:4）", 1080, 1440], ["方图 1080×1080（1:1）", 1080, 1080]] },
+      { id: "zhihu", name_zh: "知乎", name_en: "Zhihu", rich_text: true, image_note: false, note: "markdown",
+        presets: [["封面 1920×1080（16:9）", 1920, 1080]] },
+      { id: "meta", name_zh: "Facebook", name_en: "Facebook", rich_text: false, image_note: false, note: "caption",
+        presets: [["横图 1200×630（1.91:1）", 1200, 630], ["方图 1080×1080（1:1）", 1080, 1080], ["竖图 1080×1350（4:5）", 1080, 1350]] },
+      { id: "instagram", name_zh: "Instagram", name_en: "Instagram", rich_text: false, image_note: true, note: "image-first",
+        presets: [["竖图 1080×1350（4:5）", 1080, 1350], ["方图 1080×1080（1:1）", 1080, 1080], ["Story 1080×1920（9:16）", 1080, 1920]] },
+      { id: "x", name_zh: "X (Twitter)", name_en: "X (Twitter)", rich_text: false, image_note: false, note: "caption-280",
+        presets: [["横图 1600×900（16:9）", 1600, 900], ["方图 1080×1080（1:1）", 1080, 1080]] },
+      { id: "linkedin", name_zh: "LinkedIn", name_en: "LinkedIn", rich_text: false, image_note: false, note: "caption",
+        presets: [["横图 1200×627", 1200, 627], ["方图 1080×1080（1:1）", 1080, 1080]] },
     ];
   }
   if (!PLATFORMS.some((p) => p.id === currentPlatform)) currentPlatform = "wechat";
@@ -1377,11 +1402,13 @@ function updatePosterPreview() {
   $("poster-preview-meta").textContent = `${w} × ${h} px · 预览 ${(scale * 100).toFixed(0)}%`;
 }
 /* ------------------------- channel preview shells (PRD §16) ----------------
-   One article, one shape per channel: WeChat keeps the dialect article
-   scroll; image-note platforms get a feed-note shell (image strip + title +
-   author + caption + action bar); Markdown-friendly hosts get plain
-   typographic HTML. All inside the same phone mockup. */
-const CHANNEL_ACCENT = { xhs: "#FF2442", meta: "#1877F2", x: "#1D9BF0", linkedin: "#0A66C2", zhihu: "#0084FF" };
+   One article, one shape per channel - pixel-level, not recoloured: WeChat
+   keeps the dialect article scroll; each social platform gets its own
+   faithful feed layout (XHS note detail, X post, Facebook card, Instagram
+   post, LinkedIn card) with its real ratios, type scale and action bars;
+   Zhihu gets a Zhihu article page. Unknown ids fall back to the generic
+   note shell. All inside the same phone mockup. */
+const CHANNEL_ACCENT = { xhs: "#FF2442", meta: "#1877F2", instagram: "#E4405F", x: "#1D9BF0", linkedin: "#0A66C2", zhihu: "#0084FF" };
 function channelAccent(id) { return CHANNEL_ACCENT[id] || "#2F6CEA"; }
 function channelName(id) {
   const spec = PLATFORMS.find((p) => p.id === id);
@@ -1441,18 +1468,371 @@ function noteShellHtml(model) {
   </body></html>`;
 }
 
-function plainShellHtml(html) {
+/* -- shared shell primitives: icons / status bar / avatar / caption / media -- */
+const SHELL_ICONS = {
+  heart: "M12 20.7C7.2 17.3 3 13.9 3 9.9 3 7.2 5 5 7.6 5c1.8 0 3.3 1 4.4 2.6C13.1 6 14.6 5 16.4 5 19 5 21 7.2 21 9.9c0 4-4.2 7.4-9 10.8Z",
+  star: "m12 3.6 2.5 5.1 5.7.8-4.1 4 1 5.6-5.1-2.7-5.1 2.7 1-5.6-4.1-4 5.7-.8L12 3.6Z",
+  chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l2.2-2.6A8.5 8.5 0 1 1 21 11.5Z",
+  repost: "M17 3.5 20.5 7 17 10.5M20.5 7H8.5a4 4 0 0 0-4 4v1.5M7 20.5 3.5 17 7 13.5M3.5 17h12a4 4 0 0 0 4-4v-1.5",
+  send: "M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z",
+  bookmark: "M6 3.5h12a.5.5 0 0 1 .5.5v16.5L12 16l-6.5 4.5V4a.5.5 0 0 1 .5-.5Z",
+  thumb: "M7 10.5V21H4.5A1.5 1.5 0 0 1 3 19.5V12a1.5 1.5 0 0 1 1.5-1.5H7Zm0 0 3.8-6.7A2.3 2.3 0 0 1 13.1 6v3h4.6a2 2 0 0 1 2 2.4l-1.1 5.6a2 2 0 0 1-2 1.5H7",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-18c-2.5 2.3-4 5.5-4 9s1.5 6.7 4 9c2.5-2.3 4-5.5 4-9s-1.5-6.7-4-9ZM3.4 9h17.2M3.4 15h17.2",
+  back: "M15 4.5 7.5 12l7.5 7.5",
+  chart: "M4.5 20v-9m6 9V4m6 16v-6",
+  search: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm9.5 3.5L15.5 16",
+  dots: "M5 12h.01M12 12h.01M19 12h.01",
+};
+function shellIcon(name, size, color, opts = {}) {
+  const fill = opts.filled ? color : "none";
+  const stroke = opts.filled ? "none" : color;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="${opts.sw || 1.7}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${SHELL_ICONS[name]}"/></svg>`;
+}
+/* the phone mock already draws the status bar + notch over the screen; shells
+   only reserve clear space for it */
+function shellTop(bg) {
+  return `<div style="height:34px;background:${bg};"></div>`;
+}
+function shellAvatar(size, igRing) {
+  const inner = `<span style="width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#2F6CEA,#7A50EC);color:#fff;font-size:${Math.round(size * 0.4)}px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">瑶</span>`;
+  if (igRing) {
+    return `<span style="flex:none;width:${size}px;height:${size}px;border-radius:50%;padding:2px;background:linear-gradient(45deg,#F58529,#DD2A7B,#8134AF);box-sizing:border-box;">${inner}</span>`;
+  }
+  return `<span style="flex:none;width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;">${inner}</span>`;
+}
+function shellCaption(caption, tagColor) {
+  let cap = escapeHtml(caption || "");
+  if (tagColor !== null) {
+    cap = cap.replace(/#[^#\s]{1,40}(#|(?=\s|$))/g, (m) => `<span style="color:${tagColor};font-weight:600;">${m}</span>`);
+  }
+  return cap.replace(/\n/g, "<br/>");
+}
+function shellMedia(imgs, ratio, fallbackTitle, accent, caption) {
+  if (imgs && imgs.length) {
+    return `<img src="${imgs[0]}" alt="" style="width:100%;display:block;aspect-ratio:${ratio};object-fit:cover;" />`;
+  }
+  return `<div style="width:100%;aspect-ratio:${ratio};background:linear-gradient(135deg,${accent},${accent}B3);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;box-sizing:border-box;">
+    <div style="font-size:20px;font-weight:700;line-height:1.4;">${escapeHtml(fallbackTitle || "")}</div>
+    <div style="font-size:12px;opacity:0.85;max-width:90%;">${escapeHtml((caption || "").slice(0, 60))}</div>
+  </div>`;
+}
+function shellDoc(css, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    html,body{margin:0;padding:0;background:#fff;}
-    body{font-family:-apple-system,"PingFang SC","Microsoft YaHei UI",sans-serif;color:#1F2328;
-      max-width: 620px; margin: 0 auto; padding: 48px 16px 40px; line-height: 1.8; font-size: 15px;}
-    h1{font-size: 22px;} h2{font-size: 19px; border-left: 4px solid ${channelAccent("zhihu")}; padding-left: 10px;}
-    h3{font-size: 17px;}
-    img{max-width: 100%;}
-    blockquote{border-left: 3px solid #D9DDE3; margin: 8px 0; padding: 2px 12px; color: #57606A; background: #F7F8FA;}
-    table{border-collapse: collapse; width: 100%; font-size: 13px;}
+    html,body{margin:0;padding:0;}
+    body{font-family:-apple-system,"PingFang SC","Microsoft YaHei UI","Segoe UI",sans-serif;background:#fff;-webkit-font-smoothing:antialiased;}
     ::-webkit-scrollbar{width:0;height:0;display:none;}
-  </style></head><body>${html}</body></html>`;
+    ${css}
+  </style></head><body>${body}</body></html>`;
+}
+function shellStr() {
+  const zh = {
+    follow: "关注", like: "赞", comment: "评论", share: "分享", repost: "转发",
+    send: "发送", upvote: "赞同", say: "说点什么...", search: "搜索",
+    post: "帖子", article: "文章", bio: "公众号 码聋", persona: "AI瑶",
+    handle: "@aiyao_coder", headline: "AI 内容创作者 · 公众号「码聋」",
+    justNow: "刚刚", date: "09-25", edited: "编辑于 09-25",
+    views: "14.2万 次浏览", likesCount: "1,284 次赞", viewAll: "查看全部 45 条评论",
+    reactionN: "128", fbCounts: "12 条评论 · 3 次分享", liCounts: "45 条评论 · 12 次转发",
+    copyright: "著作权归作者所有",
+  };
+  return lang === "zh-CN" ? zh : {
+    follow: "Follow", like: "Like", comment: "Comment", share: "Share", repost: "Repost",
+    send: "Send", upvote: "Upvote", say: "Say something...", search: "Search",
+    post: "Post", article: "Article", bio: "AI content creator", persona: "AI Yao",
+    handle: "@aiyao_coder", headline: "AI content creator · WeChat: CodingDeaf",
+    justNow: "now", date: "Sep 25", edited: "Edited Sep 25",
+    views: "142K views", likesCount: "1,284 likes", viewAll: "View all 45 comments",
+    reactionN: "128", fbCounts: "12 comments · 3 shares", liCounts: "45 comments · 12 reposts",
+    copyright: "All rights reserved",
+  };
+}
+
+/* 1) 小红书笔记详情页: 全出血 3:4 封面轮播 + 圆点 + 图上悬浮操作列(点赞/收藏/评论
+   白圈) + 16px 粗标题 + 话题红标 + 底部固定条(头像/昵称/红色关注 + 说点什么 + 心/星) */
+function xhsNoteShell(model) {
+  const S = shellStr();
+  const accent = "#FF2442";
+  const imgs = (model.images || []).filter(Boolean);
+  // the caption's first line repeats the title (render_caption); XHS shows a
+  // separate title field, so drop the duplicate
+  let cap = model.caption || "";
+  if (model.title && cap.startsWith(model.title)) cap = cap.slice(model.title.length).replace(/^\n+/, "");
+  const overlay = imgs.length
+    ? `<div style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:5px;">
+        ${imgs.slice(0, 9).map((_, i) => `<i style="width:6px;height:6px;border-radius:50%;background:${i === 0 ? "#fff" : "rgba(255,255,255,0.45)"};display:block;"></i>`).join("")}
+      </div>
+      <div style="position:absolute;right:10px;bottom:14px;display:flex;flex-direction:column;gap:9px;">
+        ${[["heart", "1.2k", true], ["star", "856", false], ["chat", "45", false]].map(([n, c, hot]) => `
+          <span style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+            <span style="width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;box-sizing:border-box;">${shellIcon(n, 18, hot ? accent : "#fff", { filled: !!hot })}</span>
+            <b style="color:#fff;font-size:11px;font-weight:600;">${c}</b>
+          </span>`).join("")}
+      </div>`
+    : "";
+  return shellDoc("", `
+    ${shellTop("#FFFFFF")}
+    <div style="position:relative;">
+      ${shellMedia(imgs, "3 / 4", model.title, accent, cap)}
+      ${overlay}
+    </div>
+    <div style="padding:12px 14px 0;">
+      <div style="font-size:16px;font-weight:700;color:#333;line-height:1.45;">${escapeHtml(model.title || "")}</div>
+      <div style="font-size:15px;color:#333;line-height:1.7;margin-top:8px;">${shellCaption(cap, accent)}</div>
+      <div style="font-size:12px;color:#999;margin-top:10px;">${S.edited}</div>
+    </div>
+    <div style="height:64px;"></div>
+    <div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #F3F3F3;display:flex;align-items:center;gap:8px;padding:8px 12px;">
+      ${shellAvatar(30)}
+      <span style="font-size:13px;font-weight:600;color:#333;flex:none;">${S.persona}</span>
+      <span style="background:${accent};color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:999px;flex:none;">${S.follow}</span>
+      <span style="flex:1;"></span>
+      <span style="background:#F5F5F5;color:#999;font-size:12px;padding:6px 12px;border-radius:999px;flex:none;">${S.say}</span>
+      ${shellIcon("heart", 19, "#333", { filled: true })}
+      <b style="font-size:12px;color:#333;font-weight:600;">1.2k</b>
+      ${shellIcon("star", 19, "#333")}
+      <b style="font-size:12px;color:#333;font-weight:600;">856</b>
+    </div>`);
+}
+
+/* 2) X (Twitter): 左侧 40px 头像列 + 昵称/句柄/时间一行 + 15px 正文 + 16:9 圆角16px
+   媒体 + 时间/浏览行 + 指标行(回复/转发/红心/浏览 + 书签/私信), 分隔线 #EFF3F4 */
+function xPostShell(model) {
+  const S = shellStr();
+  const imgs = (model.images || []).filter(Boolean);
+  return shellDoc("", `
+    ${shellTop("#FFFFFF")}
+    <div style="display:flex;align-items:center;gap:20px;padding:10px 16px;border-bottom:1px solid #EFF3F4;">
+      ${shellIcon("back", 19, "#0F1419")}
+      <b style="font-size:17px;color:#0F1419;">${S.post}</b>
+    </div>
+    <div style="display:flex;gap:12px;padding:12px 16px 6px;">
+      ${shellAvatar(40)}
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <b style="font-size:15px;color:#0F1419;">${S.persona}</b>
+          <span style="width:15px;height:15px;border-radius:50%;background:#1D9BF0;display:inline-flex;align-items:center;justify-content:center;flex:none;">
+            <svg viewBox="0 0 24 24" width="9" height="9" fill="#fff"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/></svg>
+          </span>
+          <span style="font-size:15px;color:#536471;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${S.handle} · ${S.justNow}</span>
+          <span style="margin-left:auto;flex:none;">${shellIcon("dots", 15, "#536471", { sw: 2.6 })}</span>
+        </div>
+        <div style="font-size:15px;line-height:1.4;color:#0F1419;margin:2px 0 12px;">${shellCaption(model.caption, "#1D9BF0")}</div>
+        ${imgs.length ? `<div style="border:1px solid #EFF3F4;border-radius:16px;overflow:hidden;margin-bottom:12px;">${shellMedia(imgs, "16 / 9", model.title, "#1D9BF0", model.caption)}</div>` : ""}
+        <div style="font-size:15px;color:#536471;padding:2px 0 10px;border-bottom:1px solid #EFF3F4;">${S.date} · ${S.views}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 2px 4px;">
+          <span style="display:flex;align-items:center;gap:6px;font-size:13px;color:#536471;">${shellIcon("chat", 18, "#536471")}45</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:13px;color:#536471;">${shellIcon("repost", 18, "#536471")}128</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:13px;color:#536471;">${shellIcon("heart", 18, "#F91880", { filled: true })}1,244</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:13px;color:#536471;">${shellIcon("chart", 18, "#536471")}</span>
+          <span style="display:flex;align-items:center;gap:14px;">${shellIcon("bookmark", 18, "#536471")}${shellIcon("send", 18, "#536471")}</span>
+        </div>
+      </div>
+    </div>`);
+}
+
+/* 3) Facebook: #F0F2F5 页底 + 白色 8px 圆角卡片 + 蓝色 wordmark 顶栏 + 40px 头像
+   卡头(姓名/时间+地球) + 全出血媒体 + 反应簇计数行 + 灰色三栏操作条(赞/评论/分享) */
+function facebookShell(model) {
+  const S = shellStr();
+  const imgs = (model.images || []).filter(Boolean);
+  return shellDoc("", `
+    ${shellTop("#FFFFFF")}
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #E4E6EB;background:#fff;">
+      <b style="font-size:21px;color:#1877F2;letter-spacing:-0.5px;">facebook</b>
+      <span style="flex:1;"></span>
+      <span style="width:32px;height:32px;border-radius:50%;background:#E4E6EB;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">${shellIcon("search", 16, "#050505")}</span>
+      <span style="width:32px;height:32px;border-radius:50%;background:#E4E6EB;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">${shellIcon("chat", 16, "#050505")}</span>
+    </div>
+    <div style="background:#F0F2F5;padding:8px 0 16px;">
+      <div style="background:#fff;border-radius:8px;margin:0 8px;box-shadow:0 1px 2px rgba(0,0,0,0.12);overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 14px 8px;">
+          ${shellAvatar(40)}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:15px;font-weight:600;color:#050505;">${S.persona}</div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:13px;color:#65676B;">${S.justNow} · ${shellIcon("globe", 11, "#65676B")}</div>
+          </div>
+          ${shellIcon("dots", 17, "#65676B", { sw: 2.6 })}
+        </div>
+        <div style="font-size:15px;line-height:1.35;color:#050505;padding:2px 14px 10px;">${shellCaption(model.caption, null)}</div>
+        ${imgs.length ? shellMedia(imgs, "4 / 5") : ""}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;">
+          <span style="display:flex;align-items:center;">
+            <span style="width:20px;height:20px;border-radius:50%;background:#1877F2;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-sizing:border-box;">${shellIcon("thumb", 11, "#fff", { filled: true })}</span>
+            <span style="width:20px;height:20px;border-radius:50%;background:#F33E58;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;margin-left:-6px;box-sizing:border-box;">${shellIcon("heart", 11, "#fff", { filled: true })}</span>
+            <b style="font-size:15px;color:#65676B;font-weight:400;margin-left:6px;">${S.reactionN}</b>
+          </span>
+          <span style="font-size:15px;color:#65676B;">${S.fbCounts}</span>
+        </div>
+        <div style="display:flex;border-top:1px solid #E4E6EB;">
+          ${[["thumb", S.like], ["chat", S.comment], ["send", S.share]].map(([n, l]) => `
+            <span style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:42px;font-size:15px;font-weight:600;color:#65676B;">${shellIcon(n, 17, "#65676B")}${l}</span>`).join("")}
+        </div>
+      </div>
+    </div>`);
+}
+
+/* 4) Instagram: 手写体 wordmark 顶栏 + 渐变故事环头像 + 无圆角 4:5 大图 + 图下
+   黑描边操作行(心/评论/私信 左, 书签 右) + 次赞粗体 + 用户名前缀 caption + 评论摘要 */
+function instagramShell(model) {
+  const S = shellStr();
+  const imgs = (model.images || []).filter(Boolean);
+  return shellDoc("", `
+    ${shellTop("#FFFFFF")}
+    <div style="display:flex;align-items:center;gap:14px;padding:8px 14px;border-bottom:1px solid #DBDBDB;background:#fff;">
+      <b style="font-size:20px;font-family:'Segoe Script','Brush Script MT',cursive;font-weight:700;color:#000;">Instagram</b>
+      <span style="flex:1;"></span>
+      ${shellIcon("heart", 22, "#000")}
+      ${shellIcon("send", 22, "#000")}
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;">
+      ${shellAvatar(32, true)}
+      <b style="font-size:13px;color:#000;">${S.persona}</b>
+      <span style="margin-left:auto;">${shellIcon("dots", 15, "#000", { sw: 2.6 })}</span>
+    </div>
+    ${shellMedia(imgs, "4 / 5", model.title, "#DD2A7B", model.caption)}
+    <div style="display:flex;align-items:center;gap:16px;padding:10px 12px 4px;">
+      ${shellIcon("heart", 24, "#000")}
+      ${shellIcon("chat", 24, "#000")}
+      ${shellIcon("send", 24, "#000")}
+      <span style="flex:1;"></span>
+      ${shellIcon("bookmark", 24, "#000")}
+    </div>
+    <div style="padding:4px 12px 12px;">
+      <b style="font-size:14px;color:#000;">${S.likesCount}</b>
+      <div style="font-size:14px;color:#000;line-height:1.5;margin-top:4px;"><b>${S.persona}</b> ${shellCaption(model.caption, "#00376B")}</div>
+      <div style="font-size:14px;color:#8E8E8E;margin-top:6px;">${S.viewAll}</div>
+      <div style="font-size:11px;color:#8E8E8E;margin-top:6px;letter-spacing:0.5px;">${S.date}</div>
+    </div>`);
+}
+
+/* 5) LinkedIn: 暖灰 #F4F2EE 页底 + 白色 8px 圆角卡片 + 48px 头像/职位头衔/时间+
+   地球 + 全出血 1.91:1 媒体 + 反应簇/评论转发计数 + 四栏操作条(赞/评论/转发/发送) */
+function linkedinShell(model) {
+  const S = shellStr();
+  const imgs = (model.images || []).filter(Boolean);
+  return shellDoc("", `
+    ${shellTop("#FFFFFF")}
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #E8E7E4;background:#fff;">
+      <span style="width:30px;height:30px;border-radius:5px;background:#0A66C2;color:#fff;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;">in</span>
+      <span style="flex:1;height:32px;border-radius:4px;background:#EDF3F8;display:flex;align-items:center;gap:6px;padding:0 10px;color:#56687A;font-size:13px;box-sizing:border-box;">${shellIcon("search", 14, "#56687A")}${S.search}</span>
+    </div>
+    <div style="background:#F4F2EE;padding:8px 0 16px;">
+      <div style="background:#fff;border-radius:8px;margin:0 8px;border:1px solid #E8E7E4;overflow:hidden;">
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px 6px;">
+          ${shellAvatar(48)}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;font-weight:600;color:rgba(0,0,0,0.9);">${S.persona}</div>
+            <div style="font-size:12px;color:rgba(0,0,0,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${S.headline}</div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:rgba(0,0,0,0.6);">${S.justNow} · ${shellIcon("globe", 10, "rgba(0,0,0,0.6)")}</div>
+          </div>
+          <span style="display:flex;align-items:center;gap:12px;flex:none;">
+            <b style="color:#0A66C2;font-size:13px;font-weight:600;">+ ${S.follow}</b>
+            ${shellIcon("dots", 15, "rgba(0,0,0,0.6)", { sw: 2.6 })}
+          </span>
+        </div>
+        <div style="font-size:14px;line-height:1.45;color:rgba(0,0,0,0.9);padding:2px 14px 10px;">${shellCaption(model.caption, null)}</div>
+        ${imgs.length ? shellMedia(imgs, "1.91 / 1") : ""}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;">
+          <span style="display:flex;align-items:center;">
+            <span style="width:17px;height:17px;border-radius:50%;background:#378FE9;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-sizing:border-box;">${shellIcon("thumb", 9, "#fff", { filled: true })}</span>
+            <span style="width:17px;height:17px;border-radius:50%;background:#6DAE4F;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;margin-left:-5px;box-sizing:border-box;">${shellIcon("star", 9, "#fff", { filled: true })}</span>
+            <b style="font-size:12px;color:#56687A;font-weight:400;margin-left:6px;">256</b>
+          </span>
+          <span style="font-size:12px;color:#56687A;">${S.liCounts}</span>
+        </div>
+        <div style="display:flex;border-top:1px solid #E8E7E4;">
+          ${[["thumb", S.like], ["chat", S.comment], ["repost", S.repost], ["send", S.send]].map(([n, l]) => `
+            <span style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:44px;font-size:13px;font-weight:600;color:#56687A;">${shellIcon(n, 17, "#56687A")}${l}</span>`).join("")}
+        </div>
+      </div>
+    </div>`);
+}
+
+/* 6) 知乎文章页: 白底 + 返回/文章/蓝色关注顶栏 + 标题 21px + 作者行(34px 头像/
+   一句话介绍) + 15px/1.67 两端对齐正文 + 底部蓝底赞同按钮 + 喜欢/收藏/评论 */
+function zhihuArticleShell(html) {
+  const S = shellStr();
+  let body = html || "";
+  let title = "";
+  const h1 = body.match(/^\s*<h1>([\s\S]*?)<\/h1>/i);
+  if (h1) {
+    title = h1[1];
+    body = body.slice(h1[0].length);
+  }
+  return shellDoc(`
+    body{background:#fff;color:#121212;}
+    .art{padding:0 16px 90px;}
+    .art h2{font-size:19px;font-weight:600;margin:20px 0 8px;}
+    .art h3{font-size:17px;font-weight:600;margin:16px 0 6px;}
+    .art p{font-size:15px;line-height:1.7;margin:0 0 14px;text-align:justify;}
+    .art img{max-width:100%;border-radius:4px;display:block;margin:6px auto;}
+    .art ul,.art ol{padding-left:22px;margin:0 0 14px;}
+    .art li{font-size:15px;line-height:1.7;margin:4px 0;}
+    .art blockquote{margin:10px 0;padding:8px 12px;background:#F6F6F6;color:#64645F;border-left:3px solid #D3D3D3;}
+    .art pre{background:#F6F6F6;padding:12px;border-radius:4px;overflow-x:auto;font-size:13px;}
+    .art table{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0;}
+    .art code{background:#F2F2F2;padding:1px 5px;border-radius:3px;font-size:13px;}
+  `, `
+    ${shellTop("#FFFFFF")}
+    <div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid #F0F0F0;">
+      ${shellIcon("back", 18, "#121212")}
+      <b style="font-size:16px;color:#121212;">${S.article}</b>
+      <span style="flex:1;"></span>
+      <span style="background:#0084FF;color:#fff;font-size:13px;font-weight:600;padding:4px 14px;border-radius:3px;">${S.follow}</span>
+    </div>
+    <div class="art">
+      <div style="font-size:21px;font-weight:700;line-height:1.4;color:#121212;margin:14px 0 12px;">${title}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        ${shellAvatar(34)}
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:600;color:#121212;">${S.persona}</div>
+          <div style="font-size:12px;color:#8590A6;">${S.bio}</div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:#8590A6;margin-bottom:10px;">${S.date} · ${S.copyright}</div>
+      ${body}
+    </div>
+    <div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #F0F0F0;display:flex;align-items:center;gap:10px;padding:8px 12px;">
+      <span style="background:#EBF3FF;color:#0084FF;font-size:14px;font-weight:600;padding:6px 16px;border-radius:3px;display:flex;align-items:center;gap:5px;">${shellIcon("thumb", 14, "#0084FF")}${S.upvote} 45</span>
+      <span style="flex:1;"></span>
+      ${[["heart", "67"], ["star", "89"], ["chat", "45"]].map(([n, c]) => `<span style="display:flex;align-items:center;gap:4px;color:#8590A6;font-size:13px;">${shellIcon(n, 18, "#8590A6")}${c}</span>`).join("")}
+    </div>`);
+}
+
+/* dispatch: one model, the target platform's own shell */
+const SHELL_BUILDERS = { xhs: xhsNoteShell, x: xPostShell, meta: facebookShell, instagram: instagramShell, linkedin: linkedinShell };
+function renderChannelShell(platform, model) {
+  const build = SHELL_BUILDERS[platform];
+  if (build) return build(model);
+  return noteShellHtml(model); // unknown caption platform: generic fallback
+}
+function demoCaptionFromMd(md) {
+  return (md || "").split("\n")
+    .filter((l) => !/^\s*(!\[|<|```|---|\|)/.test(l))
+    .map((l) => l.replace(/^#{1,6}\s*/, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*`>~_]/g, "").replace(/^(\s*)[-*]\s+/, "$1• ").trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+/* demo-only minimal Markdown -> plain HTML so the Zhihu shell has a body */
+function demoPlainHtmlFromMd(md) {
+  const out = [];
+  let inList = false;
+  const esc = (s) => escapeHtml(s)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  for (const raw of (md || "").split("\n")) {
+    const l = raw.trim();
+    if (/^(```|!\[|\||---)/.test(l)) continue;
+    if (/^###\s/.test(l)) { closeList(); out.push(`<h3>${esc(l.slice(4))}</h3>`); }
+    else if (/^##\s/.test(l)) { closeList(); out.push(`<h2>${esc(l.slice(3))}</h2>`); }
+    else if (/^#\s/.test(l)) { closeList(); out.push(`<h1>${esc(l.slice(2))}</h1>`); }
+    else if (/^[-*]\s+/.test(l)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${esc(l.replace(/^[-*]\s+/, ""))}</li>`); }
+    else if (/^>\s?/.test(l)) { closeList(); out.push(`<blockquote>${esc(l.replace(/^>\s?/, ""))}</blockquote>`); }
+    else if (l) { closeList(); out.push(`<p>${esc(l)}</p>`); }
+  }
+  closeList();
+  return out.join("\n");
 }
 
 async function blobToBase64(blob) {

@@ -8,7 +8,6 @@
 //! tables stay with the dialect implementations that consume them.
 
 use crate::ir::{Block, Inline, InlineKind};
-use crate::validator;
 
 /// One social-media platform the engine can target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -79,17 +78,32 @@ pub const ZHIHU: PlatformSpec = PlatformSpec {
 
 pub const META: PlatformSpec = PlatformSpec {
     id: "meta",
-    name_zh: "Meta (Facebook/Instagram)",
-    name_en: "Meta (Facebook/Instagram)",
+    name_zh: "Facebook",
+    name_en: "Facebook",
+    rich_text: false,
+    image_note: false,
+    api_publish: false,
+    presets: &[
+        ("横图 1200×630（1.91:1）", 1200, 630),
+        ("方图 1080×1080（1:1）", 1080, 1080),
+        ("竖图 1080×1350（4:5）", 1080, 1350),
+    ],
+    note: "文案 + 配图导出；Graph API 发布需资质（v2 出口适配）",
+};
+
+pub const INSTAGRAM: PlatformSpec = PlatformSpec {
+    id: "instagram",
+    name_zh: "Instagram",
+    name_en: "Instagram",
     rich_text: false,
     image_note: true,
     api_publish: false,
     presets: &[
-        ("Instagram 方图 1080×1080", 1080, 1080),
-        ("Instagram 竖图 1080×1350（4:5）", 1080, 1350),
+        ("竖图 1080×1350（4:5）", 1080, 1350),
+        ("方图 1080×1080（1:1）", 1080, 1080),
         ("Story 1080×1920（9:16）", 1080, 1920),
     ],
-    note: "需 Graph API 资质（v2 出口适配）",
+    note: "图片优先（4:5/1:1）；文案带话题标签；Graph API 发布需资质",
 };
 
 pub const X: PlatformSpec = PlatformSpec {
@@ -127,6 +141,7 @@ pub fn list_platforms() -> Vec<PlatformSpec> {
         XHS.clone(),
         ZHIHU.clone(),
         META.clone(),
+        INSTAGRAM.clone(),
         X.clone(),
         LINKEDIN.clone(),
     ]
@@ -584,6 +599,9 @@ fn xhs_rules_fire_on_limits_and_conventions() {
     fn xhs_is_image_note_without_rich_text() {
         assert!(XHS.image_note && !XHS.rich_text);
         assert!(WECHAT.rich_text && !WECHAT.image_note);
+        assert!(INSTAGRAM.image_note && !INSTAGRAM.rich_text);
+        assert!(!META.image_note, "Facebook is a caption feed, not image-note");
+        assert_eq!(META.name_zh, "Facebook");
     }
 
     #[test]

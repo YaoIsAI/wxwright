@@ -58,7 +58,8 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 2. **命令在 commands.rs 定义后必须注册进 lib.rs 的 generate_handler**，否则是死代码
    （线索：模块内函数报 never-used 警告；用 diff 定义 vs 注册清单抓漏）。
 3. **no_emoji 测试**（`crates/wxwright-core/tests/no_emoji_test.rs`，PRD 3.8-B）：产品文件
-   （代码/HTML/CSS/JS）禁止一切 emoji，连 ☑☐ 都拦。文案用文字或内联 SVG。
+   （代码/HTML/CSS/JS/AGENTS.md 等所有入库文本）禁止一切 emoji，连勾选框符号
+   U+2611/U+2610 都拦（本文件第 7 节就是被它抓出来的）。文案用文字或内联 SVG。
 4. **`t()` 缺 key 必须返回 key 名**，绝不显示 undefined；新 UI 字符串必须同时补 zh+en 两个字典
    （gui/ui/app.js 的 I18N），静态 HTML 用 `data-i18n` / `data-i18n-placeholder` /
    `data-i18n-title` / `data-desc-i18n`（applyI18n 统一处理）。
@@ -116,15 +117,19 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 18 | **宠物形态切换** | 用户否决了交叉淡入（生硬） | 保持直接切换 `im.src = ...`，不要自作主张加过渡 |
 | 19 | **AI 交互新增控件框** | 用户否决（要求极简） | 一律按钮态复用（生成中→停止），见第 5 节 |
 | 20 | **native `<select>` 无法放 logo** | 平台下拉需求不达标 | 自定义 trigger+menu（参照 #platform-trigger / #ai-model-menu 模式） |
+| 21 | **手机样机自带假状态栏** | 壳内再画 9:41 会双重叠加 | `.device-status` 透明覆盖 iframe 顶部（iOS 54px）；壳只留 34px 空白带（shellTop） |
+| 22 | **demo 分支提前 return** | 渠道壳改动在 8742 浏览器里完全不可见，误判"没实现" | 非 invoke 分支同样接渠道壳（demoCaptionFromMd / demoPlainHtmlFromMd） |
+| 23 | **新增平台只改 core** | demo 回退/菜单 logo/壳调度缺一处就半联动 | 加平台五处同步：core PlatformSpec → demo 回退 PLATFORMS → PLATFORM_LOGOS → SHELL_BUILDERS → 预设 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
   SVG 组件库（6 组件+AI 生成+传图+取色器）/ AI 绘图双源（ComfyUI+云端）/ 真机样机（iPhone15Pro/Pixel8+深浅色）/
-  宠物墨仔 / 合规徽标 / 渠道预览三形态 / i18n / Agent 面板 / 公众号 API 绑定 / chart 图表引擎。
+  宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
+  facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
+  i18n / Agent 面板 / 公众号 API 绑定 / chart 图表引擎。
 - 测试 95；版本 0.9.0（workspace+tauri.conf）。
-- 已知未做：Meta/X/LinkedIn API 发布出口（需资质）；知乎方言渲染器薄壳（现用简版 HTML）；
-  AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
+- 已知未做：Meta/X/LinkedIn API 发布出口（需资质）；AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist
 

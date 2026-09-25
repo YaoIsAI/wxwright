@@ -27,6 +27,25 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
     rendering after the full download.
 
 ### Added
+- **Pixel-level per-platform preview shells**: the single shared "note" shell
+  (accent-colour-only difference) became one faithful layout per platform,
+  researched against each platform's real feed anatomy - Xiaohongshu note
+  detail (full-bleed 3:4 cover, on-image action rail, fixed author/comment
+  bottom bar), X post (40px avatar rail, handle header, 16:9 rounded media,
+  reply/repost/like/views metric row, blue hashtags), Facebook card (#F0F2F5
+  page, 8px white card, reaction cluster, three-column like/comment/share
+  bar), Instagram post (script wordmark, gradient story-ring avatar, 4:5
+  media, action row + likes + username-prefixed caption), LinkedIn card
+  (#F4F2EE page, 48px avatar + headline + globe, reaction cluster,
+  four-column like/comment/repost/send bar) and a Zhihu article page (blue
+  follow pill, author row, justified 15px body, upvote action bar). Each
+  shell renders its strings in the active UI language.
+- **Instagram as its own platform**: "Meta (Facebook/Instagram)" split into
+  Facebook (id `meta`, kept for stored articles) and Instagram (id
+  `instagram`, image-note flow with 4:5 / 1:1 / 9:16 presets); both got
+  official Simple Icons marks. Demo mode (http.server 8742) now carries the
+  full platform set and renders channel shells too, so every platform shape
+  is reviewable in a plain browser.
 - **AGENTS.md**: a takeover guide for any AI agent (architecture map, commands,
   hard invariants, the full pitfalls ledger, verification protocol and a
   pre-delivery checklist). The pitfalls table records every historical
