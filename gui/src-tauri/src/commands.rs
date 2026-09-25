@@ -242,6 +242,68 @@ pub fn platform_export_text(
     }
 }
 
+/// Per-platform preview model: WeChat keeps the dialect article; image-note
+/// platforms get a note model (caption + resolved image list) rendered into
+/// a feed-style shell by the frontend; Markdown-friendly hosts get plain
+/// typographic HTML. This is the "same article, different channel shape" seam.
+#[tauri::command]
+pub fn platform_preview(
+    platform: String,
+    title: String,
+    markdown: String,
+    theme_id: String,
+) -> Result<serde_json::Value, String> {
+    match wxwright_core::platform::export_kind(&platform) {
+        wxwright_core::platform::ExportKind::RichTextDialect => {
+            Ok(serde_json::json!({ "mode": "article" }))
+        }
+        wxwright_core::platform::ExportKind::Markdown => {
+            let doc = wxwright_core::parser::parse_markdown(&markdown);
+            // resolve images through the same pipeline the dialect uses
+            let opts = ConvertOptions {
+                theme: load_theme_or_default(&theme_id),
+                image_mode: ImageMode::Inline,
+                base_dir: None,
+                transport: None,
+            };
+            let out = pipeline(&markdown, &opts).map_err(|e| e.to_string())?;
+            let resolved: Vec<String> = out
+                .images
+                .iter()
+                .map(|i| i.final_src.clone())
+                .collect();
+            Ok(serde_json::json!({
+                "mode": "plain",
+                "html": wxwright_core::platform::render_plain_html(&doc, &resolved),
+            }))
+        }
+        wxwright_core::platform::ExportKind::Caption => {
+            let opts = ConvertOptions {
+                theme: load_theme_or_default(&theme_id),
+                image_mode: ImageMode::Inline,
+                base_dir: None,
+                transport: None,
+            };
+            let out = pipeline(&markdown, &opts).map_err(|e| e.to_string())?;
+            let images: Vec<String> = out
+                .images
+                .iter()
+                .map(|i| i.final_src.clone())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let doc = wxwright_core::parser::parse_markdown(&markdown);
+            let caption = wxwright_core::platform::render_caption(&doc, Some(&title));
+            Ok(serde_json::json!({
+                "mode": "note",
+                "platform": platform,
+                "title": title,
+                "caption": caption,
+                "images": images,
+            }))
+        }
+    }
+}
+
 /// Platform-specific rule table (PRD §16). WeChat articles are validated by
 /// the dialect engine; Xiaohongshu captions get their own limits here.
 #[tauri::command]

@@ -349,9 +349,198 @@ pub fn validate_platform_caption(
 fn truncate_node(s: &str) -> String {
     s.chars().take(60).collect()
 }
+
+// ------------------------------------------------------ plain article ----
+
+/// Minimal typographic HTML for Markdown-friendly hosts (Zhihu): real
+/// headings/lists/tables instead of the MP dialect. `resolved` carries the
+/// image pipeline's final_src per ImageRef in document order (from a
+/// PipelineResult), so local/asset images show up inlined like everywhere
+/// else.
+pub fn render_plain_html(doc: &[Block], resolved: &[String]) -> String {
+    let mut r = PlainRenderer {
+        resolved,
+        idx: 0,
+        out: String::new(),
+    };
+    r.blocks(doc);
+    r.out
+}
+
+struct PlainRenderer<'a> {
+    resolved: &'a [String],
+    idx: usize,
+    out: String,
+}
+
+impl<'a> PlainRenderer<'a> {
+    fn next_img(&mut self, alt: &str) -> String {
+        let src = self.resolved.get(self.idx).cloned().unwrap_or_default();
+        self.idx += 1;
+        if src.is_empty() {
+            format!("[图片:{}]", crate::htmlutil::escape_text(alt))
+        } else {
+            format!(
+                "<img src=\"{}\" alt=\"{}\" style=\"max-width: 100%; border-radius: 4px;\" />",
+                crate::htmlutil::escape_attr(&src),
+                crate::htmlutil::escape_attr(alt)
+            )
+        }
+    }
+
+    fn blocks(&mut self, blocks: &[Block]) {
+        for b in blocks {
+            self.block(b);
+        }
+    }
+
+    fn inlines(&mut self, inlines: &[Inline]) {
+        for i in inlines {
+            self.inline(i);
+        }
+    }
+
+    fn inline(&mut self, i: &Inline) {
+        match i {
+            Inline::Text(t) => self.out.push_str(&crate::htmlutil::escape_text(t)),
+            Inline::Code(c) => {
+                self.out.push_str(&format!(
+                    "<code style=\"background: #F2F4F7; padding: 1px 5px; border-radius: 3px;\">{}</code>",
+                    crate::htmlutil::escape_text(c)
+                ));
+            }
+            Inline::Math { latex, .. } => self.out.push_str(&crate::htmlutil::escape_text(latex)),
+            Inline::Image(img) => {
+                let tag = self.next_img(&img.alt);
+                self.out.push_str(&tag);
+            }
+            Inline::Break => self.out.push_str("<br/>"),
+            Inline::RawHtml(h) => self.out.push_str(h),
+            Inline::Styled { kind, children } => match kind {
+                InlineKind::Strong => {
+                    self.out.push_str("<strong>");
+                    self.inlines(children);
+                    self.out.push_str("</strong>");
+                }
+                InlineKind::Emphasis => {
+                    self.out.push_str("<em>");
+                    self.inlines(children);
+                    self.out.push_str("</em>");
+                }
+                InlineKind::Strike => {
+                    self.out.push_str("<del>");
+                    self.inlines(children);
+                    self.out.push_str("</del>");
+                }
+                InlineKind::Link { url, .. } => {
+                    self.out.push_str(&format!(
+                        "<a href=\"{}\">",
+                        crate::htmlutil::escape_attr(url)
+                    ));
+                    self.inlines(children);
+                    self.out.push_str("</a>");
+                }
+            },
+        }
+    }
+
+    fn block(&mut self, b: &Block) {
+        match b {
+            Block::Heading { level, inlines, .. } => {
+                let h = (*level).clamp(1, 6);
+                self.out.push_str(&format!("<h{h}>"));
+                self.inlines(inlines);
+                self.out.push_str(&format!("</h{h}>"));
+            }
+            Block::Paragraph { inlines } => {
+                self.out.push_str("<p>");
+                self.inlines(inlines);
+                self.out.push_str("</p>");
+            }
+            Block::List { ordered, items, .. } => {
+                let tag = if *ordered { "ol" } else { "ul" };
+                self.out.push_str(&format!("<{tag}>"));
+                for item in items {
+                    self.out.push_str("<li>");
+                    self.blocks(&item.blocks);
+                    self.out.push_str("</li>");
+                }
+                self.out.push_str(&format!("</{tag}>"));
+            }
+            Block::Blockquote { blocks } => {
+                self.out.push_str("<blockquote>");
+                self.blocks(blocks);
+                self.out.push_str("</blockquote>");
+            }
+            Block::Card { blocks, .. } => self.blocks(blocks),
+            Block::Table { header, rows, .. } => {
+                self.out
+                    .push_str("<table border=\"1\" cellspacing=\"0\" cellpadding=\"6\">");
+                self.out.push_str("<tr>");
+                for cell in header {
+                    self.out.push_str("<th>");
+                    self.inlines(cell);
+                    self.out.push_str("</th>");
+                }
+                self.out.push_str("</tr>");
+                for row in rows {
+                    self.out.push_str("<tr>");
+                    for cell in row {
+                        self.out.push_str("<td>");
+                        self.inlines(cell);
+                        self.out.push_str("</td>");
+                    }
+                    self.out.push_str("</tr>");
+                }
+                self.out.push_str("</table>");
+            }
+            Block::Image(img) => {
+                let tag = self.next_img(&img.alt);
+                self.out.push_str(&tag);
+            }
+            Block::Figure { image, caption } => {
+                self.out.push_str("<figure>");
+                let tag = self.next_img(&image.alt);
+                self.out.push_str(&tag);
+                self.out.push_str("<figcaption>");
+                self.inlines(caption);
+                self.out.push_str("</figcaption></figure>");
+            }
+            Block::Code { code, .. } => {
+                self.out.push_str(&format!(
+                    "<pre style=\"background: #F6F8FA; padding: 12px; overflow-x: auto;\"><code>{}</code></pre>",
+                    crate::htmlutil::escape_text(code)
+                ));
+            }
+            Block::Formula { latex } => {
+                self.out.push_str(&format!("<p><code>{}</code></p>", crate::htmlutil::escape_text(latex)));
+            }
+            Block::Rule => self.out.push_str("<hr/>"),
+            Block::Toc => {}
+            Block::RawHtml { html } => self.out.push_str(html),
+            Block::SvgEmbed { html } => self.out.push_str(html),
+            Block::Chart { spec } => {
+                self.out
+                    .push_str(&crate::render::render_chart(spec));
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+#[test]
+fn plain_renderer_emits_real_typography_with_resolved_images() {
+    let doc = crate::parser::parse_markdown(
+        "# 标题\n\n正文 **加粗** 与 ![截图](assets/a.png)\n\n- 甲\n- 乙\n",
+    );
+    let html = render_plain_html(&doc, &["data:image/png;base64,QQ==".to_string()]);
+    assert!(html.contains("<h1>标题</h1>"));
+    assert!(html.contains("<strong>加粗</strong>"));
+    assert!(html.contains("src=\"data:image/png;base64,QQ==\""));
+    assert!(html.contains("<ul>") && html.contains("甲") && html.contains("乙"));
+}
 
 #[test]
 fn caption_renderer_linearises_structure() {

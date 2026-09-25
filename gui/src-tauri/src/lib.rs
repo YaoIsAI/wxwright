@@ -59,6 +59,7 @@ pub fn run() {
             commands::list_platforms,
             commands::platform_export_text,
             commands::platform_validate,
+            commands::platform_preview,
             commands::ai_image,
             commands::ai_save_image_model,
             commands::comfy_txt2img,

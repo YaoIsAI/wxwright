@@ -27,6 +27,17 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
     rendering after the full download.
 
 ### Added
+- **Channel preview: the platform's own layout in the phone mockup** (the
+  missing half of platform switching). One article, one shape per channel:
+  WeChat keeps the dialect article scroll; image-note platforms (Xiaohongshu
+  first) render inside the same device as a feed-note shell - image strip
+  (swiper dots, up to 9), note title, author row, caption text with
+  highlighted hashtags and a like/save/comment action bar, accent-coloured
+  per platform; Markdown-friendly hosts (Zhihu) get plain typographic HTML
+  (`platform::render_plain_html`, real headings/lists/tables with resolved
+  inline images). Backed by the `platform_preview` command returning a
+  per-channel preview model (article / note / plain) built on the caption
+  renderer and the image pipeline's resolved sources.
 - **Platform export adapters & per-platform rule tables** (the essential
   platform difference, PRD §16): the primary copy action now produces the
   target platform's own artifact - WeChat keeps dialect rich text,

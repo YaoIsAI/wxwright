@@ -280,7 +280,24 @@ async function convertNow() {
   try {
     const res = await invoke("convert_preview", { markdown: md, themeId: currentTheme });
     lastResult = res;
-    $("preview").srcdoc = wrapPreviewHtml(res.html);
+    // channel preview: same article, the target platform's own layout
+    if (currentPlatform !== "wechat") {
+      try {
+        const model = await invoke("platform_preview", {
+          platform: currentPlatform,
+          title: loadedTitle || autoTitle(md),
+          markdown: md,
+          themeId: currentTheme,
+        });
+        $("preview").srcdoc = model.mode === "note"
+          ? noteShellHtml(model)
+          : plainShellHtml(model.html);
+      } catch (e) {
+        $("preview").srcdoc = wrapPreviewHtml(res.html); // fall back to dialect
+      }
+    } else {
+      $("preview").srcdoc = wrapPreviewHtml(res.html);
+    }
     updateStats(res.stats, res.violations);
     if (currentPlatform !== "wechat") {
       // platform rule table replaces the dialect verdict for non-WeChat targets
@@ -1227,6 +1244,84 @@ function updatePosterPreview() {
   iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
   $("poster-preview-meta").textContent = `${w} × ${h} px · 预览 ${(scale * 100).toFixed(0)}%`;
 }
+/* ------------------------- channel preview shells (PRD §16) ----------------
+   One article, one shape per channel: WeChat keeps the dialect article
+   scroll; image-note platforms get a feed-note shell (image strip + title +
+   author + caption + action bar); Markdown-friendly hosts get plain
+   typographic HTML. All inside the same phone mockup. */
+const CHANNEL_ACCENT = { xhs: "#FF2442", meta: "#1877F2", x: "#1D9BF0", linkedin: "#0A66C2", zhihu: "#0084FF" };
+function channelAccent(id) { return CHANNEL_ACCENT[id] || "#2F6CEA"; }
+function channelName(id) {
+  const spec = PLATFORMS.find((p) => p.id === id);
+  return spec ? platformLabel(spec) : "微信";
+}
+
+function noteShellHtml(model) {
+  const accent = channelAccent(model.platform);
+  const imgs = (model.images || []).filter(Boolean);
+  const title = model.title || "";
+  // caption: escape, keep line breaks, highlight #话题#
+  let cap = escapeHtml(model.caption || "");
+  cap = cap.replace(/#[^#\n]{1,40}#/g, (m) => `<span style="color: ${accent};">${m}</span>`);
+  cap = cap.replace(/\n/g, "<br/>");
+  const strip = imgs.length
+    ? `<div style="display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 12px;">
+        ${imgs.slice(0, 9).map((src, i) => `<img src="${src}" style="scroll-snap-align: start; flex: 0 0 ${i === 0 ? "100%" : "78%"}; height: 300px; object-fit: cover; border-radius: 10px;" />`).join("")}
+      </div>
+      <div style="display: flex; gap: 4px; justify-content: center; margin-top: 8px;">
+        ${imgs.slice(0, Math.min(9, imgs.length)).map((_, i) => `<span style="width: 5px; height: 5px; border-radius: 50%; background: ${i === 0 ? accent : "#D9DDE3"};"></span>`).join("")}
+      </div>`
+    : `<div style="margin: 0 12px; border-radius: 12px; background: linear-gradient(135deg, ${accent}, ${accent}BB); color: #fff; padding: 26px 18px; font-size: 21px; font-weight: 700; line-height: 1.4;">${escapeHtml(title)}</div>`;
+  const heart = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="${accent}" d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 6 5c2.2 0 3.6 1.2 4.5 2.5h3C14.4 6.2 15.8 5 18 5c3.6 0 5.4 3.6 4 6.7C19.5 16.3 12 21 12 21Z" transform="scale(0.92) translate(1,0)"/></svg>`;
+  const star = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="none" stroke="#57606A" stroke-width="1.8" d="m12 3 2.7 5.7 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3 1.2-6.2L3 9.5l6.3-.8L12 3Z"/></svg>`;
+  const bubble = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="none" stroke="#57606A" stroke-width="1.8" d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12Z"/></svg>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;padding:0;background:#fff;}
+    body{font-family:-apple-system,"PingFang SC","Microsoft YaHei UI",sans-serif;color:#1F2328;padding-top:26px;}
+    .bar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid #F0F1F3;}
+    .bar b{font-size:14px;}
+    .bar .follow{margin-left:auto;background:${accent};color:#fff;font-size:12px;padding:4px 14px;border-radius:999px;}
+    .wrap{padding:12px 14px 20px;}
+    .title{font-size:18px;font-weight:700;line-height:1.45;margin:10px 0 6px;}
+    .author{display:flex;align-items:center;gap:8px;margin:12px 0;}
+    .avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#2F6CEA,#7A50EC);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+    .author .n{font-size:13px;font-weight:600;}
+    .author .sub{font-size:11px;color:#8B949E;}
+    .author .follow{margin-left:auto;font-size:12px;color:${accent};border:1px solid ${accent};padding:3px 12px;border-radius:999px;}
+    .cap{font-size:14.5px;line-height:1.85;word-break:break-word;}
+    .actions{display:flex;gap:22px;align-items:center;border-top:1px solid #F0F1F3;margin-top:14px;padding-top:10px;color:#57606A;font-size:12px;}
+    .actions span{display:flex;align-items:center;gap:5px;}
+    ::-webkit-scrollbar{width:0;height:0;display:none;}
+  </style></head><body>
+    <div class="bar"><b>${escapeHtml(channelName(model.platform))}</b><span class="follow">打开</span></div>
+    <div style="margin-top: 10px;">${strip}</div>
+    <div class="wrap">
+      <div class="title">${escapeHtml(title)}</div>
+      <div class="author">
+        <div class="avatar">瑶</div>
+        <div><div class="n">AI瑶</div><div class="sub">公众号 码聋</div></div>
+        <div class="follow">关注</div>
+      </div>
+      <div class="cap">${cap}</div>
+      <div class="actions">${heart}<span>1.2k</span>${star}<span>856</span>${bubble}<span>45</span></div>
+    </div>
+  </body></html>`;
+}
+
+function plainShellHtml(html) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;padding:0;background:#fff;}
+    body{font-family:-apple-system,"PingFang SC","Microsoft YaHei UI",sans-serif;color:#1F2328;
+      max-width: 620px; margin: 0 auto; padding: 48px 16px 40px; line-height: 1.8; font-size: 15px;}
+    h1{font-size: 22px;} h2{font-size: 19px; border-left: 4px solid ${channelAccent("zhihu")}; padding-left: 10px;}
+    h3{font-size: 17px;}
+    img{max-width: 100%;}
+    blockquote{border-left: 3px solid #D9DDE3; margin: 8px 0; padding: 2px 12px; color: #57606A; background: #F7F8FA;}
+    table{border-collapse: collapse; width: 100%; font-size: 13px;}
+    ::-webkit-scrollbar{width:0;height:0;display:none;}
+  </style></head><body>${html}</body></html>`;
+}
+
 async function blobToBase64(blob) {
   return new Promise((res, rej) => {
     const r = new FileReader();
