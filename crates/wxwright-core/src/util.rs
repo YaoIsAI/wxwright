@@ -29,8 +29,41 @@ pub fn probe_tcp(host: &str, port: u16, timeout_ms: u64) -> bool {
     false
 }
 
+/// Strip YAML frontmatter from a Markdown document.
+/// Returns (metadata pairs, body). Files without frontmatter pass through.
+pub fn strip_frontmatter(md: &str) -> (Vec<(String, String)>, String) {
+    let trimmed = md.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            let header = &rest[..end];
+            let body = rest[end + 4..].trim_start_matches('\n').to_string();
+            let mut pairs = Vec::new();
+            for line in header.lines() {
+                if let Some((k, v)) = line.split_once(':') {
+                    pairs.push((
+                        k.trim().to_string(),
+                        v.trim().trim_matches('"').trim_matches('\'').to_string(),
+                    ));
+                }
+            }
+            return (pairs, body);
+        }
+    }
+    (Vec::new(), md.to_string())
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn strip_frontmatter_roundtrip() {
+        let (pairs, body) = strip_frontmatter("---\ntitle: \"你好\"\ntheme: minimal\n---\n\n# H\n");
+        assert_eq!(pairs.iter().find(|(k, _)| k == "title").unwrap().1, "你好");
+        assert_eq!(body.trim_start(), "# H\n");
+        let (pairs2, body2) = strip_frontmatter("no frontmatter here");
+        assert!(pairs2.is_empty());
+        assert_eq!(body2, "no frontmatter here");
+    }
+
     #[test]
     fn probe_tcp_closed_port() {
         // Port 1 on localhost is practically never open.

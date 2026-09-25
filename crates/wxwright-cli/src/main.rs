@@ -326,6 +326,11 @@ fn read_stdin_if_dash(path: &str) -> Result<(String, Option<PathBuf>), String> {
     output::read_input(path).map_err(|e| format!("cannot read {}: {}", path, e))
 }
 
+/// Article-library files carry YAML frontmatter; strip it for rendering.
+fn strip_frontmatter(md: &str) -> String {
+    wxwright_core::util::strip_frontmatter(md).1
+}
+
 fn violation_report<'a, I>(out: &Out, violations: I)
 where
     I: IntoIterator<Item = &'a Violation>,
@@ -383,7 +388,8 @@ fn cmd_convert(
     out_path: &str,
     out: &Out,
 ) -> Result<i32, String> {
-    let (md, base_dir) = read_stdin_if_dash(input)?;
+    let (raw, base_dir) = read_stdin_if_dash(input)?;
+    let md = strip_frontmatter(&raw);
     let opts = build_options(theme_name, ImageMode::Inline, base_dir)?;
     let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
     let html = wxwright_core::wrap_document(&result.html);
@@ -426,6 +432,11 @@ fn cmd_convert(
 fn cmd_validate(input: &str, strict: bool, official_check: bool, out: &Out) -> Result<i32, String> {
     let (content, base_dir) = read_stdin_if_dash(input)?;
     let lower = input.to_ascii_lowercase();
+    let content = if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        strip_frontmatter(&content)
+    } else {
+        content
+    };
     let is_html = if lower.ends_with(".md") || lower.ends_with(".markdown") {
         false
     } else if lower.ends_with(".html") || lower.ends_with(".htm") {
@@ -532,7 +543,8 @@ fn cmd_copy(
     dry_run: bool,
     out: &Out,
 ) -> Result<i32, String> {
-    let (md, base_dir) = read_stdin_if_dash(input)?;
+    let (raw, base_dir) = read_stdin_if_dash(input)?;
+    let md = strip_frontmatter(&raw);
     let creds = wxwright_mp::load_credentials();
     let mode = if creds.is_some() {
         ImageMode::Upload
@@ -676,7 +688,8 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             theme: theme_name,
             thumb_media_id,
         } => {
-            let (md, base_dir) = read_stdin_if_dash(file)?;
+            let (raw_md, base_dir) = read_stdin_if_dash(file)?;
+            let md = strip_frontmatter(&raw_md);
             let mut opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
             opts.transport = Some(Arc::new(MpClient::new(client_credentials(&client))));
             let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
@@ -720,7 +733,8 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             title,
             theme: theme_name,
         } => {
-            let (md, base_dir) = read_stdin_if_dash(file)?;
+            let (raw_md, base_dir) = read_stdin_if_dash(file)?;
+            let md = strip_frontmatter(&raw_md);
             let opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
             let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
             let article = wxwright_mp::DraftArticle {
