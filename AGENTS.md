@@ -40,6 +40,8 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 
 ```bash
 cargo test --workspace                       # 全量测试（当前 95 个，必须全绿才能交付）
+cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
+                                             # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
 cargo run -p wxwright-cli -- convert a.md --out a.html
 cargo run -p wxwright-cli -- validate a.md --strict   # 退出码 0/1/2
@@ -120,6 +122,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 21 | **手机样机自带假状态栏** | 壳内再画 9:41 会双重叠加 | `.device-status` 透明覆盖 iframe 顶部（iOS 54px）；壳只留 34px 空白带（shellTop） |
 | 22 | **demo 分支提前 return** | 渠道壳改动在 8742 浏览器里完全不可见，误判"没实现" | 非 invoke 分支同样接渠道壳（demoCaptionFromMd / demoPlainHtmlFromMd） |
 | 23 | **新增平台只改 core** | demo 回退/菜单 logo/壳调度缺一处就半联动 | 加平台五处同步：core PlatformSpec → demo 回退 PLATFORMS → PLATFORM_LOGOS → SHELL_BUILDERS → 预设 |
+| 24 | **Windows 下 `cargo test` 跑不了 mock_app 测试** | 测试二进制启动即 `STATUS_ENTRYPOINT_NOT_FOUND`（tauri#11028，DLL 入口点）；PATH 注入 WebView2Loader.dll 也无效 | 命令层测试走不需要 AppHandle 的纯函数/同步入口（如 `generate_theme`），并加 `#[ignore]` live 冒烟真实验证；jobs.rs 的 emit/chat_stream/run_chat_task 已改成 `R: tauri::Runtime` 泛型备用 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

@@ -33,7 +33,7 @@ fn registry() -> &'static Mutex<HashMap<u64, Arc<Job>>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn emit(app: &AppHandle, id: u64, kind: &str, ev: &str, data: Value) {
+fn emit<R: tauri::Runtime>(app: &AppHandle<R>, id: u64, kind: &str, ev: &str, data: Value) {
     let _ = app.emit("ai-job", json!({ "id": id, "kind": kind, "ev": ev, "data": data }));
 }
 
@@ -98,8 +98,8 @@ fn start_budget(spec_budget: u32) -> u32 {
 /// for reasoning models), honours cancel between chunks, falls back to a
 /// whole-body JSON parse for providers that ignore `stream: true`, and
 /// ladders the budget when a reasoning pass eats it all.
-pub fn chat_stream(
-    app: &AppHandle,
+pub fn chat_stream<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     job: &Arc<Job>,
     msgs: &[Value],
     spec_budget: u32,
@@ -426,8 +426,8 @@ fn find_attr_values<'a>(lower: &'a str, attr: &str) -> Vec<&'a str> {
 
 /// Execute a chat-based task with the generate→extract→validate→repair loop,
 /// streaming progress. `finish` persists the artifact and builds the payload.
-fn run_chat_task(
-    app: &AppHandle,
+fn run_chat_task<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     job: &Arc<Job>,
     kind: &str,
     params: &Value,
@@ -594,6 +594,37 @@ mod tests {
         for kind in ["theme", "svg", "poster"] {
             let s = spec(kind);
             assert!(s.attempts >= 2 && s.budget >= 1024);
+        }
+    }
+
+    /// End-to-end smoke against the real AI provider: exercises the theme
+    /// engine shared by the sync path AND the jobs.rs button path (same
+    /// prompts, budget ladder, strip_think, extract_toml,
+    /// validate_generated_theme, retry-feed and save_theme_artifact).
+    /// Opt-in because it costs tokens: `cargo test -p wxwright-gui
+    /// live_theme_generation_smoke -- --ignored --nocapture`
+    /// (run_chat_task itself can't run under cargo test on Windows:
+    /// tauri::test::mock_app binaries fail to launch, tauri#11028.)
+    #[test]
+    #[ignore = "live smoke: calls the real AI provider (needs a configured key)"]
+    fn live_theme_generation_smoke() {
+        match crate::ai::active_provider() {
+            Err(e) => {
+                println!("skip: no active AI provider configured: {e}");
+                return;
+            }
+            Ok((p, _)) => println!("live provider: {} / {}", p.name, p.model),
+        }
+        let result =
+            crate::ai::generate_theme("深夜代码风：深色底、青色强调、等宽感标题，适合编程教程文章");
+        match result {
+            Ok(v) => {
+                println!("theme ok: {}", serde_json::to_string_pretty(&v).unwrap());
+                let file = v["file"].as_str().expect("file path in result");
+                let meta = std::fs::metadata(file).expect("artifact written to user themes dir");
+                assert!(meta.len() > 200, "artifact suspiciously small: {file}");
+            }
+            Err(e) => panic!("live theme generation failed: {e}"),
         }
     }
 }
