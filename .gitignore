@@ -33,3 +33,4 @@ agnes-ai.txt
 agnes_ai.txt
 *.local.txt
 patch_*.py
+build_*.url
