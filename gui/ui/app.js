@@ -71,6 +71,44 @@ const I18N = {
     platform: "平台", custom_size: "自定义...",
     copy_rich: "复制富文本", copy_caption: "复制文案", copy_md: "复制 Markdown",
     copied_caption: "文案已复制，去小红书 App 粘贴", copied_md: "Markdown 已复制",
+    platform_title: "目标平台：切换后预览、规则与导出联动",
+    theme_ai_btn: "AI 生成主题", export_title: "导出 HTML",
+    comfy_title: "AI 绘图（ComfyUI 本地）", svgkit_title: "SVG 互动组件库",
+    assets_title: "素材库", ai_assistant_btn: "AI 助手", agent_title: "Agent 接入",
+    import_md: "导入 .md 文件", new_article: "新建文章",
+    validate_title: "校验公众号规范",
+    attach_title: "上传附件（文档 PDF/DOCX/HTML/TXT/MD + 图片走视觉模型）",
+    model_select_title: "切换模型", send_title: "发送", dark_toggle: "深色 / 浅色",
+    pet_title: "墨仔（点击摸摸，双击换形态）",
+    vendor_preset: "预设厂商（选择后自动填充）", vendor_preset_ph: "— 选择厂商自动填充 —",
+    logo_ph: "留空使用内置品牌标", upload_logo: "上传图标", clear: "清除",
+    comfy_section_title: "ComfyUI（本地 AI 绘图）",
+    comfy_section_hint: "检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。",
+    comfy_url_label: "ComfyUI 地址", comfy_model_label: "Checkpoint 模型",
+    comfy_launch_label: "启动程序路径（用于一键启动）", comfy_start: "一键启动",
+    about_line1: "wxwright 0.9.0 · by AI瑶（微信公众号：码聋）",
+    about_line2: "写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。",
+    chip_jp: "日系手账", chip_jp_desc: "日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺",
+    chip_cyber: "赛博科技", chip_cyber_desc: "赛博科技感，深色代码面板，霓虹青蓝强调色，等宽律动",
+    chip_mag: "复古杂志", chip_mag_desc: "复古杂志编辑风，暖纸色，朱红强调色，居中大标题与双细线",
+    chip_academy: "墨绿学院", chip_academy_desc: "墨绿学院风，米白纸面，墨绿与金色点缀，庄重书卷气",
+    theme_desc_ph: "例如：奶茶铺子配色，奶咖色底、焦糖强调色，圆角卡片，元气手写感",
+    tpl_cover: "头图模板", tpl_quote: "金句贴图卡", tpl_pic: "图文贴图卡",
+    open_folder: "打开素材文件夹", imgsrc_cloud: "云端图像 API",
+    image_model_label: "图像模型（保存后即可用云端生成）", save_model: "保存模型",
+    comfy_launch_ph: "ComfyUI 启动程序路径（如 D:\ComfyUI\run_nvidia_gpu.bat）",
+    comfy_prompt_label: "提示词（正向）", comfy_negative_label: "反向提示词（留空用默认）",
+    comfy_i2i_row: "图生图源图（从素材库选择）", comfy_pick: "从素材库选",
+    mode_t2i: "文生图", mode_i2i: "图生图", generate_btn: "生成",
+    qr_title: "公众号 · 码聋", qr_line1: "微信扫码关注 码聋", qr_line2: "AI瑶 的写作与技术专栏",
+    fit_title: "尺寸工坊（适配微信标准）", fit_target: "目标尺寸",
+    fit_mode: "适配方式", fit_cover: "裁切填满（居中裁剪）", fit_contain: "完整置入（补白）",
+    fit_scale: "导出倍数", fit_2x: "2x（更清晰）", fit_bg: "补白背景",
+    bg_white: "白", bg_black: "黑", bg_lightgray: "浅灰", bg_brand: "品牌浅蓝",
+    fit_hint: "导出后自动进入素材库",
+    csize_cover: "1080 × 460（头图 2.35:1）", csize_square: "1080 × 1080（次图 1:1）",
+    csize_small: "500 × 500（小方图）", csize_wide: "1280 × 720（横图 16:9）", csize_tall: "1080 × 1440（竖图 3:4）",
+    svgkit_hint: "组件在公众号里由读者「点击 / 触摸」触发动画（自动满足官方 R-1.7 规则）。选组件、改文字与颜色、看右侧实时预览，然后插入文章；插入后引擎会再做一次合规校验。也可以直接让 AI 按描述生成全新组件，或上传自定义图片参与互动。",
     imgset: "导出图组", imgset_done: (n) => `图组已导出 ${n} 张到素材库`,
     job_stopped: "已停止",
   },
@@ -136,6 +174,44 @@ const I18N = {
     platform: "Platform", custom_size: "Custom...",
     copy_rich: "Copy rich text", copy_caption: "Copy caption", copy_md: "Copy Markdown",
     copied_caption: "Caption copied - paste it into the note editor", copied_md: "Markdown copied",
+    platform_title: "Target platform: preview, rules and export follow it",
+    theme_ai_btn: "AI theme generator", export_title: "Export HTML",
+    comfy_title: "AI drawing (local ComfyUI)", svgkit_title: "SVG interactive kit",
+    assets_title: "Assets", ai_assistant_btn: "AI assistant", agent_title: "Agent integration",
+    import_md: "Import .md", new_article: "New article",
+    validate_title: "Check MP compliance",
+    attach_title: "Attach documents (PDF/DOCX/HTML/TXT/MD; images use vision)",
+    model_select_title: "Switch model", send_title: "Send", dark_toggle: "Dark / Light",
+    pet_title: "Mozai (click to pet, double-click to morph)",
+    vendor_preset: "Vendor preset (auto-fills)", vendor_preset_ph: "- pick a vendor to auto-fill -",
+    logo_ph: "empty = built-in brand mark", upload_logo: "Upload icon", clear: "Clear",
+    comfy_section_title: "ComfyUI (local AI drawing)",
+    comfy_section_hint: "With a local ComfyUI detected, the AI drawing button drives local Stable Diffusion txt2img / img2img; results land in the asset library.",
+    comfy_url_label: "ComfyUI URL", comfy_model_label: "Checkpoint model",
+    comfy_launch_label: "Launcher path (for one-click start)", comfy_start: "Start",
+    about_line1: "wxwright 0.9.0 - by AI Yao (MP: MaLong)",
+    about_line2: "Mozai the writing pet lives in the bottom-left status bar - go pet it.",
+    chip_jp: "Journal", chip_jp_desc: "Japanese journal style: cream paper, caramel accent, rounded note cards",
+    chip_cyber: "Cyber", chip_cyber_desc: "Cyber tech style: dark code panels, neon cyan-blue accent, mono rhythm",
+    chip_mag: "Magazine", chip_mag_desc: "Vintage magazine style: warm paper, vermilion accent, centered headlines",
+    chip_academy: "Academy", chip_academy_desc: "Academy style: ivory paper, deep green and gold, classic serif mood",
+    theme_desc_ph: "e.g. milk-tea shop palette, latte background, caramel accent, rounded cards",
+    tpl_cover: "Cover template", tpl_quote: "Quote card", tpl_pic: "Picture card",
+    open_folder: "Open assets folder", imgsrc_cloud: "Cloud image API",
+    image_model_label: "Image model (save to enable cloud generation)", save_model: "Save model",
+    comfy_launch_ph: "ComfyUI launcher path (e.g. D:\ComfyUI\run_nvidia_gpu.bat)",
+    comfy_prompt_label: "Prompt (positive)", comfy_negative_label: "Negative prompt (blank = default)",
+    comfy_i2i_row: "img2img source (pick from assets)", comfy_pick: "Pick from assets",
+    mode_t2i: "txt2img", mode_i2i: "img2img", generate_btn: "Generate",
+    qr_title: "Official Account - MaLong", qr_line1: "Scan to follow MaLong", qr_line2: "AI Yao's writing & tech column",
+    fit_title: "Size studio (MP sizes)", fit_target: "Target size",
+    fit_mode: "Fit mode", fit_cover: "Cover (center crop)", fit_contain: "Contain (pad)",
+    fit_scale: "Export scale", fit_2x: "2x (sharper)", fit_bg: "Pad background",
+    bg_white: "White", bg_black: "Black", bg_lightgray: "Light gray", bg_brand: "Brand blue",
+    fit_hint: "Exports land in the asset library",
+    csize_cover: "1080 × 460 (cover 2.35:1)", csize_square: "1080 × 1080 (square 1:1)",
+    csize_small: "500 × 500 (small square)", csize_wide: "1280 × 720 (wide 16:9)", csize_tall: "1080 × 1440 (tall 3:4)",
+    svgkit_hint: "Components animate on reader tap inside MP (auto-compliant with rule R-1.7). Pick one, tweak text/colours, watch the live preview, then insert; the engine re-validates on insert. You can also let AI generate a brand-new component or upload a custom image.",
     imgset: "Export image set", imgset_done: (n) => `${n} image(s) exported to the asset library`,
     job_stopped: "Stopped",
   },
@@ -190,6 +266,14 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     const k = el.getAttribute("data-i18n-placeholder");
     if (I18N[lang][k]) el.placeholder = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const k = el.getAttribute("data-i18n-title");
+    if (I18N[lang][k]) el.title = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-desc-i18n]").forEach((el) => {
+    const k = el.getAttribute("data-desc-i18n");
+    if (I18N[lang][k]) el.dataset.desc = I18N[lang][k];
   });
   if (typeof refreshCopyButton === "function") refreshCopyButton();
   $("ai-input").placeholder = t("send_placeholder");
@@ -1014,7 +1098,7 @@ async function generateTheme() {
   $("theme-status").textContent = "";
   jobBusy.theme = true;
   try {
-    const job = await AIJobs.run("theme", { description: desc }, $("theme-job"));
+    const job = await AIJobs.run("theme", { description: desc }, { button: $("btn-theme-generate") });
     if (job.stopped) { $("theme-status").textContent = t("job_stopped"); return; }
     const res = job.result;
     // refresh theme list and apply
@@ -1062,12 +1146,44 @@ function refreshCopyButton() {
     : t("copy_caption");
 }
 
+/* official mark per platform: PLATFORM_LOGOS first, vendor library fallback */
+function platformLogoTile(id, size = 16) {
+  const L = (window.PLATFORM_LOGOS || {})[id] || (window.BRAND_LOGOS || {})[id];
+  if (L && L.path) {
+    const fg = L.dark ? "#1F2328" : "#FFFFFF";
+    return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:${L.color};border-radius:${Math.max(3, Math.round(size * 0.25))}px;"><svg width="${Math.round(size * 0.72)}" height="${Math.round(size * 0.72)}" viewBox="0 0 24 24" aria-hidden="true"><path fill="${fg}" d="${L.path}"/></svg></span>`;
+  }
+  const name = platformLabel(PLATFORMS.find((p) => p.id === id) || { name_zh: id, name_en: id });
+  return `<span class="brand-tile" style="width:${size}px;height:${size}px;background:var(--border-strong);border-radius:${Math.max(3, Math.round(size * 0.25))}px;font-size:${Math.max(8, Math.round(size * 0.5))}px;">${escapeHtml(name.charAt(0).toUpperCase())}</span>`;
+}
+
 function renderPlatformOptions() {
-  const sel = $("platform-select");
-  sel.innerHTML = PLATFORMS.length
-    ? PLATFORMS.map((p) => `<option value="${p.id}"${p.id === currentPlatform ? " selected" : ""}>${escapeHtml(platformLabel(p))}</option>`).join("")
-    : `<option value="wechat">微信公众号</option>`;
-  sel.title = currentPlatformSpec().note || "";
+  const spec = currentPlatformSpec();
+  $("platform-trigger-logo").innerHTML = platformLogoTile(spec.id, 18);
+  $("platform-trigger-name").textContent = platformLabel(spec);
+  $("platform-trigger").title = spec.note || "";
+  const menu = $("platform-menu");
+  menu.innerHTML = PLATFORMS.map((p) => `
+    <button type="button" class="pm-item${p.id === currentPlatform ? " active" : ""}" data-id="${escapeHtml(p.id)}">
+      ${platformLogoTile(p.id, 20)}
+      <span class="pm-name">${escapeHtml(platformLabel(p))}</span>
+      <svg class="pm-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </button>`).join("");
+  menu.querySelectorAll(".pm-item").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      $("platform-menu").hidden = true;
+      if (item.dataset.id === currentPlatform) return;
+      applyPlatform(item.dataset.id);
+      if (currentArticleId) {
+        dirty = true; // platform is part of the article; persist on next save
+        $("stat-saved").textContent = t("not_saved");
+      }
+      refreshCopyButton();
+      convertNow(); // channel preview + rule table switch immediately
+      toast((lang === "zh-CN" ? "已切换到：" : "Platform: ") + platformLabel(currentPlatformSpec()), "ok");
+    });
+  });
 }
 
 /* rebuild poster + fit-studio preset options from the active platform */
@@ -1124,15 +1240,31 @@ async function initPlatformSwitcher() {
   renderPlatformOptions();
   renderPlatformPresets();
   refreshCopyButton();
-  $("platform-select").addEventListener("change", () => {
-    applyPlatform($("platform-select").value);
-    if (currentArticleId) {
-      dirty = true; // platform is part of the article; persist on next save
-      $("stat-saved").textContent = t("not_saved");
+  $("platform-trigger").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = $("platform-menu");
+    if (menu.hidden) {
+      renderPlatformOptions(); // refresh active state
+      const btn = $("platform-trigger");
+      const br = btn.getBoundingClientRect();
+      menu.style.visibility = "hidden";
+      menu.style.display = "block";
+      const mw = menu.offsetWidth || 220;
+      const mh = menu.offsetHeight || 240;
+      menu.style.display = "";
+      menu.style.visibility = "";
+      menu.style.left = `${Math.round(Math.min(Math.max(8, br.left), window.innerWidth - mw - 8))}px`;
+      menu.style.top = `${Math.round(Math.min(br.bottom + 6, window.innerHeight - mh - 8))}px`;
+      menu.hidden = false;
+    } else {
+      menu.hidden = true;
     }
-    refreshCopyButton();
-    convertNow(); // chip switches to the platform rule table immediately
-    toast((lang === "zh-CN" ? "已切换到：" : "Platform: ") + platformLabel(currentPlatformSpec()), "ok");
+  });
+  document.addEventListener("click", (e) => {
+    const menu = $("platform-menu");
+    if (!menu.hidden && !e.target.closest("#platform-menu") && !e.target.closest("#platform-trigger")) {
+      menu.hidden = true;
+    }
   });
 }
 
@@ -1264,14 +1396,15 @@ function noteShellHtml(model) {
   let cap = escapeHtml(model.caption || "");
   cap = cap.replace(/#[^#\n]{1,40}#/g, (m) => `<span style="color: ${accent};">${m}</span>`);
   cap = cap.replace(/\n/g, "<br/>");
+  // XHS official image ratio: 3:4 (1080x1440). Every card honours it.
   const strip = imgs.length
     ? `<div style="display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 12px;">
-        ${imgs.slice(0, 9).map((src, i) => `<img src="${src}" style="scroll-snap-align: start; flex: 0 0 ${i === 0 ? "100%" : "78%"}; height: 300px; object-fit: cover; border-radius: 10px;" />`).join("")}
+        ${imgs.slice(0, 9).map((src, i) => `<img src="${src}" style="scroll-snap-align: start; flex: 0 0 100%; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px;" />`).join("")}
       </div>
       <div style="display: flex; gap: 4px; justify-content: center; margin-top: 8px;">
         ${imgs.slice(0, Math.min(9, imgs.length)).map((_, i) => `<span style="width: 5px; height: 5px; border-radius: 50%; background: ${i === 0 ? accent : "#D9DDE3"};"></span>`).join("")}
       </div>`
-    : `<div style="margin: 0 12px; border-radius: 12px; background: linear-gradient(135deg, ${accent}, ${accent}BB); color: #fff; padding: 26px 18px; font-size: 21px; font-weight: 700; line-height: 1.4;">${escapeHtml(title)}</div>`;
+    : `<div style="margin: 0 12px; aspect-ratio: 3 / 4; border-radius: 12px; background: linear-gradient(135deg, ${accent}, ${accent}BB); color: #fff; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px 20px; font-size: 24px; font-weight: 700; line-height: 1.4; box-sizing: border-box;">${escapeHtml(title)}</div>`;
   const heart = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="${accent}" d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.4 5 6 5c2.2 0 3.6 1.2 4.5 2.5h3C14.4 6.2 15.8 5 18 5c3.6 0 5.4 3.6 4 6.7C19.5 16.3 12 21 12 21Z" transform="scale(0.92) translate(1,0)"/></svg>`;
   const star = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="none" stroke="#57606A" stroke-width="1.8" d="m12 3 2.7 5.7 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3 1.2-6.2L3 9.5l6.3-.8L12 3Z"/></svg>`;
   const bubble = `<svg viewBox="0 0 24 24" width="19" height="19"><path fill="none" stroke="#57606A" stroke-width="1.8" d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12Z"/></svg>`;
@@ -1434,8 +1567,8 @@ async function posterAiGenerate() {
   try {
     const job = await AIJobs.run(
       "poster",
-      { description: desc, width: w, height: h, scene, platform: currentPlatform() },
-      $("poster-job")
+      { description: desc, width: w, height: h, scene, platform: currentPlatform },
+      { button: $("btn-poster-ai") }
     );
     if (job.stopped) { $("status-text").textContent = t("job_stopped"); return; }
     $("poster-html").value = String(job.result).trim();
@@ -1969,7 +2102,7 @@ async function svgKitAiGenerate() {
   jobBusy.svg = true;
   $("svgkit-ai-status").textContent = "";
   try {
-    const job = await AIJobs.run("svg", { description: desc }, $("svgkit-job"));
+    const job = await AIJobs.run("svg", { description: desc }, { button: $("svgkit-ai-generate") });
     if (job.stopped) { $("svgkit-ai-status").textContent = t("job_stopped"); return; }
     const svg = job.result;
     svgKitCustom.unshift({ id: "c" + Date.now(), name: desc.slice(0, 14), svg });
@@ -2604,6 +2737,8 @@ function bindUI() {
   };
   const sBtn = document.getElementById("comfy-start");
   if (sBtn) sBtn.addEventListener("click", comfyStart);
+  const sBtn2 = document.getElementById("imggen-comfy-start");
+  if (sBtn2) sBtn2.addEventListener("click", comfyStart);
 
   /* agent modal */
   $("btn-agent").addEventListener("click", () => { openModal("modal-agent"); loadAgentCard(); });
@@ -2832,6 +2967,18 @@ function bindUI() {
     $("workspace").querySelector(".pane-editor").style.flex = `0 0 ${left * 100}%`;
   });
 
+  /* language toggle: swap locale, then re-render every dynamic surface */
+  $("btn-lang").addEventListener("click", () => {
+    lang = lang === "zh-CN" ? "en" : "zh-CN";
+    localStorage.setItem("wxwright-lang", lang);
+    applyI18n();
+    refreshLibrary();
+    refreshModelSelect();
+    renderPlatformOptions();
+    refreshCopyButton();
+    convertNow();
+  });
+
   /* QR code modal */
   $("malong-btn").addEventListener("click", () => openModal("modal-qr"));
 
@@ -2885,7 +3032,7 @@ async function comfyGenerate() {
     } else {
       params = { mode: "t2i", prompt, negative: $("comfy-negative").value, width: w, height: h, steps };
     }
-    const job = await AIJobs.run("comfy", params, $("comfy-job"));
+    const job = await AIJobs.run("comfy", params, { button: $("comfy-generate") });
     if (job.stopped) { $("comfy-progress").textContent = t("job_stopped"); return; }
     const paths = job.result.paths;
     renderComfyResults(paths);

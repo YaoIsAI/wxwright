@@ -54,20 +54,7 @@
     var im = img();
     if (!im || !FORMS[form] || currentForm === form) return;
     currentForm = form;
-    // cross-fade: freeze the old frame on a backdrop layer, fade the new one in
-    var back = $("pet-img-b");
-    if (back) {
-      back.src = im.src;
-      back.classList.add("show");
-      im.classList.remove("show");
-      im.src = FORMS[form];
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () { im.classList.add("show"); });
-      });
-      setTimeout(function () { back.classList.remove("show"); }, 420);
-    } else {
-      im.src = FORMS[form];
-    }
+    im.src = FORMS[form]; // direct swap: no transition frames
   }
 
   function state(s, opts) {

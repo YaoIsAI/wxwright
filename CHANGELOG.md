@@ -27,6 +27,38 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
     rendering after the full download.
 
 ### Added
+- **AGENTS.md**: a takeover guide for any AI agent (architecture map, commands,
+  hard invariants, the full pitfalls ledger, verification protocol and a
+  pre-delivery checklist). The pitfalls table records every historical
+  incident (silent patch failures, duplicate definitions shadowing features,
+  unregistered commands, stale dist, cache-bust misses, ...) so they are not
+  repeated.
+- **Platform switcher with official marks**: the native select became a
+  custom dropdown showing each platform's official logo tile (WeChat green,
+  XHS red, Zhihu, X, LinkedIn - Simple Icons CC0 plus the official LinkedIn
+  icon SVG from Wikimedia Commons); the toolbar trigger carries the active
+  platform's mark and colour (evaluated: tinted trigger beats a full
+  colour-changing top bar on clash-risk and consistency).
+- **Language toggle actually wired**: btn-lang had no click handler (the
+  dictionary and applyI18n existed but were never reachable). It now flips
+  zh-CN/en, persists, re-renders every dynamic surface and gained a
+  data-i18n-title / data-desc-i18n mechanism; 73 hardcoded strings across
+  toolbar tooltips, provider form, ComfyUI section, about, theme presets,
+  poster/size/asset/svgkit panels and the QR modal got keys in both locales;
+  a duplicate `comfy-start` id (dead second button) was fixed on the way.
+
+### Fixed
+- **Mozai form switching**: the cross-fade layering introduced earlier read
+  as a harsh transition; removed entirely (two-layer system, CSS and markup
+  included) back to a direct form swap.
+- **XHS note shell now uses the official 3:4 card geometry** (1080x1440
+  aspect-ratio for the image strip and the no-image title card) instead of
+  fixed-height crops.
+- **AI generation buttons are reused as stop buttons**: the job console /
+  thinking box / separate stop button are gone; while a job runs its trigger
+  button shows a spinner plus 停止 and clicking it cancels (capture-phase
+  handler, backend real disconnect unchanged). Console mounts and CSS were
+  removed from all four panels.
 - **Channel preview: the platform's own layout in the phone mockup** (the
   missing half of platform switching). One article, one shape per channel:
   WeChat keeps the dialect article scroll; image-note platforms (Xiaohongshu
