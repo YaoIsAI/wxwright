@@ -125,7 +125,8 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 24 | **Windows 下 `cargo test` 跑不了 mock_app 测试** | 测试二进制启动即 `STATUS_ENTRYPOINT_NOT_FOUND`（tauri#11028，DLL 入口点）；PATH 注入 WebView2Loader.dll 也无效 | 命令层测试走不需要 AppHandle 的纯函数/同步入口（如 `generate_theme`），并加 `#[ignore]` live 冒烟真实验证；jobs.rs 的 emit/chat_stream/run_chat_task 已改成 `R: tauri::Runtime` 泛型备用 |
 | 25 | **HTML 重复 id 二次发生（comfy-launch-path / svgkit-desc）** | getElementById 只认第一个，后出现的输入框/span 成静默死控件 | 加弹窗输入框先 `grep -o 'id="[^"]*"' index.html \| sort \| uniq -d` 扫重；两个弹窗需要同字段时一个改名 + 双向同步 |
 | 26 | **demo 存根 UI 没绑事件** | 素材存根卡的插入/工坊/删除按钮点击静默无反应，验收时被当 bug 报 | demo 回退的每个按钮要么绑真实 demo 行为、要么统一回 demo_mode toast，不留死按钮 |
-| 27 | **C 盘被 target 吃满（os error 112）两次复发** | cargo build/test 中途磁盘写失败，构建报 icongen/rustc exit 101 等莫名错误 | 报错先 `df -h /c` 查盘；`rm -rf target/debug/incremental`（3-11G）或整个 target/debug 速救；大型构建前预留 >10G |
+| 27 | **CI 工具链钉在 1.96（dtolnay/rust-toolchain@1.96）而本地已可 rustup update** | 新 clippy（如 1.98）会引入新 lint，CI 与本地版本漂移导致「本地绿 CI 红」 | 升级步骤：本地 rustup update 后跑 `cargo clippy --workspace --all-targets -- -D warnings` 清零，再把两个 workflow 的 @1.96 升到新版本。1.98 已知待修：clippy::question_mark（theme 百分比解析 else-return）、clippy::unneeded_wildcard_pattern |
+| 28 | **C 盘被 target 吃满（os error 112）两次复发** | cargo build/test 中途磁盘写失败，构建报 icongen/rustc exit 101 等莫名错误 | 报错先 `df -h /c` 查盘；`rm -rf target/debug/incremental`（3-11G）或整个 target/debug 速救；大型构建前预留 >10G |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

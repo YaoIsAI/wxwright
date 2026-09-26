@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96
         with:
           components: clippy, rustfmt
       - name: Install Linux build deps (gui crate needs the webkit/gtk stack)
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96
       - name: Install Linux build deps (libdbus for keyring)
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - uses: actions/setup-node@v4
@@ -54,5 +54,5 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96
       - run: cargo build -p wxwright-gui
