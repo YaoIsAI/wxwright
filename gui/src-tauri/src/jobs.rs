@@ -627,4 +627,31 @@ mod tests {
             Err(e) => panic!("live theme generation failed: {e}"),
         }
     }
+
+    /// Live smoke for the AI assistant's article-generation engine via the
+    /// sync complete() path (same provider layer and budget ladder the
+    /// streaming drawer harness sits on). Costs tokens:
+    /// `cargo test -p wxwright-gui live_article_generation_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live smoke: calls the real AI provider (needs a configured key)"]
+    fn live_article_generation_smoke() {
+        match crate::ai::active_provider() {
+            Err(e) => {
+                println!("skip: no active AI provider configured: {e}");
+                return;
+            }
+            Ok((p, _)) => println!("live provider: {} / {}", p.name, p.model),
+        }
+        let article = crate::ai::complete(
+            "你是微信公众号写作助手。只输出 Markdown 正文，不要任何解释或围栏包裹。",
+            "写一篇 250 字左右的短文，主题：为什么写作工具要把排版自动化。要求：一个二级标题、一个三要素列表、结尾一句话总结。",
+            4096,
+            0.7,
+        )
+        .expect("article generation should succeed");
+        println!("---- generated article ----\n{article}");
+        let n = article.chars().count();
+        assert!(n > 150, "article suspiciously short: {n} chars");
+        assert!(article.contains("##"), "article should contain a heading");
+    }
 }

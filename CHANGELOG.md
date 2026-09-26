@@ -11,6 +11,16 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **Default article is now a full user manual**: the built-in sample
+  (first-run / load-sample) and a fresh library entry carry a complete
+  bilingual-audience user manual covering writing and preview, the article
+  library, the 7-platform channel trio, themes, the AI assistant, the four
+  studios, BYO publish bindings, Agent/CLI/MCP access, key security and the
+  FAQ. Passes the strict validator with zero violations.
+- **Live article-generation smoke** (`live_article_generation_smoke`,
+  opt-in like the theme smoke): drives the AI assistant's generation engine
+  (sync complete() path with the budget ladder) against the real provider
+  and asserts a structured article comes back.
 - **Setup guide + BYO publish bindings**: a question-mark button in the topbar
   opens a bilingual setup center covering every integration (AI providers,
   WeChat MP API, ComfyUI, the X / LinkedIn / Facebook / Instagram publish
