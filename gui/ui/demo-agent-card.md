@@ -4,6 +4,19 @@ You are operating `wxwright`, a local engine that converts Markdown into
 WeChat Official Account (微信公众平台) compliant rich text with ZERO style
 distortion when pasted into the MP editor.
 
+## Bootstrap (skip only if `wxwright --version` already works)
+
+If this machine has no wxwright yet, install it before anything else:
+
+1. Download a prebuilt binary from
+   https://github.com/YaoIsAI/wxwright/releases
+   (Windows: wxwright-cli-windows-x64.zip; macOS: arm64/x64 tar.gz;
+   Linux: tar.gz), or build from source:
+   `git clone https://github.com/YaoIsAI/wxwright && cd wxwright && cargo build --release -p wxwright-cli`
+2. Put the binary on PATH and verify with `wxwright doctor` (all checks ok).
+3. The desktop GUI installer (wxwright-*-setup.exe / .dmg / .deb) bundles
+   the same engine - not required for agent work, recommended for humans.
+
 ## Core contract
 
 - Convert:  `wxwright convert article.md --theme minimal --out article.html`
