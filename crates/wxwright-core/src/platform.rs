@@ -601,14 +601,24 @@ mod tests {
 
     #[test]
     fn xhs_is_image_note_without_rich_text() {
-        assert!(XHS.image_note && !XHS.rich_text);
-        assert!(WECHAT.rich_text && !WECHAT.image_note);
-        assert!(INSTAGRAM.image_note && !INSTAGRAM.rich_text);
+        let by_id = |id: &str| {
+            list_platforms()
+                .into_iter()
+                .find(|p| p.id == id)
+                .unwrap_or_else(|| panic!("platform {id} missing from registry"))
+        };
+        let xhs = by_id("xhs");
+        assert!(xhs.image_note && !xhs.rich_text);
+        let wechat = by_id("wechat");
+        assert!(wechat.rich_text && !wechat.image_note);
+        let instagram = by_id("instagram");
+        assert!(instagram.image_note && !instagram.rich_text);
+        let meta = by_id("meta");
         assert!(
-            !META.image_note,
+            !meta.image_note,
             "Facebook is a caption feed, not image-note"
         );
-        assert_eq!(META.name_zh, "Facebook");
+        assert_eq!(meta.name_zh, "Facebook");
     }
 
     #[test]

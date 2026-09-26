@@ -17,9 +17,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - name: Install Linux build deps (libdbus for keyring)
+      - name: Install Linux build deps (gui crate needs the webkit/gtk stack)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -44,9 +44,10 @@ jobs:
       - name: Official verify-article-structure-spec
         run: |
           git clone --depth 1 https://github.com/wechatjs/verify-article-structure-spec /tmp/spec
-          cd /tmp/spec && npm install
+          (cd /tmp/spec && npm install)
           for f in golden-*.html; do
-            cp "$f" /tmp/spec/ && (cd /tmp/spec && npm run check -- "$f")
+            cp "$f" /tmp/spec/
+            (cd /tmp/spec && npm run check -- "$f")
           done
 
   gui:

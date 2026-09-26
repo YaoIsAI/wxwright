@@ -91,17 +91,17 @@ fn html_to_text(html: &str) -> String {
     let mut s = html.to_string();
     // drop script/style blocks entirely
     for tag in ["script", "style", "head"] {
-        while let Some(start) = s.to_ascii_lowercase().find(&format!("<{}", tag)) {
-            let lower = s.to_ascii_lowercase();
-            let Some(open_end) = lower[start..].find('>').map(|i| start + i + 1) else {
-                break;
-            };
-            let Some(close) = lower[open_end..].find(&format!("</{}>", tag)) else {
-                break;
-            };
-            s.replace_range(start..open_end + close + tag.len() + 3, "");
-            break;
-        }
+        let lower = s.to_ascii_lowercase();
+        let Some(start) = lower.find(&format!("<{}", tag)) else {
+            continue;
+        };
+        let Some(open_end) = lower[start..].find('>').map(|i| start + i + 1) else {
+            continue;
+        };
+        let Some(close) = lower[open_end..].find(&format!("</{}>", tag)) else {
+            continue;
+        };
+        s.replace_range(start..open_end + close + tag.len() + 3, "");
     }
     // common entities
     for (ent, ch) in [
@@ -118,9 +118,8 @@ fn html_to_text(html: &str) -> String {
     let lower = s.to_ascii_lowercase();
     for tag in ["br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4"] {
         let open = format!("<{}", tag);
-        while let Some(i) = lower.find(&open) {
+        if let Some(i) = lower.find(&open) {
             s.insert(i + 1, '/');
-            break;
         }
     }
     // strip all tags
