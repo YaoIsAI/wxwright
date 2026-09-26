@@ -11,6 +11,26 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **AI theme generation hardening** (found by the live theme matrix test -
+  three wildly different styles generated against the real provider):
+  - `sanitize_model_toml` repairs the model-output failure classes before
+    parsing: pseudo-class and nested-subtable headers (`[block.a:hover]`,
+    `[block.task.completed]`) are dropped with their bodies, duplicate table
+    headers are merged, duplicate keys inside a section collapse (last
+    wins), and stray prose before the first table is removed.
+  - generate_theme gets its own budget ladder (start 8192, cap 32768) -
+    reasoning models burned the shared 16384 cap on thinking alone and
+    never emitted a byte of TOML; the retry prompt now asks the model to
+    skip the thinking expansion, and failures persist the last attempt to
+    `themes/last-failed-theme.txt` (the path rides in the error message)
+    so line numbers match the dump exactly.
+  - THEME_SYSTEM prompt: contrast is now measured against the theme's own
+    background (dark themes were effectively forbidden by the old "vs
+    white" wording) and font-family demands are answered with safe
+    approximations; THEME_SCHEMA enumerates the exact `[block.*]` role
+    whitelist.
+  - `live_theme_matrix_smoke` (opt-in) generates the three-style matrix on
+    every run.
 - **Default article is now a full user manual**: the built-in sample
   (first-run / load-sample) and a fresh library entry carry a complete
   bilingual-audience user manual covering writing and preview, the article

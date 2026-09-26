@@ -654,4 +654,37 @@ mod tests {
         assert!(n > 150, "article suspiciously short: {n} chars");
         assert!(article.contains("##"), "article should contain a heading");
     }
+
+    /// Live matrix smoke for the core loop: generate several WILDLY different
+    /// themes (each must pass validate_generated_theme with the retry loop,
+    /// land in the user themes dir and be usable by id). Costs tokens:
+    /// `cargo test -p wxwright-gui live_theme_matrix_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live smoke: calls the real AI provider (needs a configured key)"]
+    fn live_theme_matrix_smoke() {
+        match crate::ai::active_provider() {
+            Err(e) => {
+                println!("skip: no active AI provider configured: {e}");
+                return;
+            }
+            Ok((p, _)) => println!("live provider: {} / {}", p.name, p.model),
+        }
+        let cases = [
+            "赛博朋克深空：纯黑底、霓虹紫与电光蓝双强调色、发光描边卡片、等宽字体标题、暗色代码面板",
+            "和风静雅：米白和纸底、墨灰正文、朱红印章式强调色、衬线标题、淡雅引用卡",
+            "清新草木：淡绿草甸底、深绿正文、藤绿强调色、圆润大圆角卡片、明亮空气感",
+        ];
+        let mut ids = Vec::new();
+        for desc in cases {
+            let v = crate::ai::generate_theme(desc)
+                .unwrap_or_else(|e| panic!("theme generation failed for {desc}: {e}"));
+            let id = v["id"].as_str().expect("theme id").to_string();
+            let file = v["file"].as_str().expect("theme file").to_string();
+            let meta = std::fs::metadata(&file).expect("theme artifact written");
+            assert!(meta.len() > 200, "theme artifact suspiciously small: {file}");
+            println!("matrix theme ok: {id} <- {desc}");
+            ids.push(id);
+        }
+        assert_eq!(ids.len(), 3, "three distinct themes generated");
+    }
 }

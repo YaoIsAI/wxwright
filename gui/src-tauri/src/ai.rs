@@ -689,9 +689,9 @@ pub(crate) fn validate_svg_snippet(snippet: &str) -> Result<(), String> {
 // ------------------------------------------------------- theme generation ---
 
 pub(crate) const THEME_SYSTEM: &str = "你是微信公众号排版主题设计器。只输出一个完整的 TOML 主题文件，不要任何解释文字、不要 markdown 代码围栏。硬性规则：\n\
-1. 严禁出现 font-family（官方规范 R-3.1）；\n\
+1. 严禁出现 font-family（官方规范 R-3.1）。即使风格描述要求等宽/特殊字体，也不要输出 font-family，改用 letter-spacing、font-weight、大小写间距与边框去近似那种气质；\n\
 2. 所有颜色用 #RRGGBB 十六进制；\n\
-3. 正文颜色与白色背景对比度 >= 4.5:1，次级文字 >= 3:1；\n\
+3. 对比度以主题自己的 background 为基准：正文颜色与 background 对比度 >= 4.5:1，次级文字 >= 3:1。深色主题完全合规——深底配浅字即可，background 写深色、text 写浅色；\n\
 4. 必须包含 [meta]（id 用小写字母数字和连字符）与 [colors]；\n\
 5. [block.*] 覆盖只能使用安全 CSS 属性（margin/padding/border/color/font-size/font-weight/letter-spacing/text-align/line-height/background/border-radius）。";
 
@@ -737,7 +737,15 @@ border-left = "4px solid #2F6CEA"
 padding-left = "10px"
 
 [block.h2_leaf]
-color = "#2F6CEA""##;
+color = "#2F6CEA"
+
+[block.*] 覆盖规则（严格遵守）：
+1. role 只能取：h1 / h2 / h3 / paragraph / card_note / card_tip / card_important /
+   card_warning / card_caution / card_comment / card_keypoint，可加 _leaf 后缀修饰行内文字；
+2. 禁止任何伪类与复杂选择器：没有 a:hover、没有 [block.a]、没有嵌套——写 [block.a:hover] 是非法 TOML，会直接被拒；
+3. 想要发光、渐变、悬浮效果，用安全属性近似：border + 鲜明 accent 色、background、letter-spacing、border-radius；
+4. 属性只允许：margin / padding / border / color / font-size / font-weight /
+   letter-spacing / text-align / line-height / background / border-radius。"##;
 
 const THEME_SAMPLE_DOC: &str = r#"# 标题一
 
@@ -770,14 +778,117 @@ pub(crate) fn extract_toml(text: &str) -> Result<String, String> {
         let end = rest.rfind("```").unwrap_or(rest.len());
         let inner = rest[..end].trim();
         if inner.starts_with("[meta]") {
-            return Ok(inner.to_string());
+            return Ok(sanitize_model_toml(inner));
         }
     }
     if let Some(i) = t.find("[meta]") {
         let cut = t[i..].trim().trim_end_matches("```").trim().to_string();
-        return Ok(cut);
+        return Ok(sanitize_model_toml(&cut));
     }
     Err("AI 输出中未找到 TOML 主题".into())
+}
+
+/// Models occasionally emit TOML that does not parse. Instead of burning a
+/// retry on a parse error, repair the known failure classes:
+/// 1. pseudo-class / nested-subtable headers (`[block.a:hover]`, `::before`,
+///    `[block.task.completed]`) are dropped with their bodies - the dialect
+///    supports only flat `[block.<role>]` tables;
+/// 2. duplicate table headers are merged (models think tables append);
+/// 3. stray prose before the first table is dropped.
+pub(crate) fn sanitize_model_toml(src: &str) -> String {
+    let is_valid_header = |inner: &str| {
+        // flat tables only: zero dots ([meta]) or one dot ([block.h2],
+        // [colors]); two or more dots mean a nested subtable the engine
+        // cannot address, and ':' means a pseudo-class selector
+        inner.matches('.').count() <= 1
+            && !inner.is_empty()
+            && inner
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    };
+    let is_key_value = |line: &str| {
+        let t = line.trim();
+        t.contains('=')
+            && t.chars()
+                .next()
+                .map(|c| c.is_ascii_alphanumeric() || c == '_')
+                .unwrap_or(false)
+    };
+    let mut preamble: Vec<&str> = Vec::new();
+    let mut order: Vec<String> = Vec::new();
+    let mut sections: std::collections::HashMap<String, Vec<&str>> =
+        std::collections::HashMap::new();
+    let mut current: Option<String> = None;
+    let mut seen_header = false;
+    for line in src.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && t.ends_with(']') {
+            seen_header = true;
+            let inner = &t[1..t.len() - 1];
+            if is_valid_header(inner) {
+                let key = inner.to_string();
+                if !sections.contains_key(&key) {
+                    order.push(key.clone());
+                    sections.insert(key.clone(), Vec::new());
+                }
+                current = Some(key);
+            } else {
+                current = None; // invalid header: drop it and its body
+            }
+            continue;
+        }
+        match &current {
+            Some(key) => sections.get_mut(key).unwrap().push(line),
+            None => {
+                // only genuine preamble (before ANY table) may pass through;
+                // bodies of dropped sections must not leak back in
+                if !seen_header && (t.is_empty() || is_key_value(line)) {
+                    preamble.push(line);
+                }
+            }
+        }
+    }
+    let mut out = String::new();
+    for l in &preamble {
+        out.push_str(l);
+        out.push('\n');
+    }
+    for key in &order {
+        out.push_str(&format!("[{}]\n", key));
+        // de-duplicate keys within a section (models repeat definitions);
+        // the LAST occurrence wins, emitted at the first occurrence's slot
+        let mut seen_keys: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut emitted: Vec<String> = Vec::new();
+        for l in &sections[key] {
+            let t = l.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if let Some(eq) = t.find('=') {
+                let k = t[..eq].trim().to_string();
+                let valid_key = k
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+                if !valid_key {
+                    continue; // stray prose inside a section body
+                }
+                match seen_keys.get(&k) {
+                    Some(&slot) => emitted[slot] = l.trim().to_string(),
+                    None => {
+                        seen_keys.insert(k, emitted.len());
+                        emitted.push(l.trim().to_string());
+                    }
+                }
+            }
+            // lines without '=' inside a section body are dropped
+        }
+        for l in &emitted {
+            out.push_str(l);
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
 }
 
 /// Validate a generated theme: parse, render the sample doc, require zero
@@ -827,10 +938,20 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
         THEME_SCHEMA
     );
     let mut last_err = String::new();
-    let mut budget: u32 = 4096;
+    let mut last_raw = String::new();
+    // theme TOML is a long structured output and reasoning models can burn an
+    // entire shared budget on thinking before writing a byte: start high and
+    // allow a higher cap than chat (COMPLETE_BUDGET_CAP)
+    let mut budget: u32 = 8192;
+    const THEME_BUDGET_CAP: u32 = 32768;
     for attempt in 0..4 {
         let user_text = if attempt == 0 || last_err.is_empty() {
             base_user.clone()
+        } else if last_err.contains("思考") || last_err.contains("截断") {
+            format!(
+                "{}\n\n注意：上一次输出出现问题：{}。请直接输出最终 TOML 文件本身，跳过一切思考过程的展开。",
+                base_user, last_err
+            )
         } else {
             format!(
                 "{}\n\n注意：上一次输出出现问题：{}。请修正后重新输出完整 TOML。",
@@ -843,15 +964,27 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
         ];
         let reply = chat_once(&p.base_url, &key, &p.model, &msgs, budget, 0.8)?;
         let content = strip_think(&reply.content).trim().to_string();
+        last_raw = content.clone();
         if content.is_empty() {
             // Surface *why* it was empty instead of the useless "AI 返回为空".
-            if reply.finish == "length" && budget < COMPLETE_BUDGET_CAP {
-                budget = (budget * 2).min(COMPLETE_BUDGET_CAP);
+            if reply.finish == "length" && budget < THEME_BUDGET_CAP {
+                budget = (budget * 2).min(THEME_BUDGET_CAP);
             }
             last_err = empty_reply_diagnostic(&reply);
             continue;
         }
-        let toml_src = extract_toml(&content)?;
+        let toml_src = match extract_toml(&content) {
+            Ok(t) => {
+                // dump the sanitized text: parse errors report line numbers
+                // against exactly this, so the dump is directly readable
+                last_raw = t.clone();
+                t
+            }
+            Err(e) => {
+                last_err = e;
+                continue;
+            }
+        };
         match validate_generated_theme(&toml_src) {
             Ok(warnings) => {
                 let mut v = save_theme_artifact(&toml_src)?;
@@ -861,12 +994,81 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
             Err(e) => last_err = e,
         }
     }
+    // persist the last raw attempt so failures are diagnosable instead of a
+    // dead end; the path rides along in the error message
+    let dump = theme::user_themes_dir().join("last-failed-theme.txt");
+    if std::fs::write(&dump, &last_raw).is_ok() {
+        return Err(format!(
+            "AI 主题未通过合规校验：{}（原始输出已存至 {}）",
+            last_err,
+            dump.display()
+        ));
+    }
     Err(format!("AI 主题未通过合规校验：{}", last_err))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_drops_pseudo_class_sections() {
+        let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[block.h2]\ncolor = \"#FF0000\"\n\n[block.a:hover]\ncolor = \"#00FF00\"\nglow = \"on\"\n\n[colors]\naccent = \"#123456\"\n";
+        let out = sanitize_model_toml(src);
+        assert!(out.contains("[block.h2]"), "valid header kept");
+        assert!(out.contains("accent = \"#123456\""), "later valid section kept");
+        assert!(!out.contains("hover"), "pseudo-class header and body dropped");
+        assert!(!out.contains("glow"), "dropped section body gone");
+        // the sanitized output must parse
+        theme::parse_theme(&out).expect("sanitized toml parses");
+    }
+
+    #[test]
+    fn sanitize_keeps_normal_toml_intact() {
+        let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[colors]\naccent = \"#123456\"\n\n[block.paragraph]\nline-height = \"1.7\"\n";
+        let out = sanitize_model_toml(src);
+        let t = theme::parse_theme(&out).expect("clean toml still parses");
+        assert_eq!(t.meta.id, "t");
+        assert_eq!(t.colors.get("accent").map(String::as_str), Some("#123456"));
+        assert_eq!(
+            t.blocks.get("paragraph").map(|d| d.len()),
+            Some(1),
+            "block override preserved"
+        );
+    }
+
+    #[test]
+    fn sanitize_merges_duplicate_tables() {
+        let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[block.gfm_table_cell]\nbackground = \"#000000\"\n\n[colors]\naccent = \"#123456\"\n\n[block.gfm_table_cell]\ncolor = \"#CCCCCC\"\n";
+        let out = sanitize_model_toml(src);
+        theme::parse_theme(&out).expect("merged toml parses");
+        assert_eq!(
+            out.matches("[block.gfm_table_cell]").count(),
+            1,
+            "duplicate header merged"
+        );
+        assert!(
+            out.contains("background = \"#000000\"") && out.contains("color = \"#CCCCCC\""),
+            "both bodies preserved in the merged section"
+        );
+    }
+
+    #[test]
+    fn sanitize_drops_preamble_prose() {
+        let src = "好的，这是主题：\n\n[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n";
+        let out = sanitize_model_toml(src);
+        theme::parse_theme(&out).expect("prose-free toml parses");
+        assert!(!out.contains("好的"), "prose dropped from preamble");
+    }
+
+    #[test]
+    fn sanitize_drops_nested_subtables() {
+        let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[block.task]\ncolor = \"#123456\"\n\n[block.task.completed]\ncolor = \"#000000\"\n\n[colors]\naccent = \"#123456\"\n";
+        let out = sanitize_model_toml(src);
+        theme::parse_theme(&out).expect("flat toml parses");
+        assert!(out.contains("[block.task]"), "flat role kept");
+        assert!(!out.contains("task.completed"), "nested subtable dropped");
+    }
 
     #[test]
     fn url_building() {
