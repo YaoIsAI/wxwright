@@ -158,7 +158,7 @@ pub fn export_html(markdown: String, theme_id: String, path: String) -> Result<S
         transport: None,
     };
     let out = convert_markdown(&markdown, &opts).map_err(|e| e.to_string())?;
-    let doc = wrap_document(&out.html);
+    let doc = wrap_document(&out.html, opts.theme.canvas());
     std::fs::write(&path, doc).map_err(|e| format!("write failed: {}", e))?;
     Ok(path)
 }

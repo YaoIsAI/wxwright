@@ -395,7 +395,7 @@ fn cmd_convert(
     let md = strip_frontmatter(&raw);
     let opts = build_options(theme_name, ImageMode::Inline, base_dir)?;
     let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-    let html = wxwright_core::wrap_document(&result.html);
+    let html = wxwright_core::wrap_document(&result.html, opts.theme.canvas());
     let payload = serde_json::json!({
         "ok": true,
         "html": html,

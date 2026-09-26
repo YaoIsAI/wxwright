@@ -109,10 +109,11 @@ impl PipelineOutput {
 }
 
 /// Wrap dialect HTML in a minimal self-contained document for file export
-/// (F-08). Styling stays inline; the wrapper only sets a neutral canvas.
-pub fn wrap_document(html: &str) -> String {
+/// (F-08). Styling stays inline; the wrapper paints the theme's canvas so
+/// dark themes export readable pages.
+pub fn wrap_document(html: &str, canvas: &str) -> String {
     format!(
-        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>wxwright export</title>\n</head>\n<body style=\"margin: 0; background: #FFFFFF;\">\n<section style=\"max-width: 677px; margin: 0 auto; padding: 24px 16px;\">\n{}\n</section>\n</body>\n</html>\n",
-        html
+        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>wxwright export</title>\n</head>\n<body style=\"margin: 0; background: {};\">\n<section style=\"max-width: 677px; margin: 0 auto; padding: 24px 16px;\">\n{}\n</section>\n</body>\n</html>\n",
+        canvas, html
     )
 }

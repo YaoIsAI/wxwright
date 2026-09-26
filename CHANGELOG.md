@@ -40,6 +40,13 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   token-leak safety of status payloads (102 tests total).
 
 ### Fixed
+- **Theme canvas in file exports**: the HTML export wrapper hardcoded a
+  white page background, so AI-generated dark themes (which declare
+  `background = "#121212"` with light text) exported unreadable pages -
+  caught while rendering the new user manual with the dark-code AI theme.
+  The wrapper now paints the theme's canvas colour; built-in themes, which
+  declare no background key, keep the neutral white page. Three new tests
+  lock the behaviour (105 total).
 - **UI audit fixes** (2026-09-26, full ledger in docs/button-audit-findings.md):
   15 issues from a button-by-button audit of all 16 UI zones. Highlights:
   - `t()` now returns the key name on a missing i18n key (iron law 4 was

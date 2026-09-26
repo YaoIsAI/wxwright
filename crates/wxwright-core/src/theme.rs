@@ -61,6 +61,14 @@ impl Theme {
         self.meta.link_style.unwrap_or(LinkStyle::Footnote)
     }
 
+    /// Page canvas colour for file export (wrap_document). Themes may declare
+    /// a dark canvas; exports must honour it or light-on-dark text becomes
+    /// invisible against the hardcoded white wrapper (found via the AI
+    /// generated dark-code-theme rendering unreadable).
+    pub fn canvas(&self) -> &str {
+        self.colors.get("background").map(String::as_str).unwrap_or("#FFFFFF")
+    }
+
     pub fn code_theme(&self) -> CodeTheme {
         self.meta.code_theme.unwrap_or(CodeTheme::Light)
     }
