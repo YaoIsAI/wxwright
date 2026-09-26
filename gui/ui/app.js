@@ -27,6 +27,10 @@ const I18N = {
     pub_login_busy: "已打开浏览器等待授权；完成后自动回填。再次点击可取消。",
     pub_cancel_login: "取消登录", pub_flow_off: "登录流即将支持（见配置引导）",
     pub_login_ok: "登录成功，令牌已存入本机钥匙串", pub_unbound_ok: "已解绑",
+    push_draft: "推草稿", push_draft_title: "推送到公众号草稿箱（需已绑定公众号 API）",
+    push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
+    push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
+    push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
     f_key_hint: "留空表示保留原 Key", test: "测试连接", cancel: "取消", ok: "确定",
     save_provider: "保存 Provider", active_badge: "使用中",
     ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
@@ -95,7 +99,7 @@ const I18N = {
     comfy_section_hint: "检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。",
     comfy_url_label: "ComfyUI 地址", comfy_model_label: "Checkpoint 模型",
     comfy_launch_label: "启动程序路径（用于一键启动）", comfy_start: "一键启动",
-    about_line1: "wxwright 0.9.0 · by AI瑶（微信公众号：码聋）",
+    about_line1: "wxwright 0.10.0 · by AI瑶（微信公众号：码聋）",
     about_line2: "写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。",
     chip_jp: "日系手账", chip_jp_desc: "日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺",
     chip_cyber: "赛博科技", chip_cyber_desc: "赛博科技感，深色代码面板，霓虹青蓝强调色，等宽律动",
@@ -139,6 +143,10 @@ const I18N = {
     pub_login_busy: "Browser opened and waiting for authorization; it completes automatically. Click again to cancel.",
     pub_cancel_login: "Cancel login", pub_flow_off: "Login flow coming soon (see the setup guide)",
     pub_login_ok: "Signed in; token stored in the OS keychain", pub_unbound_ok: "Unbound",
+    push_draft: "Push draft", push_draft_title: "Push to the MP drafts box (requires the MP API binding)",
+    push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
+    push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
+    push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
     f_key_hint: "leave empty to keep the current key", test: "Test", cancel: "Cancel", ok: "OK",
     save_provider: "Save provider", active_badge: "active",
     ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
@@ -207,7 +215,7 @@ const I18N = {
     comfy_section_hint: "With a local ComfyUI detected, the AI drawing button drives local Stable Diffusion txt2img / img2img; results land in the asset library.",
     comfy_url_label: "ComfyUI URL", comfy_model_label: "Checkpoint model",
     comfy_launch_label: "Launcher path (for one-click start)", comfy_start: "Start",
-    about_line1: "wxwright 0.9.0 - by AI Yao (MP: MaLong)",
+    about_line1: "wxwright 0.10.0 - by AI Yao (MP: MaLong)",
     about_line2: "Mozai the writing pet lives in the bottom-left status bar - go pet it.",
     chip_jp: "Journal", chip_jp_desc: "Japanese journal style: cream paper, caramel accent, rounded note cards",
     chip_cyber: "Cyber", chip_cyber_desc: "Cyber tech style: dark code panels, neon cyan-blue accent, mono rhythm",
@@ -700,8 +708,8 @@ const HELP_CONTENT = [
     id: "pub-x",
     title: { zh: "发布绑定：X (Twitter)", en: "Publish binding: X (Twitter)" },
     intro: {
-      zh: "用自己的开发者应用完成一键登录后，文章文案可以直接发成推文。X 自 2026-02 起按量计费：纯文本帖约 $0.015/条，含链接帖约 $0.20/条，费用记在你自己的开发者账户。",
-      en: "After one-click login with your own developer app, captions can be posted as tweets directly. X bills per use since 2026-02: about $0.015 per text post, about $0.20 per post containing a link, charged to your own developer account.",
+      zh: "用自己的开发者应用完成一键登录后，导出文案即为推文格式（API 发帖投递在路线图上，当前版本复制文案到 X 发布）。X 自 2026-02 起按量计费：纯文本帖约 $0.015/条，含链接帖约 $0.20/条，费用记在你自己的开发者账户。",
+      en: "After one-click login with your own developer app, the exported caption is tweet-formatted (API posting is on the roadmap - copy the caption to X for now). X bills per use since 2026-02: about $0.015 per text post, about $0.20 per post containing a link, charged to your own developer account.",
     },
     steps: [
       { zh: "打开 console.x.com 登录你的 X 账号，同意开发者协议并创建项目与应用；应用类型选 Native App（公共客户端，无需 secret）。",
@@ -963,6 +971,12 @@ async function renderPublishBindings() {
       renderPublishBindings();
     })
   );
+}
+
+/* push-draft button: WeChat-only, mirrors the CLI draft create chain */
+function updatePushDraftButton() {
+  const b = $("btn-push-draft");
+  if (b) b.hidden = currentPlatform !== "wechat";
 }
 
 /* --------------------------------------------------------- prompt modal */
@@ -1611,6 +1625,7 @@ function applyPlatform(id) {
   renderPlatformOptions();
   renderPlatformPresets();
   refreshCopyButton();
+  updatePushDraftButton();
   if (!$("modal-poster").hidden) {
     // untouched template follows the new platform's canvas; edited HTML stays
     if (!posterTemplateDirty) {
@@ -3222,6 +3237,28 @@ function bindUI() {
   $("btn-new-article").addEventListener("click", newArticle);
   $("btn-import").addEventListener("click", importMdFiles);
   $("btn-save").addEventListener("click", () => persistCurrent(false));
+  $("btn-push-draft").addEventListener("click", async () => {
+    if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    if (currentPlatform !== "wechat") { toast(t("push_draft_need_wechat"), "err"); return; }
+    const btn = $("btn-push-draft");
+    btn.disabled = true;
+    try {
+      const st = await invoke("wx_bind_status");
+      if (!st.bound) { toast(t("push_draft_need_bind"), "err"); return; }
+      const r = await invoke("wx_push_draft", {
+        title: loadedTitle || autoTitle($("editor").value),
+        markdown: $("editor").value,
+        themeId: currentTheme,
+      });
+      toast(t("push_draft_ok", String(r.draft_media_id).slice(0, 12) + "..."), "ok");
+      window.Mozai && Mozai.celebrate();
+    } catch (e) {
+      toast(String(e), "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  updatePushDraftButton();
   $("library-search").addEventListener("input", (e) => {
     libraryFilter = e.target.value.trim();
     refreshLibrary();

@@ -68,6 +68,7 @@ pub fn run() {
             commands::import_image_from_path,
             commands::import_image_bytes,
             commands::copy_text_plain,
+            commands::wx_push_draft,
             social::social_bind_status,
             social::social_save_config,
             social::social_unbind,

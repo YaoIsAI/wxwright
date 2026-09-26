@@ -61,4 +61,4 @@ wxwright copy examples/sample-article.md
 
 | Date | Themes | Views | Findings | Action |
 |---|---|---|---|---|
-| (fill each run) | | | | |
+| 2026-09-26 | minimal / techblue / magazine / cyberpunk-dark(AI) / jingle-ya-he-feng(AI) / fresh-grass-theme(AI) | 手机宽 390px 渲染截图（evidence 08/09/10：深浅两版全构造）+ 每主题严格校验 | 6/6 主题零阻断；R-4.4 SVG 深色 warn 已知 | 无阻断遗留；AI 主题矩阵 live 测试入库（live_theme_matrix_smoke） |

@@ -471,6 +471,55 @@ pub fn wx_unbind() -> Result<bool, String> {
     wxwright_mp::clear_credentials().map(|_| true).map_err(|e| e.to_string())
 }
 
+/// Push the current article to the MP draft box: dialect-render with the
+/// article's theme, upload local images to mmbiz (Upload mode), gate on
+/// blocking violations, then draft_add. The GUI's missing half of the
+/// 「推送草稿」 promise - the same path `wxwright draft create` walks.
+#[tauri::command]
+pub async fn wx_push_draft(
+    title: String,
+    markdown: String,
+    theme_id: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::load_credentials()
+            .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
+        let client = wxwright_mp::MpClient::new(creds.clone());
+        let md = wxwright_core::util::strip_frontmatter(&markdown).1;
+        let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
+        opts.image_mode = ImageMode::Upload;
+        opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
+        let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+        let blocks = result.blocking_violations();
+        if !blocks.is_empty() {
+            let list = blocks
+                .iter()
+                .map(|v| format!("{} {}", v.rule_id, v.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(format!("存在 {} 个阻断级违规，草稿未推送：{}", blocks.len(), list));
+        }
+        let thumb = result
+            .images
+            .iter()
+            .find_map(|i| i.media_id.clone())
+            .ok_or("公众号草稿 API 要求封面图：文章需要至少一张图片（本地图片会自动上传转存）")?;
+        let article = wxwright_mp::DraftArticle {
+            title,
+            author: String::new(),
+            digest: String::new(),
+            content_html: result.html.clone(),
+            content_source_url: String::new(),
+            thumb_media_id: thumb,
+        };
+        let media_id = client.draft_add(&article).map_err(|e| e.to_string())?;
+        let warns = result.violations.iter().filter(|v| !v.is_block()).count();
+        Ok(serde_json::json!({ "draft_media_id": media_id, "warnings": warns }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {}", e))?
+}
+
 // ---------------------------------------------------- AI generation jobs ---
 #[tauri::command]
 pub async fn ai_job_start(

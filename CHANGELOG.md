@@ -11,6 +11,15 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **GUI draft-box push**: the editor status row gains a Push-draft button
+  (WeChat platform only) that runs the same chain as `wxwright draft create`:
+  dialect render with the article theme, local images uploaded to mmbiz,
+  blocking-violation gate, then the MP drafts API. Closes the
+  "promise-without-button" gap found in the release review.
+
+## [0.10.0] - 2026-09-26
+
+### Added
 - **AI theme generation hardening** (found by the live theme matrix test -
   three wildly different styles generated against the real provider):
   - `sanitize_model_toml` repairs the model-output failure classes before
@@ -321,5 +330,6 @@ pipeline.
 - `--official-check` prints guidance; the puppeteer run itself lives in CI.
 - clap help text is English; reports are localized (en / zh-CN).
 
-[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/YaoIsAI/wxwright/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/YaoIsAI/wxwright/releases/tag/v0.9.0

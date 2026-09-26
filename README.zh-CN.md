@@ -28,7 +28,7 @@ wxwright mcp install --target claude   # 或 cursor | vscode | opencode
 wxwright mcp serve                     # stdio MCP server
 ```
 
-工具：`wxwright_convert`、`wxwright_validate`、`wxwright_copy`、`wxwright_themes_list`、`wxwright_draft_create`、`wxwright_draft_list`。资源：`wxwright://themes`、`wxwright://spec/rules`（完整规则表，中英双语）。提示：`wxwright-publish-guide`。
+工具：`wxwright_convert`、`wxwright_validate`、`wxwright_copy`、`wxwright_themes_list`、`wxwright_upload_images`、`wxwright_draft_create`、`wxwright_draft_list`。资源：`wxwright://themes`、`wxwright://spec/rules`（完整规则表，中英双语）。提示：`wxwright-publish-guide`。
 
 退出码：`0` 通过 · `1` 违规 · `2` 运行异常。所有命令支持 `--json`（稳定 schema，非 TTY 默认 JSON）与 stdin（`-`）。
 
