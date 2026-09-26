@@ -3245,10 +3245,24 @@ function bindUI() {
     try {
       const st = await invoke("wx_bind_status");
       if (!st.bound) { toast(t("push_draft_need_bind"), "err"); return; }
+      // the MP drafts API requires a cover: articles without an inline image
+      // ask for a local file, which the push uploads as the cover thumb
+      const imgCount = parseInt((($("stat-images").textContent.match(/\d+/) || [])[0]) || "0", 10);
+      let cover = null;
+      if (!imgCount) {
+        const { open } = window.__TAURI__.dialog;
+        const picked = await open({
+          multiple: false,
+          filters: [{ name: lang === "zh-CN" ? "图片" : "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+        });
+        if (!picked) { btn.disabled = false; return; }
+        cover = picked;
+      }
       const r = await invoke("wx_push_draft", {
         title: loadedTitle || autoTitle($("editor").value),
         markdown: $("editor").value,
         themeId: currentTheme,
+        coverImagePath: cover,
       });
       toast(t("push_draft_ok", String(r.draft_media_id).slice(0, 12) + "..."), "ok");
       window.Mozai && Mozai.celebrate();

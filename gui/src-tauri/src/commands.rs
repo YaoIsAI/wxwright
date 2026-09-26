@@ -475,11 +475,16 @@ pub fn wx_unbind() -> Result<bool, String> {
 /// article's theme, upload local images to mmbiz (Upload mode), gate on
 /// blocking violations, then draft_add. The GUI's missing half of the
 /// 「推送草稿」 promise - the same path `wxwright draft create` walks.
+/// Push the current article to the MP draft box. `cover_image_path` is a
+/// user-picked local image, used when the article has no inline image (the
+/// MP drafts API requires a thumb_media_id cover); it gets uploaded to the
+/// material library just like inline images.
 #[tauri::command]
 pub async fn wx_push_draft(
     title: String,
     markdown: String,
     theme_id: String,
+    cover_image_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let creds = wxwright_mp::load_credentials()
@@ -503,11 +508,26 @@ pub async fn wx_push_draft(
                 list
             ));
         }
-        let thumb = result
-            .images
-            .iter()
-            .find_map(|i| i.media_id.clone())
-            .ok_or("公众号草稿 API 要求封面图：文章需要至少一张图片（本地图片会自动上传转存）")?;
+        let thumb = match result.images.iter().find_map(|i| i.media_id.clone()) {
+            Some(t) => t,
+            None => match cover_image_path.filter(|p| !p.trim().is_empty()) {
+                Some(path) => {
+                    let bytes = std::fs::read(&path)
+                        .map_err(|e| format!("封面图读取失败: {e}"))?;
+                    let filename = std::path::Path::new(&path)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "cover.png".to_string());
+                    client
+                        .upload_material(bytes, &filename)
+                        .map_err(|e| e.to_string())?
+                        .0
+                }
+                None => {
+                    return Err("NO_COVER: 公众号草稿 API 需要封面图——选择一张图片作为封面，或在文章中插入至少一张图片".to_string())
+                }
+            },
+        };
         let article = wxwright_mp::DraftArticle {
             title,
             author: String::new(),

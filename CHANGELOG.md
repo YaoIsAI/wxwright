@@ -11,6 +11,10 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **Push-draft cover picker**: articles without an inline image now ask for
+  a local cover image (file dialog) when pushing to the MP drafts box; the
+  picked file uploads to the material library as the cover thumb. Backend
+  accepts `coverImagePath`; the "no cover" dead end is gone.
 - **GUI draft-box push**: the editor status row gains a Push-draft button
   (WeChat platform only) that runs the same chain as `wxwright draft create`:
   dialect render with the article theme, local images uploaded to mmbiz,
