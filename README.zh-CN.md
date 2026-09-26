@@ -152,9 +152,19 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 作者
 
-**AI瑶** - 微信公众号：**码聋** · [github.com/YaoIsAI](https://github.com/YaoIsAI)
+**AI瑶** - 微信公众号：**码聋**（微信号：`CodeDeafness`） · [github.com/YaoIsAI](https://github.com/YaoIsAI)
 
 GUI 状态栏里住着写作宠物「墨仔」，记得去摸摸它；点击状态栏「码聋」可弹出公众号二维码。
+
+<div align="center">
+
+**关注公众号**
+
+<img src="docs/qrcode-malong.jpg" width="220" alt="微信公众号 码聋 二维码">
+
+微信扫码关注「码聋」 · 微信号：`CodeDeafness`
+
+</div>
 
 ## 许可证
 

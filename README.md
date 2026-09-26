@@ -182,9 +182,19 @@ Tag a version (`git tag v0.10.1 && git push origin v0.10.1`) and GitHub Actions 
 
 ## Author
 
-**AI Yao** (AI瑶) - WeChat Official Account: **码聋 (Code-Deaf)** · [github.com/YaoIsAI](https://github.com/YaoIsAI)
+**AI Yao** (AI瑶) - WeChat Official Account **码聋 (Code-Deaf)**, WeChat ID: **CodeDeafness** · [github.com/YaoIsAI](https://github.com/YaoIsAI)
 
 Say hi to 墨仔 (Mozai), the ink cat living in the GUI status bar - and click 码聋 in the status bar to get the WeChat QR code.
+
+<div align="center">
+
+**Follow the Official Account**
+
+<img src="docs/qrcode-malong.jpg" width="220" alt="WeChat QR code - 码聋 (Code-Deafness)">
+
+微信扫码关注「码聋」 · WeChat ID: `CodeDeafness`
+
+</div>
 
 ## License
 
