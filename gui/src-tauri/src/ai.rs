@@ -1016,6 +1016,36 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
 mod tests {
     use super::*;
 
+    /// Live smoke for the cloud image engine - generates the README banner.
+    /// `cargo test -p wxwright-gui banner_generation_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live smoke: calls the real AI provider (needs a configured key)"]
+    fn banner_generation_smoke() {
+        if image_model().is_empty() {
+            println!("skip: no image model configured (Settings, AI drawing, cloud source)");
+            return;
+        }
+        match crate::ai::active_provider() {
+            Err(e) => {
+                println!("skip: no active AI provider configured: {e}");
+                return;
+            }
+            Ok((p, _)) => println!("live provider: {} / {}", p.name, p.model),
+        }
+        let files = generate_image(
+            "Minimal flat editorial banner, wide composition, soft warm paper texture background, a stylized teal-blue fountain pen line flowing from left to right into abstract article layout blocks (rectangles suggesting text columns), vermilion accent dot, generous negative space, no text, no letters, clean vector style",
+            1508,
+            430,
+        )
+        .expect("banner generation should succeed");
+        println!("banner files: {files:?}");
+        assert!(!files.is_empty(), "at least one banner image");
+        for f in &files {
+            let meta = std::fs::metadata(f).expect("banner file exists");
+            assert!(meta.len() > 5000, "banner suspiciously small: {f}");
+        }
+    }
+
     #[test]
     fn sanitize_drops_pseudo_class_sections() {
         let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[block.h2]\ncolor = \"#FF0000\"\n\n[block.a:hover]\ncolor = \"#00FF00\"\nglow = \"on\"\n\n[colors]\naccent = \"#123456\"\n";
