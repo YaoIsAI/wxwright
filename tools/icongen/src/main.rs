@@ -34,12 +34,8 @@ fn main() {
         tiny_skia::Transform::from_scale(scale, scale),
         &mut big.as_mut(),
     );
-    let big_img = image::RgbaImage::from_raw(
-        SUPERSAMPLE,
-        SUPERSAMPLE,
-        big.data().to_vec(),
-    )
-    .expect("wrap pixmap");
+    let big_img = image::RgbaImage::from_raw(SUPERSAMPLE, SUPERSAMPLE, big.data().to_vec())
+        .expect("wrap pixmap");
 
     let downscale = |size: u32| -> image::RgbaImage {
         image::imageops::resize(&big_img, size, size, FilterType::Lanczos3)

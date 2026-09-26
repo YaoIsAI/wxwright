@@ -282,9 +282,7 @@ pub fn wait_callback(
 ) -> Result<String, String> {
     let listener =
         TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("端口 {port} 监听失败: {e}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|e| e.to_string())?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + timeout;
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -337,7 +335,11 @@ fn handle_conn(stream: &mut TcpStream, expected_state: &str) -> Option<Result<St
             ),
         }
     } else {
-        ("404 Not Found", "<html><body></body></html>".to_string(), None)
+        (
+            "404 Not Found",
+            "<html><body></body></html>".to_string(),
+            None,
+        )
     };
     let body = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -350,7 +352,9 @@ fn handle_conn(stream: &mut TcpStream, expected_state: &str) -> Option<Result<St
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 pub fn exchange_code(
@@ -387,7 +391,10 @@ fn status_of(platform: &str) -> Value {
     let spec = spec(platform);
     let b = load_binding(platform);
     let configured = b.as_ref().map(|b| !b.client_id.is_empty()).unwrap_or(false);
-    let bound = b.as_ref().map(|b| !b.access_token.is_empty()).unwrap_or(false);
+    let bound = b
+        .as_ref()
+        .map(|b| !b.access_token.is_empty())
+        .unwrap_or(false);
     json!({
         "platform": platform,
         "name_zh": spec.map(|s| s.name_zh).unwrap_or(platform),
@@ -441,7 +448,10 @@ pub fn social_unbind(platform: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn social_oauth_start<R: Runtime>(app: AppHandle<R>, platform: String) -> Result<Value, String> {
+pub async fn social_oauth_start<R: Runtime>(
+    app: AppHandle<R>,
+    platform: String,
+) -> Result<Value, String> {
     let spec = *spec(&platform).ok_or("unknown platform")?;
     if !spec.flow_ready {
         return Err(format!(
@@ -449,7 +459,8 @@ pub async fn social_oauth_start<R: Runtime>(app: AppHandle<R>, platform: String)
             spec.name_en, spec.name_en
         ));
     }
-    let binding = load_binding(&platform).ok_or("请先填写 Client ID 并保存 / save a client id first")?;
+    let binding =
+        load_binding(&platform).ok_or("请先填写 Client ID 并保存 / save a client id first")?;
     if binding.client_id.is_empty() {
         return Err("请先填写 Client ID 并保存 / save a client id first".into());
     }
@@ -467,7 +478,13 @@ pub async fn social_oauth_start<R: Runtime>(app: AppHandle<R>, platform: String)
     .map_err(|e| e.to_string())??;
     let binding2 = binding.clone();
     let token = tauri::async_runtime::spawn_blocking(move || {
-        exchange_code(&spec, &binding2.client_id, &binding2.client_secret, &code, &verifier)
+        exchange_code(
+            &spec,
+            &binding2.client_id,
+            &binding2.client_secret,
+            &code,
+            &verifier,
+        )
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -475,7 +492,11 @@ pub async fn social_oauth_start<R: Runtime>(app: AppHandle<R>, platform: String)
     let mut out = binding.clone();
     out.access_token = token["access_token"].as_str().unwrap_or("").to_string();
     out.refresh_token = token["refresh_token"].as_str().unwrap_or("").to_string();
-    out.expires_at = if expires_in > 0 { now_secs() + expires_in } else { 0 };
+    out.expires_at = if expires_in > 0 {
+        now_secs() + expires_in
+    } else {
+        0
+    };
     out.scope = token["scope"].as_str().unwrap_or(spec.scope).to_string();
     out.updated_at = now_secs();
     if out.access_token.is_empty() {
@@ -512,7 +533,9 @@ mod tests {
         let (verifier, challenge) = pkce_pair();
         assert_eq!(verifier.len(), 43, "b64url of 32 bytes is 43 chars");
         assert!(
-            verifier.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
+            verifier
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
             "verifier is base64url without padding"
         );
         let expected = B64URL.encode(Sha256::digest(verifier.as_bytes()));
@@ -535,7 +558,10 @@ mod tests {
         let url = build_auth_url(li, "cid-2", "st-2", "unused");
         assert!(url.starts_with("https://www.linkedin.com/oauth/v2/authorization?"));
         assert!(url.contains("scope=openid%20profile%20w_member_social"));
-        assert!(!url.contains("code_challenge"), "no PKCE for plain code flow");
+        assert!(
+            !url.contains("code_challenge"),
+            "no PKCE for plain code flow"
+        );
     }
 
     #[test]
@@ -553,14 +579,14 @@ mod tests {
         let port = 18761u16; // test-only port, never a real binding port
         let cancel = Arc::new(AtomicBool::new(false));
         let c2 = Arc::clone(&cancel);
-        let waiter = std::thread::spawn(move || {
-            wait_callback(port, "st-ok", &c2, Duration::from_secs(10))
-        });
+        let waiter =
+            std::thread::spawn(move || wait_callback(port, "st-ok", &c2, Duration::from_secs(10)));
         // give the listener a moment to bind
         std::thread::sleep(Duration::from_millis(300));
         let mut c1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
         // a stray favicon request must be skipped, not treated as the callback
-        c1.write_all(b"GET /favicon.ico HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        c1.write_all(b"GET /favicon.ico HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
         let mut buf = [0u8; 512];
         let _ = c1.read(&mut buf);
         drop(c1);

@@ -156,7 +156,6 @@ pub fn get_platform(id: &str) -> PlatformSpec {
         .unwrap_or(WECHAT)
 }
 
-
 // ------------------------------------------------------- export adapters --
 
 /// What artifact a platform's primary "copy" action produces. This is the
@@ -528,15 +527,17 @@ impl<'a> PlainRenderer<'a> {
                 ));
             }
             Block::Formula { latex } => {
-                self.out.push_str(&format!("<p><code>{}</code></p>", crate::htmlutil::escape_text(latex)));
+                self.out.push_str(&format!(
+                    "<p><code>{}</code></p>",
+                    crate::htmlutil::escape_text(latex)
+                ));
             }
             Block::Rule => self.out.push_str("<hr/>"),
             Block::Toc => {}
             Block::RawHtml { html } => self.out.push_str(html),
             Block::SvgEmbed { html } => self.out.push_str(html),
             Block::Chart { spec } => {
-                self.out
-                    .push_str(&crate::render::render_chart(spec));
+                self.out.push_str(&crate::render::render_chart(spec));
             }
         }
     }
@@ -545,42 +546,45 @@ impl<'a> PlainRenderer<'a> {
 mod tests {
     use super::*;
 
-#[test]
-fn plain_renderer_emits_real_typography_with_resolved_images() {
-    let doc = crate::parser::parse_markdown(
-        "# 标题\n\n正文 **加粗** 与 ![截图](assets/a.png)\n\n- 甲\n- 乙\n",
-    );
-    let html = render_plain_html(&doc, &["data:image/png;base64,QQ==".to_string()]);
-    assert!(html.contains("<h1>标题</h1>"));
-    assert!(html.contains("<strong>加粗</strong>"));
-    assert!(html.contains("src=\"data:image/png;base64,QQ==\""));
-    assert!(html.contains("<ul>") && html.contains("甲") && html.contains("乙"));
-}
+    #[test]
+    fn plain_renderer_emits_real_typography_with_resolved_images() {
+        let doc = crate::parser::parse_markdown(
+            "# 标题\n\n正文 **加粗** 与 ![截图](assets/a.png)\n\n- 甲\n- 乙\n",
+        );
+        let html = render_plain_html(&doc, &["data:image/png;base64,QQ==".to_string()]);
+        assert!(html.contains("<h1>标题</h1>"));
+        assert!(html.contains("<strong>加粗</strong>"));
+        assert!(html.contains("src=\"data:image/png;base64,QQ==\""));
+        assert!(html.contains("<ul>") && html.contains("甲") && html.contains("乙"));
+    }
 
-#[test]
-fn caption_renderer_linearises_structure() {
-    let doc = crate::parser::parse_markdown(
-        "# 我的标题\n\n正文**加粗**和[链接文字](https://x.y)。\n\n- 甲\n- 乙\n",
-    );
-    let cap = render_caption(&doc, Some("我的标题"));
-    assert!(cap.starts_with("我的标题\n\n正文加粗和链接文字。"), "got: {cap}");
-    assert!(cap.contains("• 甲"));
-    assert!(!cap.contains("https://x.y"), "links keep text only");
-}
+    #[test]
+    fn caption_renderer_linearises_structure() {
+        let doc = crate::parser::parse_markdown(
+            "# 我的标题\n\n正文**加粗**和[链接文字](https://x.y)。\n\n- 甲\n- 乙\n",
+        );
+        let cap = render_caption(&doc, Some("我的标题"));
+        assert!(
+            cap.starts_with("我的标题\n\n正文加粗和链接文字。"),
+            "got: {cap}"
+        );
+        assert!(cap.contains("• 甲"));
+        assert!(!cap.contains("https://x.y"), "links keep text only");
+    }
 
-#[test]
-fn xhs_rules_fire_on_limits_and_conventions() {
-    let long_title = "一个超过二十个字的小红书标题肯定是会被截断的哦";
-    let v = validate_platform_caption("xhs", long_title, "正文 #标签#", 0);
-    assert!(v.iter().any(|x| x.rule_id == "XHS-1"));
-    assert!(v.iter().any(|x| x.rule_id == "XHS-4"));
-    let v2 = validate_platform_caption("xhs", "短标题", "没有话题标签的正文", 3);
-    assert!(v2.iter().any(|x| x.rule_id == "XHS-3"));
-    let big = "字".repeat(1001);
-    let v3 = validate_platform_caption("xhs", "短标题", &big, 3);
-    assert!(v3.iter().any(|x| x.rule_id == "XHS-2" && x.is_block()));
-    assert!(validate_platform_caption("wechat", "t", "c", 1).is_empty());
-}
+    #[test]
+    fn xhs_rules_fire_on_limits_and_conventions() {
+        let long_title = "一个超过二十个字的小红书标题肯定是会被截断的哦";
+        let v = validate_platform_caption("xhs", long_title, "正文 #标签#", 0);
+        assert!(v.iter().any(|x| x.rule_id == "XHS-1"));
+        assert!(v.iter().any(|x| x.rule_id == "XHS-4"));
+        let v2 = validate_platform_caption("xhs", "短标题", "没有话题标签的正文", 3);
+        assert!(v2.iter().any(|x| x.rule_id == "XHS-3"));
+        let big = "字".repeat(1001);
+        let v3 = validate_platform_caption("xhs", "短标题", &big, 3);
+        assert!(v3.iter().any(|x| x.rule_id == "XHS-2" && x.is_block()));
+        assert!(validate_platform_caption("wechat", "t", "c", 1).is_empty());
+    }
 
     #[test]
     fn ids_are_unique_and_wechat_is_default() {
@@ -600,7 +604,10 @@ fn xhs_rules_fire_on_limits_and_conventions() {
         assert!(XHS.image_note && !XHS.rich_text);
         assert!(WECHAT.rich_text && !WECHAT.image_note);
         assert!(INSTAGRAM.image_note && !INSTAGRAM.rich_text);
-        assert!(!META.image_note, "Facebook is a caption feed, not image-note");
+        assert!(
+            !META.image_note,
+            "Facebook is a caption feed, not image-note"
+        );
         assert_eq!(META.name_zh, "Facebook");
     }
 

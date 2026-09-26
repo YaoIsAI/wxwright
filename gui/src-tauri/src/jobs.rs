@@ -34,7 +34,10 @@ fn registry() -> &'static Mutex<HashMap<u64, Arc<Job>>> {
 }
 
 fn emit<R: tauri::Runtime>(app: &AppHandle<R>, id: u64, kind: &str, ev: &str, data: Value) {
-    let _ = app.emit("ai-job", json!({ "id": id, "kind": kind, "ev": ev, "data": data }));
+    let _ = app.emit(
+        "ai-job",
+        json!({ "id": id, "kind": kind, "ev": ev, "data": data }),
+    );
 }
 
 /// Register a job, spawn its work on the blocking pool, return its id.
@@ -56,7 +59,10 @@ pub fn spawn(
     let kind_owned = job.kind.clone();
     tauri::async_runtime::spawn_blocking(move || {
         work(job.clone(), app.clone());
-        registry().lock().expect("job registry poisoned").remove(&id);
+        registry()
+            .lock()
+            .expect("job registry poisoned")
+            .remove(&id);
         let _ = kind_owned;
     });
     id
@@ -80,9 +86,11 @@ pub fn stop(id: u64) -> bool {
 /// they start with a larger token budget.
 pub fn is_reasoning_model(model: &str) -> bool {
     let m = model.to_lowercase();
-    ["o1", "o3", "o4-", "r1", "reasoner", "think", "glm-z", "qwq", "-t1"]
-        .iter()
-        .any(|k| m.contains(k))
+    [
+        "o1", "o3", "o4-", "r1", "reasoner", "think", "glm-z", "qwq", "-t1",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
 }
 
 fn start_budget(spec_budget: u32) -> u32 {
@@ -141,12 +149,16 @@ pub fn chat_stream<R: tauri::Runtime>(
                 }
             };
             raw_lines.push(l.clone());
-            let Some(data) = l.strip_prefix("data:") else { continue };
+            let Some(data) = l.strip_prefix("data:") else {
+                continue;
+            };
             let data = data.trim();
             if data == "[DONE]" {
                 break;
             }
-            let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+            let Ok(v) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
             saw_sse = true;
             if v.get("usage").and_then(|u| u.get("total_tokens")).is_some() {
                 continue;
@@ -157,7 +169,13 @@ pub fn chat_stream<R: tauri::Runtime>(
                     // DeepSeek-style: surface that thinking is happening
                     // without flooding the log with it.
                     if content.is_empty() {
-                        emit(app, job.id, &job.kind, "think", json!({ "chars": rc.len() }));
+                        emit(
+                            app,
+                            job.id,
+                            &job.kind,
+                            "think",
+                            json!({ "chars": rc.len() }),
+                        );
                     }
                 }
             }
@@ -199,7 +217,9 @@ pub fn chat_stream<R: tauri::Runtime>(
                 if let Some(f) = v["choices"][0]["finish_reason"].as_str() {
                     finish = f.to_string();
                 }
-                has_reasoning = v["choices"][0]["message"].get("reasoning_content").is_some();
+                has_reasoning = v["choices"][0]["message"]
+                    .get("reasoning_content")
+                    .is_some();
             }
         }
         let trimmed = crate::ai::strip_think(&content).trim().to_string();
@@ -284,7 +304,11 @@ fn spec(kind: &str) -> TaskSpec {
                 if attempt == 0 {
                     base
                 } else {
-                    format!("{}\n\n注意：上一次输出出现问题：{}。请修正后重新输出完整 TOML。", base, p["_last_err"].as_str().unwrap_or(""))
+                    format!(
+                        "{}\n\n注意：上一次输出出现问题：{}。请修正后重新输出完整 TOML。",
+                        base,
+                        p["_last_err"].as_str().unwrap_or("")
+                    )
                 }
             },
             extract: |text| crate::ai::extract_toml(text),
@@ -314,10 +338,7 @@ fn poster_user(p: &Value, attempt: u32) -> String {
     } else {
         "场景：微信公众号图文配图。"
     };
-    let mut s = format!(
-        "设计要求：{}\n{} 尺寸：{}×{}px。",
-        desc, style, w, h
-    );
+    let mut s = format!("设计要求：{}\n{} 尺寸：{}×{}px。", desc, style, w, h);
     if scene != "封面" && !scene.is_empty() {
         s.push_str(&format!(" 场景：{}。", scene));
     }
@@ -448,9 +469,9 @@ fn run_chat_task<R: tauri::Runtime>(
             json!({ "role": "user", "content": user }),
         ];
         let content = chat_stream(app, job, &msgs, spec.budget, spec.temperature)?;
-        match (spec.extract)(&content).and_then(|artifact| {
-            (spec.validate)(&artifact).map(|warnings| (artifact, warnings))
-        }) {
+        match (spec.extract)(&content)
+            .and_then(|artifact| (spec.validate)(&artifact).map(|warnings| (artifact, warnings)))
+        {
             Ok((artifact, warnings)) => return finish(&artifact, &warnings),
             Err(e) => {
                 last_err = e;
@@ -475,8 +496,12 @@ fn run_job(app: AppHandle, job: Arc<Job>, kind: String, params: Value) {
             crate::ai::save_theme_artifact(artifact)
                 .map(|t| json!({ "id": t["id"], "name": t["name"], "name_zh": t["name_zh"], "file": t["file"], "warnings": warnings }))
         }),
-        "svg" => run_chat_task(&app, &job, "svg", &params, |artifact, _w| Ok(json!(artifact))),
-        "poster" => run_chat_task(&app, &job, "poster", &params, |artifact, _w| Ok(json!(artifact))),
+        "svg" => run_chat_task(&app, &job, "svg", &params, |artifact, _w| {
+            Ok(json!(artifact))
+        }),
+        "poster" => run_chat_task(&app, &job, "poster", &params, |artifact, _w| {
+            Ok(json!(artifact))
+        }),
         "image" => crate::ai::generate_image(
             params["prompt"].as_str().unwrap_or(""),
             params["width"].as_u64().unwrap_or(1024) as u32,
@@ -568,7 +593,11 @@ mod tests {
             "<html><body><link href=\"https://fonts.x\"></body></html>",
         ];
         for html in bad {
-            assert!(validate_poster_html(html).is_err(), "should reject: {}", html);
+            assert!(
+                validate_poster_html(html).is_err(),
+                "should reject: {}",
+                html
+            );
         }
     }
 
@@ -681,7 +710,10 @@ mod tests {
             let id = v["id"].as_str().expect("theme id").to_string();
             let file = v["file"].as_str().expect("theme file").to_string();
             let meta = std::fs::metadata(&file).expect("theme artifact written");
-            assert!(meta.len() > 200, "theme artifact suspiciously small: {file}");
+            assert!(
+                meta.len() > 200,
+                "theme artifact suspiciously small: {file}"
+            );
             println!("matrix theme ok: {id} <- {desc}");
             ids.push(id);
         }

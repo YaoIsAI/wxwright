@@ -267,9 +267,7 @@ fn run_workflow(
         if let Some(flag) = cancel {
             if flag.load(Ordering::Relaxed) {
                 // Best-effort: tell ComfyUI to interrupt the running prompt.
-                let _ = agent
-                    .post(&format!("{}/interrupt", url))
-                    .send_string("{}");
+                let _ = agent.post(&format!("{}/interrupt", url)).send_string("{}");
                 return Err(super::jobs::CANCELLED.to_string());
             }
         }

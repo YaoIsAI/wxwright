@@ -217,7 +217,13 @@ pub fn save_article(
     platform: Option<String>,
     markdown: String,
 ) -> Result<ArticleMeta, String> {
-    crate::articles::save_article(id, &title, &theme, platform.as_deref().unwrap_or("wechat"), &markdown)
+    crate::articles::save_article(
+        id,
+        &title,
+        &theme,
+        platform.as_deref().unwrap_or("wechat"),
+        &markdown,
+    )
 }
 
 // ------------------------------------------------ platform export adapter --
@@ -267,11 +273,7 @@ pub fn platform_preview(
                 transport: None,
             };
             let out = pipeline(&markdown, &opts).map_err(|e| e.to_string())?;
-            let resolved: Vec<String> = out
-                .images
-                .iter()
-                .map(|i| i.final_src.clone())
-                .collect();
+            let resolved: Vec<String> = out.images.iter().map(|i| i.final_src.clone()).collect();
             Ok(serde_json::json!({
                 "mode": "plain",
                 "html": wxwright_core::platform::render_plain_html(&doc, &resolved),
@@ -320,12 +322,8 @@ pub fn platform_validate(
         mode => {
             let doc = wxwright_core::parser::parse_markdown(&markdown);
             let cap = wxwright_core::platform::render_caption(&doc, Some(&title));
-            let violations = wxwright_core::platform::validate_platform_caption(
-                &platform,
-                &title,
-                &cap,
-                images,
-            );
+            let violations =
+                wxwright_core::platform::validate_platform_caption(&platform, &title, &cap, images);
             let _ = mode;
             Ok(serde_json::json!({ "mode": "platform", "violations": violations }))
         }
@@ -468,7 +466,9 @@ pub fn wx_bind(appid: String, secret: String) -> Result<serde_json::Value, Strin
 
 #[tauri::command]
 pub fn wx_unbind() -> Result<bool, String> {
-    wxwright_mp::clear_credentials().map(|_| true).map_err(|e| e.to_string())
+    wxwright_mp::clear_credentials()
+        .map(|_| true)
+        .map_err(|e| e.to_string())
 }
 
 /// Push the current article to the MP draft box: dialect-render with the
@@ -497,7 +497,11 @@ pub async fn wx_push_draft(
                 .map(|v| format!("{} {}", v.rule_id, v.message))
                 .collect::<Vec<_>>()
                 .join("; ");
-            return Err(format!("存在 {} 个阻断级违规，草稿未推送：{}", blocks.len(), list));
+            return Err(format!(
+                "存在 {} 个阻断级违规，草稿未推送：{}",
+                blocks.len(),
+                list
+            ));
         }
         let thumb = result
             .images
@@ -529,11 +533,9 @@ pub async fn ai_job_start(
 ) -> Result<u64, String> {
     // registration is cheap but may fail fast (no provider): do it off-thread
     let k = kind.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::jobs::start_job(&k, params, app)
-    })
-    .await
-    .map_err(|e| format!("task join failed: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || crate::jobs::start_job(&k, params, app))
+        .await
+        .map_err(|e| format!("task join failed: {}", e))?
 }
 
 #[tauri::command]
@@ -543,8 +545,7 @@ pub fn ai_job_stop(id: u64) -> bool {
 
 #[tauri::command]
 pub fn list_platforms() -> serde_json::Value {
-    serde_json::to_value(wxwright_core::platform::list_platforms())
-        .unwrap_or(serde_json::json!([]))
+    serde_json::to_value(wxwright_core::platform::list_platforms()).unwrap_or(serde_json::json!([]))
 }
 
 #[tauri::command]

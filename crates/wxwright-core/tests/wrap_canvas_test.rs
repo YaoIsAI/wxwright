@@ -40,7 +40,9 @@ fn dark_theme_export_is_self_consistent() {
     opts.theme
         .colors
         .insert("background".to_string(), "#121212".to_string());
-    opts.theme.colors.insert("text".to_string(), "#e0e0e0".to_string());
+    opts.theme
+        .colors
+        .insert("text".to_string(), "#e0e0e0".to_string());
     let out = pipeline("# 标题\n\n正文。", &opts).unwrap();
     let doc = wrap_document(&out.html, opts.theme.canvas());
     assert!(doc.contains("background: #121212"));

@@ -4,10 +4,10 @@
 mod ai;
 mod articles;
 mod comfy;
+mod commands;
 mod extract;
 mod jobs;
 mod social;
-mod commands;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};
 

@@ -99,13 +99,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find src-tauri/target/release/bundle -type f \
+          # the cargo workspace shares one target dir at the repo root
+          find ../target/release/bundle -type f \
             \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" \) \
             -exec cp {} dist-artifacts/ \;
-          # portable CLI produced by the same build (windows/mac/linux)
-          BIN=wxwright
-          [ -f src-tauri/target/release/wxwright.exe ] && BIN=wxwright.exe
-          cp "src-tauri/target/release/$BIN" dist-artifacts/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: wxwright-gui-${{ matrix.label }}

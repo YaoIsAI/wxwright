@@ -66,7 +66,10 @@ impl Theme {
     /// invisible against the hardcoded white wrapper (found via the AI
     /// generated dark-code-theme rendering unreadable).
     pub fn canvas(&self) -> &str {
-        self.colors.get("background").map(String::as_str).unwrap_or("#FFFFFF")
+        self.colors
+            .get("background")
+            .map(String::as_str)
+            .unwrap_or("#FFFFFF")
     }
 
     pub fn code_theme(&self) -> CodeTheme {

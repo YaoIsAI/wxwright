@@ -220,7 +220,9 @@ fn render_block(b: &Block, ctx: &Ctx, scope: &BodyCtx) -> String {
 // inline SVG: brand palette, no font-family, no external resources. AI can
 // emit these directly via the system prompt schema.
 
-const CHART_PALETTE: [&str; 6] = ["#2F6CEA", "#7B9EF5", "#B45309", "#059669", "#7C3AED", "#DC2626"];
+const CHART_PALETTE: [&str; 6] = [
+    "#2F6CEA", "#7B9EF5", "#B45309", "#059669", "#7C3AED", "#DC2626",
+];
 
 fn fmt_value(v: f64) -> String {
     if (v - v.round()).abs() < 1e-9 {
@@ -241,9 +243,9 @@ pub fn render_chart(spec: &ChartSpec) -> String {
     let max = values.iter().cloned().fold(0.0_f64, f64::max).max(1.0);
     let w = 677.0_f64;
     let mut out = String::new();
-    out.push_str(&format!(
-        "<section style=\"margin: 20px 0;\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 677 430\" style=\"width: 100%; display: block;\">"
-    ));
+    out.push_str(
+        "<section style=\"margin: 20px 0;\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 677 430\" style=\"width: 100%; display: block;\">",
+    );
     if !spec.title.is_empty() {
         out.push_str(&format!(
             "<text x=\"338\" y=\"36\" font-size=\"20\" font-weight=\"600\" fill=\"#1F2328\" text-anchor=\"middle\">{}</text>",
@@ -256,7 +258,11 @@ pub fn render_chart(spec: &ChartSpec) -> String {
             let px1 = w - 30.0;
             let py0 = 70.0;
             let py1 = 360.0;
-            let step = if n > 1 { (px1 - px0) / (n - 1) as f64 } else { 0.0 };
+            let step = if n > 1 {
+                (px1 - px0) / (n - 1) as f64
+            } else {
+                0.0
+            };
             for g in 0..5 {
                 let gy = py0 + (py1 - py0) * g as f64 / 4.0;
                 out.push_str(&format!(
@@ -273,7 +279,11 @@ pub fn render_chart(spec: &ChartSpec) -> String {
                 .iter()
                 .enumerate()
                 .map(|(i, v)| {
-                    let x = if n > 1 { px0 + step * i as f64 } else { (px0 + px1) / 2.0 };
+                    let x = if n > 1 {
+                        px0 + step * i as f64
+                    } else {
+                        (px0 + px1) / 2.0
+                    };
                     let y = py1 - (v / max) * (py1 - py0);
                     (x, y)
                 })
@@ -408,7 +418,6 @@ pub fn render_chart(spec: &ChartSpec) -> String {
     out.push_str("</svg></section>");
     out
 }
-
 
 fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
     let _ = role;

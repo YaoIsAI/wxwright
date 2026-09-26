@@ -48,8 +48,8 @@ pub fn extract_document_text(path: &str) -> Result<String, String> {
 }
 
 fn extract_pdf(bytes: &[u8]) -> Result<String, String> {
-    let text = pdf_extract::extract_text_from_mem(bytes)
-        .map_err(|e| format!("PDF 解析失败: {}", e))?;
+    let text =
+        pdf_extract::extract_text_from_mem(bytes).map_err(|e| format!("PDF 解析失败: {}", e))?;
     Ok(clean_whitespace(&text))
 }
 
@@ -70,7 +70,9 @@ fn extract_docx(bytes: &[u8]) -> Result<String, String> {
         let after = &rest[start..];
         let close = after.find('>').map(|i| i + 1).unwrap_or(0);
         let body = &after[close..];
-        let Some(end) = body.find("</w:t>") else { break };
+        let Some(end) = body.find("</w:t>") else {
+            break;
+        };
         out.push_str(&body[..end]);
         rest = &body[end..];
     }
@@ -89,10 +91,7 @@ fn html_to_text(html: &str) -> String {
     let mut s = html.to_string();
     // drop script/style blocks entirely
     for tag in ["script", "style", "head"] {
-        while let Some(start) = s
-            .to_ascii_lowercase()
-            .find(&format!("<{}", tag))
-        {
+        while let Some(start) = s.to_ascii_lowercase().find(&format!("<{}", tag)) {
             let lower = s.to_ascii_lowercase();
             let Some(open_end) = lower[start..].find('>').map(|i| start + i + 1) else {
                 break;
@@ -120,7 +119,7 @@ fn html_to_text(html: &str) -> String {
     for tag in ["br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4"] {
         let open = format!("<{}", tag);
         while let Some(i) = lower.find(&open) {
-            s.insert_str(i + 1, "/");
+            s.insert(i + 1, '/');
             break;
         }
     }
@@ -177,7 +176,6 @@ mod tests {
         assert_eq!(kind_for_path("c.txt"), "text");
     }
 }
-
 
 #[derive(Debug, serde::Serialize)]
 pub struct ExtractedDoc {

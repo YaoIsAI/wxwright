@@ -497,14 +497,19 @@ fn chat_once(
     let msg = &v["choices"][0]["message"];
     Ok(OnceReply {
         content: msg["content"].as_str().unwrap_or("").to_string(),
-        finish: v["choices"][0]["finish_reason"].as_str().unwrap_or("?").to_string(),
+        finish: v["choices"][0]["finish_reason"]
+            .as_str()
+            .unwrap_or("?")
+            .to_string(),
         has_reasoning: msg.get("reasoning_content").is_some(),
     })
 }
 
 /// Some models inline reasoning as a <think> block inside content.
 pub(crate) fn strip_think(s: &str) -> String {
-    let Some(start) = s.find("<think>") else { return s.to_string() };
+    let Some(start) = s.find("<think>") else {
+        return s.to_string();
+    };
     match s[start..].find("</think>") {
         Some(rel) => format!("{}{}", &s[..start], &s[start + rel + "</think>".len()..]),
         None => s[..start].to_string(),
@@ -1016,8 +1021,14 @@ mod tests {
         let src = "[meta]\nid = \"t\"\nname = \"T\"\nname_zh = \"测试\"\n\n[block.h2]\ncolor = \"#FF0000\"\n\n[block.a:hover]\ncolor = \"#00FF00\"\nglow = \"on\"\n\n[colors]\naccent = \"#123456\"\n";
         let out = sanitize_model_toml(src);
         assert!(out.contains("[block.h2]"), "valid header kept");
-        assert!(out.contains("accent = \"#123456\""), "later valid section kept");
-        assert!(!out.contains("hover"), "pseudo-class header and body dropped");
+        assert!(
+            out.contains("accent = \"#123456\""),
+            "later valid section kept"
+        );
+        assert!(
+            !out.contains("hover"),
+            "pseudo-class header and body dropped"
+        );
         assert!(!out.contains("glow"), "dropped section body gone");
         // the sanitized output must parse
         theme::parse_theme(&out).expect("sanitized toml parses");
