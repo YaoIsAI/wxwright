@@ -1472,3 +1472,24 @@ body { display: flex; flex-direction: column; }
 }
 .btn-busy .btn-busy-spin { animation: btn-spin 0.8s linear infinite; vertical-align: -2px; }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* publish binding cards + help center */
+.pub-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-subtle);
+}
+.pub-head { display: flex; align-items: center; gap: 10px; }
+.pub-title { flex: 1; min-width: 0; }
+.pub-title b { font-size: 13px; }
+.pub-redirect { font-size: 11px; color: var(--text-tertiary); font-family: ui-monospace, monospace; margin-top: 2px; }
+.pub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.pub-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.pub-grid label.span2 { grid-column: span 2; }
+.pub-grid input { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font: inherit; background: var(--bg); color: var(--text); }
+.help-steps { margin: 8px 0 12px; padding-left: 20px; display: grid; gap: 8px; }
+.help-steps li { font-size: 13px; line-height: 1.55; }
+.help-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.help-note { border-left: 3px solid var(--accent-soft); padding-left: 10px; }

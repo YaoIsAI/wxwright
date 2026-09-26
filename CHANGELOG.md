@@ -10,6 +10,25 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Added
+- **Setup guide + BYO publish bindings**: a question-mark button in the topbar
+  opens a bilingual setup center covering every integration (AI providers,
+  WeChat MP API, ComfyUI, the X / LinkedIn / Facebook / Instagram publish
+  bindings and Agent MCP) with step-by-step guides and official-portal links.
+  Settings gains a Publish bindings pane: per-platform bring-your-own client
+  credentials stored in the OS keyring (local-file fallback, never in any
+  repo). One-click login is implemented end to end for X (OAuth 2.0 PKCE
+  public client, fixed loopback callback port 8761) and LinkedIn (3-legged
+  code flow, port 8762): the system browser opens, a local loopback listener
+  captures the redirect, tokens are exchanged and stored - no cloud service
+  involved anywhere. Facebook/Instagram keep the credential interface while
+  their login flows stay gated (Meta review wall, Instagram public-URL media
+  requirement); the research behind this lives in
+  docs/social-publish-oauth-feasibility.md. Six new unit tests cover the
+  PKCE pair, auth-URL contracts, callback parsing, the loopback listener end
+  to end (including stray-request skipping), storage round-trip and
+  token-leak safety of status payloads (102 tests total).
+
 ### Fixed
 - **UI audit fixes** (2026-09-26, full ledger in docs/button-audit-findings.md):
   15 issues from a button-by-button audit of all 16 UI zones. Highlights:

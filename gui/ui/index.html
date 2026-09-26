@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=19" />
+  <link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -115,6 +115,11 @@
         <path d="M3 21 15.5 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         <path d="M15 3l.9 2.1L18 6l-2.1.9L15 9l-.9-2.1L12 6l2.1-.9zM20 11l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7zM6.5 3.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4L4.5 5.5l1.4-.6z" fill="currentColor" stroke="none"/>
       </symbol>
+      <symbol id="i-question" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M9.7 9.3a2.4 2.4 0 1 1 3.3 2.22c-.75.3-1 .86-1 1.63" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="12" cy="16.8" r="1.05" fill="currentColor" stroke="none"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -172,6 +177,9 @@
         <svg class="icon"><use href="#i-bot"/></svg>
       </button>
       <button id="btn-lang" class="btn btn-ghost btn-lang" title="Language">EN</button>
+      <button id="btn-help" class="btn btn-ghost btn-icon" data-i18n-title="help_title" title="配置引导">
+        <svg class="icon"><use href="#i-question"/></svg>
+      </button>
       <button id="btn-settings" class="btn btn-ghost btn-icon" data-i18n-title="settings" title="设置">
         <svg class="icon"><use href="#i-gear"/></svg>
       </button>
@@ -357,6 +365,9 @@
           <button type="button" class="settings-nav-btn" data-pane="pane-wx">
             <svg class="icon"><use href="#i-check"/></svg><span data-i18n="nav_wx">公众号 API</span>
           </button>
+          <button type="button" class="settings-nav-btn" data-pane="pane-publish">
+            <svg class="icon"><use href="#i-send"/></svg><span data-i18n="nav_publish">发布绑定</span>
+          </button>
           <button type="button" class="settings-nav-btn" data-pane="pane-comfy">
             <svg class="icon"><use href="#i-image"/></svg><span>ComfyUI</span>
           </button>
@@ -425,6 +436,14 @@
                 <button type="submit" class="btn btn-primary" data-i18n="wx_bind">绑定</button>
               </div>
             </form>
+          </section>
+          <section class="modal-section settings-pane" id="pane-publish">
+            <div class="section-title" data-i18n="pub_title">发布绑定</div>
+            <p class="section-hint" data-i18n="pub_hint">
+              每个平台使用你自己的开发者应用（工具不做云服务，凭据只存本机钥匙串）。在「配置引导」里查看逐步申请与登录教程。
+            </p>
+            <div id="pub-cards"></div>
+            <div id="pub-login-status" class="section-hint" style="margin-top: 10px;"></div>
           </section>
           <section class="modal-section settings-pane" id="pane-comfy">
             <div class="section-title" data-i18n="comfy_section_title">ComfyUI（本地 AI 绘图）</div>
@@ -812,10 +831,26 @@
     </div>
   </div>
 
+  <!-- ------------------------------------------------------- help modal -->
+  <div id="modal-help" class="modal-overlay" hidden>
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <span data-i18n="help_title">配置引导</span>
+        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-help">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="modal-body settings-body">
+        <aside class="settings-nav" id="help-nav"></aside>
+        <div class="settings-panes" id="help-panes"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-host" class="toast-host"></div>
   <script src="pet.js?v=19"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=19"></script>
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

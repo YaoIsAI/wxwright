@@ -6,6 +6,7 @@ mod articles;
 mod comfy;
 mod extract;
 mod jobs;
+mod social;
 mod commands;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};
@@ -67,6 +68,11 @@ pub fn run() {
             commands::import_image_from_path,
             commands::import_image_bytes,
             commands::copy_text_plain,
+            social::social_bind_status,
+            social::social_save_config,
+            social::social_unbind,
+            social::social_oauth_start,
+            social::social_oauth_cancel,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {

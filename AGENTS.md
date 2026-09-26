@@ -27,7 +27,7 @@ crates/wxwright-cli/     CLI：convert / validate / fix / copy / draft / publish
 crates/wxwright-mcp/     MCP stdio server（7 工具，手写 JSON-RPC，per-request catch_unwind）
 crates/wxwright-mp/      公众号 API（凭据 keyring / 草稿 / freepublish / mmbiz 上传）
 crates/wxwright-gui/     Tauri 2 桌面客户端（gui/src-tauri 后端 + gui/ui 前端）
-gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生成运行时) · comfy.rs(ComfyUI) ·
+gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生成运行时) · social.rs(海外平台 BYO 一键登录/凭据) · comfy.rs(ComfyUI) ·
                          articles.rs(文章库 frontmatter) · extract.rs(PDF/DOCX/HTML 文本提取) · commands.rs · lib.rs
 gui/ui/                  index.html · app.js(主逻辑,~2900行) · ai-jobs.js(生成任务桥) · pet.js(宠物墨仔) ·
                          brand-logos.js(17厂商+5平台官方矢量,内嵌 path/dataURI) · styles.css · qrcode.jpg
@@ -133,8 +133,12 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定 / chart 图表引擎。
-- 测试 96；版本 0.9.0（workspace+tauri.conf）。
-- 已知未做：Meta/X/LinkedIn API 发布出口（需资质）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，未在 JS 复刻）；
+- 测试 102；版本 0.9.0（workspace+tauri.conf）。
+- 发布绑定接口（social.rs）：X/LinkedIn 一键登录实装（PKCE/code flow + 本地回环监听 8761/8762 +
+  keyring 存储，BYO 无云服务）；Facebook/Instagram 仅凭据接口（登录流受审核墙/图床前置所限，
+  可行性见 docs/social-publish-oauth-feasibility.md）；配置引导帮助中心 = 顶栏问号（HELP_CONTENT
+  结构化双语，{zh,en} 对构造性保证双语齐全）。已知未做：Meta/X/LinkedIn API 发布出口（凭据与登录
+  已就绪，投递层未做）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，未在 JS 复刻）；
   AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist

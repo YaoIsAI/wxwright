@@ -19,6 +19,14 @@ const I18N = {
     ai_hint: "支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串，设置文件只存引用。",
     f_name: "名称", f_model: "模型", f_baseurl: "Base URL", f_key: "API Key",
     f_logo: "自定义图标（可选，data URI / 上传）",
+    help_title: "配置引导", nav_publish: "发布绑定",
+    pub_title: "发布绑定", pub_hint: "每个平台使用你自己的开发者应用（工具不做云服务，凭据只存本机钥匙串）。逐步申请与登录教程见右上角「配置引导」。", pub_client_id: "Client ID", pub_client_secret: "Client Secret",
+    pub_save: "保存", pub_login: "一键登录", pub_unbind: "解绑", pub_saved_ok: "已保存",
+    pub_bound: "已登录", pub_configured: "已配置", pub_not_configured: "未配置",
+    pub_expires: "令牌有效期至", pub_no_expiry: "长期有效",
+    pub_login_busy: "已打开浏览器等待授权；完成后自动回填。再次点击可取消。",
+    pub_cancel_login: "取消登录", pub_flow_off: "登录流即将支持（见配置引导）",
+    pub_login_ok: "登录成功，令牌已存入本机钥匙串", pub_unbound_ok: "已解绑",
     f_key_hint: "留空表示保留原 Key", test: "测试连接", cancel: "取消", ok: "确定",
     save_provider: "保存 Provider", active_badge: "使用中",
     ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
@@ -123,6 +131,14 @@ const I18N = {
     ai_hint: "Works with OpenAI / DeepSeek / Qwen / Kimi / Zhipu and local Ollama (http://localhost:11434) or LM Studio (http://localhost:1234). API keys go to the OS keychain.",
     f_name: "Name", f_model: "Model", f_baseurl: "Base URL", f_key: "API Key",
     f_logo: "Custom icon (optional, data URI / upload)",
+    help_title: "Setup guide", nav_publish: "Publish bindings",
+    pub_title: "Publish bindings", pub_hint: "Each platform uses your own developer app (this tool ships no cloud service; credentials stay in the local keychain). Step-by-step guides live behind the question mark in the topbar.", pub_client_id: "Client ID", pub_client_secret: "Client Secret",
+    pub_save: "Save", pub_login: "One-click login", pub_unbind: "Unbind", pub_saved_ok: "Saved",
+    pub_bound: "Signed in", pub_configured: "Configured", pub_not_configured: "Not configured",
+    pub_expires: "token expires", pub_no_expiry: "no expiry",
+    pub_login_busy: "Browser opened and waiting for authorization; it completes automatically. Click again to cancel.",
+    pub_cancel_login: "Cancel login", pub_flow_off: "Login flow coming soon (see the setup guide)",
+    pub_login_ok: "Signed in; token stored in the OS keychain", pub_unbound_ok: "Unbound",
     f_key_hint: "leave empty to keep the current key", test: "Test", cancel: "Cancel", ok: "OK",
     save_provider: "Save provider", active_badge: "active",
     ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
@@ -606,6 +622,347 @@ async function importMdFiles() {
   } catch (e) {
     toast(String(e), "err");
   }
+}
+
+/* ------------------------------------------------- help center (guide) */
+
+/* Every integration the app can talk to, with the setup steps and the
+   official portals. Strings live as {zh, en} pairs so both languages are
+   complete by construction. */
+const HELP_CONTENT = [
+  {
+    id: "providers",
+    title: { zh: "AI Providers（对话 / 生成）", en: "AI Providers (chat / generation)" },
+    intro: {
+      zh: "填一个 OpenAI 兼容协议的服务商即可解锁 AI 助手、AI 主题、AI 海报、AI 组件与 AI 绘图（云端源）。API Key 只存本机钥匙串，不会上传。",
+      en: "One OpenAI-compatible provider unlocks the AI assistant, AI themes, AI posters, AI components and cloud image generation. API keys stay in the local keychain.",
+    },
+    steps: [
+      { zh: "在服务商官网注册并创建 API Key（下方直达入口，也有免费额度聚合站 free-tokens.org）。",
+        en: "Register on a provider site and create an API key (direct links below; free-tokens.org aggregates free tiers)." },
+      { zh: "设置 → AI Providers：顶部选厂商预设自动填充地址与模型，粘贴 Key，保存后点「测试连接」。",
+        en: "Settings, AI Providers: pick a vendor preset to auto-fill base URL and model, paste the key, save, then Test." },
+      { zh: "激活的 Provider 会显示在 AI 助手的模型胶囊上；随时可在列表里切换或删除。",
+        en: "The active provider shows on the AI model chip; switch or delete entries any time." },
+    ],
+    links: [
+      { label: { zh: "DeepSeek 开放平台", en: "DeepSeek Platform" }, url: "https://platform.deepseek.com" },
+      { label: { zh: "智谱开放平台", en: "Zhipu Open Platform" }, url: "https://open.bigmodel.cn" },
+      { label: { zh: "Moonshot Kimi", en: "Moonshot Kimi" }, url: "https://platform.moonshot.cn" },
+      { label: { zh: "free-tokens.org（免费额度）", en: "free-tokens.org (free tiers)" }, url: "https://free-tokens.org" },
+    ],
+  },
+  {
+    id: "wx",
+    title: { zh: "公众号 API 绑定（推送草稿）", en: "WeChat MP API (push drafts)" },
+    intro: {
+      zh: "绑定后可以把文章一键推到公众号草稿箱，正文自动方言排版、图片自动 mmbiz 转存。凭据只存本机钥匙串。",
+      en: "Once bound, articles can be pushed straight into the MP drafts box with dialect typesetting and mmbiz image rehosting. Credentials stay in the local keychain.",
+    },
+    steps: [
+      { zh: "登录公众号后台（下方入口），需要你是管理员或运营者身份。",
+        en: "Sign in to the Official Account admin (link below) - you need an admin/operator role." },
+      { zh: "左侧「设置与开发」→「基本配置」：申请成为开发者后即可看到 AppID 与 AppSecret。",
+        en: "Settings and Development, Basic configuration: after applying as a developer you can view the AppID and AppSecret." },
+      { zh: "把 AppID / AppSecret 填进 设置 → 公众号 API → 绑定。Secret 只进钥匙串。",
+        en: "Fill the AppID / AppSecret into Settings, WeChat MP API, then Bind. The secret goes to the keychain only." },
+      { zh: "如遇 IP 白名单报错：在公众号后台「基本配置 → IP 白名单」里加上本机出口 IP。",
+        en: "If you hit an IP whitelist error: add your machine's outbound IP under Basic configuration, IP whitelist." },
+    ],
+    links: [
+      { label: { zh: "微信公众平台后台", en: "WeChat MP admin" }, url: "https://mp.weixin.qq.com" },
+    ],
+    note: {
+      zh: "注意：AppSecret 重置后旧值立即失效；群发（publish）类接口另有频次与资质要求，工具默认只推草稿。",
+      en: "Note: resetting the AppSecret invalidates the old one immediately; mass-send APIs have extra quota and qualification rules - this tool only pushes drafts by default.",
+    },
+  },
+  {
+    id: "comfy",
+    title: { zh: "ComfyUI 本地绘图", en: "ComfyUI local drawing" },
+    intro: {
+      zh: "完全离线的 Stable Diffusion 文生图 / 图生图，产物直接进素材库。需要本机先跑起 ComfyUI。",
+      en: "Fully offline Stable Diffusion t2i / i2i whose output lands in the asset library. ComfyUI must run locally first.",
+    },
+    steps: [
+      { zh: "安装并启动 ComfyUI（默认地址 http://127.0.0.1:8188）。",
+        en: "Install and start ComfyUI (default address http://127.0.0.1:8188)." },
+      { zh: "设置 → ComfyUI：填地址与 Checkpoint 模型名，保存后状态显示在线。",
+        en: "Settings, ComfyUI: fill the address and checkpoint name, save - the status chip turns online." },
+      { zh: "「启动程序路径」选填：填 run_nvidia_gpu.bat 路径后可用一键启动。",
+        en: "Optional launch-program path: point at run_nvidia_gpu.bat to enable one-click start." },
+    ],
+    links: [
+      { label: { zh: "ComfyUI 项目主页", en: "ComfyUI project" }, url: "https://github.com/comfyanonymous/ComfyUI" },
+    ],
+  },
+  {
+    id: "pub-x",
+    title: { zh: "发布绑定：X (Twitter)", en: "Publish binding: X (Twitter)" },
+    intro: {
+      zh: "用自己的开发者应用完成一键登录后，文章文案可以直接发成推文。X 自 2026-02 起按量计费：纯文本帖约 $0.015/条，含链接帖约 $0.20/条，费用记在你自己的开发者账户。",
+      en: "After one-click login with your own developer app, captions can be posted as tweets directly. X bills per use since 2026-02: about $0.015 per text post, about $0.20 per post containing a link, charged to your own developer account.",
+    },
+    steps: [
+      { zh: "打开 console.x.com 登录你的 X 账号，同意开发者协议并创建项目与应用；应用类型选 Native App（公共客户端，无需 secret）。",
+        en: "Open console.x.com, sign in, accept the developer agreement and create a project and app; choose Native App (public client, no secret needed)." },
+      { zh: "在应用的 User authentication settings 里开启 Read and write，App permissions 保持 Read and write，Callback URI 精确填入 http://127.0.0.1:8761/callback 。",
+        en: "In the app's User authentication settings turn on Read and write, keep permissions at Read and write, and enter the callback URI exactly: http://127.0.0.1:8761/callback ." },
+      { zh: "复制 OAuth 2.0 Client ID，粘贴到 设置 → 发布绑定 → X 的 Client ID 框并保存。",
+        en: "Copy the OAuth 2.0 Client ID into Settings, Publish binding, X, and save." },
+      { zh: "点「一键登录」：系统浏览器打开授权页，同意后自动回到本机回环地址，令牌写进钥匙串。",
+        en: "Click one-click login: the system browser opens the consent page and the token lands in the keychain via the local loopback callback." },
+    ],
+    links: [
+      { label: { zh: "X 开发者控制台", en: "X developer console" }, url: "https://console.x.com" },
+      { label: { zh: "X API 计费说明", en: "X API pricing" }, url: "https://docs.x.com/x-api/getting-started/pricing" },
+    ],
+    note: {
+      zh: "注意：发帖走 API 计费（文本 $0.015、带链接 $0.20）；引用转推接口需要 Enterprise 档位。",
+      en: "Note: posting bills per use (text $0.015, with link $0.20); quote-posts need the Enterprise tier.",
+    },
+  },
+  {
+    id: "pub-linkedin",
+    title: { zh: "发布绑定：LinkedIn", en: "Publish binding: LinkedIn" },
+    intro: {
+      zh: "「Share on LinkedIn」是零审核的自助权限：创建应用、加上产品、填好回调地址即可一键登录，把文案发成 LinkedIn 帖子（支持 3000 字文本与图片）。",
+      en: "Share on LinkedIn is a zero-review self-serve permission: create an app, add the product, set the callback, then log in and post captions (3000-char text and images supported).",
+    },
+    steps: [
+      { zh: "打开 linkedin.com/developers 创建应用，填写应用名与关联的 LinkedIn 主页（可自建一个小主页）。",
+        en: "Create an app on linkedin.com/developers with a name and an associated LinkedIn page (a small page of your own works)." },
+      { zh: "在应用的 Products 页签添加「Share on LinkedIn」与「Sign In with LinkedIn using OpenID Connect」——两者即点即用。",
+        en: "In the app's Products tab add Share on LinkedIn and Sign In with LinkedIn using OpenID Connect - both are instant." },
+      { zh: "Auth 页签的 Redirect URLs 里加入 http://127.0.0.1:8762/callback 。若门户拒绝 http 回调，参考下方备注。",
+        en: "Add http://127.0.0.1:8762/callback under Auth, Redirect URLs. If the portal rejects an http callback, see the note below." },
+      { zh: "把 Client ID 与 Client Secret 填进 发布绑定 → LinkedIn 并保存，点「一键登录」。",
+        en: "Fill the Client ID and Client Secret into Publish binding, LinkedIn, save, then click one-click login." },
+    ],
+    links: [
+      { label: { zh: "LinkedIn 开发者门户", en: "LinkedIn developer portal" }, url: "https://www.linkedin.com/developers" },
+      { label: { zh: "权限申请说明（Open Permissions）", en: "Access docs (Open Permissions)" }, url: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access" },
+    ],
+    note: {
+      zh: "注意：访问令牌有效期 60 天且无刷新令牌，过期前应用会提醒你重新授权（登录过 linkedin.com 的浏览器会跳过同意页，几秒完成）。文档写 redirect 需 HTTPS，若门户实测拒绝 http 回调，需要用一个本机 HTTPS 回调或短暂的转发页替代——遇到时按引导页更新说明。",
+      en: "Note: tokens last 60 days with no refresh token; the app nudges you to re-authorize before expiry (a browser still signed into linkedin.com skips the consent page). Docs ask for HTTPS redirects; if the portal rejects http in practice, a local HTTPS callback is the fallback - this guide will be updated when that is confirmed.",
+    },
+  },
+  {
+    id: "pub-meta",
+    title: { zh: "发布绑定：Facebook 主页", en: "Publish binding: Facebook Page" },
+    intro: {
+      zh: "Facebook 主页图文可以直接经 Graph API 发布，且长期主页令牌永不过期。但面向任意用户的上线需要企业验证与应用审核；自己或测试用户可先用开发模式。",
+      en: "Facebook Page posts go straight through the Graph API, and long-lived Page tokens never expire. Serving arbitrary users requires business verification and app review; you and testers can start in development mode today.",
+    },
+    steps: [
+      { zh: "打开 developers.facebook.com 创建应用（类型选 Business），在应用里添加 Facebook Login for Business 产品。",
+        en: "Create an app on developers.facebook.com (type Business) and add the Facebook Login for Business product." },
+      { zh: "申请权限：pages_manage_posts、pages_read_engagement、pages_show_list。开发模式下把自己加为应用测试员即可全权限试用。",
+        en: "Request permissions: pages_manage_posts, pages_read_engagement, pages_show_list. In development mode, add yourself as an app tester for full access." },
+      { zh: "把 Client ID 与 Client Secret 填进 发布绑定 → Facebook 并保存（登录流即将开放，见下方备注）。",
+        en: "Fill the Client ID and Client Secret into Publish binding, Facebook, and save (the login flow is coming soon - see the note)." },
+    ],
+    links: [
+      { label: { zh: "Meta 开发者平台", en: "Meta for Developers" }, url: "https://developers.facebook.com" },
+      { label: { zh: "Pages API 发帖文档", en: "Pages API posting docs" }, url: "https://developers.facebook.com/documentation/pages-api/posts" },
+    ],
+    note: {
+      zh: "状态：凭据接口已可用；一键登录流因桌面端令牌交换方案（官方要求 secret 交换在服务端执行）仍在评估，开放前先支持凭据保存。",
+      en: "Status: the credential interface works today; the one-click login flow is pending a decision on desktop token exchange (Meta asks for server-side secret exchanges), so only credential saving is supported for now.",
+    },
+  },
+  {
+    id: "pub-instagram",
+    title: { zh: "发布绑定：Instagram", en: "Publish binding: Instagram" },
+    intro: {
+      zh: "Instagram 发布 API 只支持媒体帖（单图 JPEG / 轮播 / Reels），且图片必须位于公网可达的 URL——这是硬性限制，纯文本无法经 API 发帖。账号必须是专业账户（Business 或 Creator）。",
+      en: "The Instagram publish API only supports media posts (single JPEG image, carousel, Reels) and the media must sit at a publicly reachable URL - a hard limit; text-only posting does not exist. The account must be a professional (Business or Creator) account.",
+    },
+    steps: [
+      { zh: "把 Instagram 账号切换为专业账户（设置里一键切换）。",
+        en: "Switch your Instagram account to professional (one toggle in settings)." },
+      { zh: "在 developers.facebook.com 用「Instagram API with Instagram Login」路径创建应用，申请 instagram_business_basic 与 instagram_business_content_publish。",
+        en: "Create an app via the Instagram API with Instagram Login path and request instagram_business_basic plus instagram_business_content_publish." },
+      { zh: "准备图床方案：发帖前图片需要公网 URL（工具后续会提供从素材库一键中转的路径）。",
+        en: "Plan for image hosting: media needs a public URL before posting (the tool will add a one-click rehost path from the asset library)." },
+    ],
+    links: [
+      { label: { zh: "Instagram 内容发布文档", en: "Instagram content publishing docs" }, url: "https://developers.facebook.com/documentation/instagram-platform/content-publishing" },
+    ],
+    note: {
+      zh: "状态：凭据接口已可用，一键登录与发布将在图床方案定型后开放。配额约 50 帖 / 24 小时。",
+      en: "Status: the credential interface works; login and publishing open once image hosting is settled. Quota is about 50 posts per 24 hours.",
+    },
+  },
+  {
+    id: "agent",
+    title: { zh: "Agent / MCP 接入", en: "Agent / MCP access" },
+    intro: {
+      zh: "让 Claude、Cursor 等 AI Agent 直接驱动 wxwright：MCP 一键写入配置，或把接手卡整段复制进任意 Agent 的系统提示。",
+      en: "Let AI agents like Claude or Cursor drive wxwright: write MCP config in one click, or paste the agent card into any agent's system prompt.",
+    },
+    steps: [
+      { zh: "点顶栏的「Agent 接入」按钮（机器人图标）。",
+        en: "Click the Agent button in the topbar (robot icon)." },
+      { zh: "第 1 步选你的客户端（Claude Desktop / Cursor / VS Code / OpenCode）一键写入 MCP 配置；重启客户端后即可看到 wxwright 的 7 个工具。",
+        en: "Step 1 picks your client (Claude Desktop / Cursor / VS Code / OpenCode) and writes the MCP config; after a restart the 7 wxwright tools appear." },
+      { zh: "第 2 步复制 Agent 接手卡整段内容到任意 Agent 的系统提示；第 3 步是 CLI 速查，点击即复制命令。",
+        en: "Step 2 copies the agent card into any agent's system prompt; step 3 is a CLI cheat sheet - click a row to copy." },
+    ],
+    links: [],
+  },
+];
+
+function openExternal(url) {
+  if (window.__TAURI__ && window.__TAURI__.opener) window.__TAURI__.opener.openUrl(url);
+  else window.open(url, "_blank");
+}
+
+function renderHelp() {
+  const L = lang === "zh-CN" ? "zh" : "en";
+  const nav = $("help-nav"), panes = $("help-panes");
+  if (!nav || !panes) return;
+  nav.innerHTML = "";
+  panes.innerHTML = "";
+  HELP_CONTENT.forEach((sec, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "settings-nav-btn" + (i === 0 ? " active" : "");
+    b.textContent = sec.title[L];
+    b.addEventListener("click", () => {
+      nav.querySelectorAll(".settings-nav-btn").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      panes.querySelectorAll(".help-pane").forEach((p) => p.classList.remove("active"));
+      panes.children[i].classList.add("active");
+    });
+    nav.appendChild(b);
+    const pane = document.createElement("section");
+    pane.className = "modal-section settings-pane help-pane" + (i === 0 ? " active" : "");
+    pane.innerHTML = `
+      <div class="section-title">${escapeHtml(sec.title[L])}</div>
+      <p class="section-hint">${sec.intro[L]}</p>
+      <ol class="help-steps">${sec.steps.map((s) => `<li>${s[L]}</li>`).join("")}</ol>
+      ${(sec.links && sec.links.length)
+        ? `<div class="help-links">${sec.links
+            .map((l) => `<button type="button" class="btn btn-ghost help-link" data-url="${escapeHtml(l.url)}">${escapeHtml(l.label[L])}</button>`)
+            .join("")}</div>`
+        : ""}
+      ${sec.note ? `<p class="section-hint help-note">${sec.note[L]}</p>` : ""}`;
+    pane.querySelectorAll("[data-url]").forEach((btn) =>
+      btn.addEventListener("click", () => openExternal(btn.dataset.url))
+    );
+    panes.appendChild(pane);
+  });
+}
+
+/* ------------------------------------------------------- publish bindings */
+
+const PUB_DEMO = [
+  { platform: "x", name_zh: "X (Twitter)", name_en: "X (Twitter)", needs_secret: false, flow_ready: true, port: 8761, redirect_uri: "http://127.0.0.1:8761/callback", configured: false, bound: false, client_id: "", expires_at: 0 },
+  { platform: "linkedin", name_zh: "LinkedIn", name_en: "LinkedIn", needs_secret: true, flow_ready: true, port: 8762, redirect_uri: "http://127.0.0.1:8762/callback", configured: false, bound: false, client_id: "", expires_at: 0 },
+  { platform: "meta", name_zh: "Facebook", name_en: "Facebook", needs_secret: true, flow_ready: false, port: 8763, redirect_uri: "", configured: false, bound: false, client_id: "", expires_at: 0 },
+  { platform: "instagram", name_zh: "Instagram", name_en: "Instagram", needs_secret: true, flow_ready: false, port: 8764, redirect_uri: "", configured: false, bound: false, client_id: "", expires_at: 0 },
+];
+const pubBusy = {};
+
+async function renderPublishBindings() {
+  const host = $("pub-cards");
+  if (!host) return;
+  let specs = PUB_DEMO;
+  if (invoke) {
+    try {
+      specs = await invoke("social_bind_status");
+    } catch (e) {}
+  }
+  host.innerHTML = "";
+  for (const s of specs) {
+    const name = lang === "zh-CN" ? s.name_zh : s.name_en;
+    const statusChip = s.bound
+      ? `<span class="ai-provider-chip" style="color: var(--ok);">${t("pub_bound")}${s.expires_at ? ` · ${t("pub_expires")} ${new Date(s.expires_at * 1000).toLocaleDateString()}` : ` · ${t("pub_no_expiry")}`}</span>`
+      : s.configured
+        ? `<span class="ai-provider-chip">${t("pub_configured")}</span>`
+        : `<span class="ai-provider-chip" style="color: var(--text-tertiary);">${t("pub_not_configured")}</span>`;
+    const card = document.createElement("div");
+    card.className = "pub-card";
+    card.innerHTML = `
+      <div class="pub-head">
+        ${platformLogoTile(s.platform, 22)}
+        <div class="pub-title">
+          <b>${escapeHtml(name)}</b>
+          <div class="pub-redirect">${s.flow_ready ? escapeHtml(s.redirect_uri || "") : escapeHtml(t("pub_flow_off"))}</div>
+        </div>
+        ${statusChip}
+      </div>
+      <div class="pub-grid">
+        <label class="${s.needs_secret ? "" : "span2"}"><span>${t("pub_client_id")}</span>
+          <input data-pub-id="${s.platform}" value="${escapeHtml(s.client_id || "")}" placeholder="${t("pub_client_id")}" spellcheck="false" />
+        </label>
+        ${s.needs_secret
+          ? `<label><span>${t("pub_client_secret")}</span><input data-pub-secret="${s.platform}" type="password" placeholder="${s.configured ? "********" : t("pub_client_secret")}" /></label>`
+          : ""}
+      </div>
+      <div class="form-actions" style="margin-top: 8px;">
+        <button type="button" class="btn btn-ghost" data-pub-save="${s.platform}">${t("pub_save")}</button>
+        <button type="button" class="btn btn-primary" data-pub-login="${s.platform}" ${s.flow_ready ? "" : "disabled"}>${s.flow_ready ? t("pub_login") : t("pub_flow_off")}</button>
+        ${s.configured || s.bound ? `<span class="spacer"></span><button type="button" class="btn btn-ghost" data-pub-unbind="${s.platform}">${t("pub_unbind")}</button>` : ""}
+      </div>`;
+    host.appendChild(card);
+  }
+  host.querySelectorAll("[data-pub-save]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      const id = btn.dataset.pubSave;
+      const card = btn.closest(".pub-card");
+      const clientId = card.querySelector(`[data-pub-id="${id}"]`).value.trim();
+      const secretEl = card.querySelector(`[data-pub-secret="${id}"]`);
+      btn.disabled = true;
+      try {
+        await invoke("social_save_config", { platform: id, clientId, clientSecret: secretEl ? secretEl.value : "" });
+        toast(t("pub_saved_ok"), "ok");
+      } catch (e) {
+        toast(String(e), "err");
+      }
+      btn.disabled = false;
+      renderPublishBindings();
+    })
+  );
+  host.querySelectorAll("[data-pub-login]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      const id = btn.dataset.pubLogin;
+      if (pubBusy[id]) {
+        await invoke("social_oauth_cancel").catch(() => {});
+        return;
+      }
+      pubBusy[id] = true;
+      btn.textContent = t("pub_cancel_login");
+      $("pub-login-status").textContent = t("pub_login_busy");
+      try {
+        await invoke("social_oauth_start", { platform: id });
+        toast(t("pub_login_ok"), "ok");
+        $("pub-login-status").textContent = "";
+      } catch (e) {
+        toast(String(e), "err");
+        $("pub-login-status").textContent = String(e);
+      }
+      pubBusy[id] = false;
+      renderPublishBindings();
+    })
+  );
+  host.querySelectorAll("[data-pub-unbind]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      const id = btn.dataset.pubUnbind;
+      try {
+        await invoke("social_unbind", { platform: id });
+        toast(t("pub_unbound_ok"), "ok");
+      } catch (e) {
+        toast(String(e), "err");
+      }
+      renderPublishBindings();
+    })
+  );
 }
 
 /* --------------------------------------------------------- prompt modal */
@@ -2990,10 +3347,15 @@ function bindUI() {
   });
 
   /* settings modal */
+  $("btn-help").addEventListener("click", () => {
+    openModal("modal-help");
+    renderHelp();
+  });
   $("btn-settings").addEventListener("click", async () => {
     openModal("modal-settings");
     renderProviderList();
     refreshWxStatus();
+    renderPublishBindings();
     if (invoke) {
       try {
         const st = await invoke("comfy_status");
@@ -3414,6 +3776,8 @@ function bindUI() {
     renderPlatformOptions();
     renderPlatformPresets();
     refreshCopyButton();
+    renderPublishBindings();
+    if (!$("modal-help").hidden) renderHelp();
     convertNow();
   });
 

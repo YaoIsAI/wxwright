@@ -30,6 +30,8 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 dirs = "5"
+sha2 = "0.10"
+getrandom = "0.2"
 sys-locale = "0.3"
 
 [profile.release]
