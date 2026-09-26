@@ -35,7 +35,7 @@ jobs:
             archive: wxwright-cli-macos-x64.tar.gz
             use_zip: false
           - os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
             archive: wxwright-cli-linux-x64.tar.gz
             use_zip: false
     runs-on: ${{ matrix.os }}
@@ -44,9 +44,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Install musl tools (Linux static)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install Linux build deps (libdbus for keyring)
+        if: matrix.os == 'ubuntu-22.04'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Build CLI
         run: cargo build --release -p wxwright-cli --target ${{ matrix.target }}
       - name: Package
@@ -100,7 +100,7 @@ jobs:
         run: |
           mkdir -p dist-artifacts
           # the cargo workspace shares one target dir at the repo root
-          find ../target/release/bundle -type f \
+          find target/release/bundle -type f \
             \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" \) \
             -exec cp {} dist-artifacts/ \;
       - uses: actions/upload-artifact@v4
