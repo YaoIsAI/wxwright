@@ -11,6 +11,25 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Fixed
+- **UI audit fixes** (2026-09-26, full ledger in docs/button-audit-findings.md):
+  15 issues from a button-by-button audit of all 16 UI zones. Highlights:
+  - `t()` now returns the key name on a missing i18n key (iron law 4 was
+    documented but never implemented); `saved_new_ok` (new-article save toast
+    rendered a literal "undefined") and `f_logo` (EN mode kept a Chinese
+    label) were missing from both dictionaries and are now dual-language.
+  - Duplicate ids removed: the AI-drawing dialog launch-path input was dead
+    (every read/write hit the settings-pane twin) - renamed to
+    `imggen-launch-path` with two-way sync; the SVG-kit detail span
+    (`svgkit-desc-view`) is now populated on component selection.
+  - `demo-agent-card.md` regenerated from `agentcard.rs` (it listed 4 of the
+    7 MCP tools); a drift test now locks the demo card to the core source.
+  - Escape closes the topmost visible modal (the prompt modal goes through
+    cancel so a pending promise resolves cleanly).
+  - Demo fidelity: status bar no longer sticks at "Converting...", character/
+    word/image stats compute locally, library search filters, the theme
+    dropdown mirrors the 3 built-in themes, asset-stub buttons answer with a
+    demo toast instead of silently doing nothing, poster/fit preset labels
+    translate their size vocabulary to English.
 - **Code-review sweep over all prior requests** (2026-09-25) found and fixed:
   - `addAttachment` was defined twice in app.js; the later md/txt-only
     definition shadowed the multi-format version, so PDF/DOCX/HTML/images

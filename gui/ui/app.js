@@ -18,6 +18,7 @@ const I18N = {
     settings: "设置", about: "关于", ai_providers: "AI Providers（OpenAI 兼容协议）",
     ai_hint: "支持 OpenAI / DeepSeek / 通义千问 / Kimi / 智谱等云端服务，以及本地 Ollama（http://localhost:11434）与 LM Studio（http://localhost:1234）。API Key 存入系统钥匙串，设置文件只存引用。",
     f_name: "名称", f_model: "模型", f_baseurl: "Base URL", f_key: "API Key",
+    f_logo: "自定义图标（可选，data URI / 上传）",
     f_key_hint: "留空表示保留原 Key", test: "测试连接", cancel: "取消", ok: "确定",
     save_provider: "保存 Provider", active_badge: "使用中",
     ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
@@ -42,7 +43,7 @@ const I18N = {
     ft_title: "没有 API Key？",
     ft_body: "作者的另一个项目 Free Tokens 持续收录免费模型额度——去逛逛，一起实现 Token 自由。",
     svg_desc_ph: "描述想要的互动效果，例如：点击后头像放大并显示一句祝福语",
-    saved_ok: (x) => `已保存：${x}`, deleted_ok: "已删除", renamed_ok: "已重命名", duplicated_ok: "已创建副本", imported_ok: "已导入",
+    saved_ok: (x) => `已保存：${x}`, saved_new_ok: (x) => `已自动保存为新文章：${x}`, deleted_ok: "已删除", renamed_ok: "已重命名", duplicated_ok: "已创建副本", imported_ok: "已导入",
     copied_text: "已复制到剪贴板", mcp_installed: (p) => `已写入：${p}`,
     provider_saved: "Provider 已保存", connected: "连接成功：",
     first_run_hint: "提示：右上角机器人图标可一键把 wxwright 接入 Claude / Cursor 等 AI Agent",
@@ -121,6 +122,7 @@ const I18N = {
     settings: "Settings", about: "About", ai_providers: "AI Providers (OpenAI-compatible)",
     ai_hint: "Works with OpenAI / DeepSeek / Qwen / Kimi / Zhipu and local Ollama (http://localhost:11434) or LM Studio (http://localhost:1234). API keys go to the OS keychain.",
     f_name: "Name", f_model: "Model", f_baseurl: "Base URL", f_key: "API Key",
+    f_logo: "Custom icon (optional, data URI / upload)",
     f_key_hint: "leave empty to keep the current key", test: "Test", cancel: "Cancel", ok: "OK",
     save_provider: "Save provider", active_badge: "active",
     ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
@@ -145,7 +147,7 @@ const I18N = {
     ft_title: "No API key?",
     ft_body: "The author's other project Free Tokens curates free model credits - token freedom for everyone.",
     svg_desc_ph: "Describe the interaction, e.g. avatar zooms in with a blessing on tap",
-    saved_ok: (x) => `Saved: ${x}`, deleted_ok: "Deleted", renamed_ok: "Renamed", duplicated_ok: "Duplicated", imported_ok: "Imported",
+    saved_ok: (x) => `Saved: ${x}`, saved_new_ok: (x) => `Auto-saved as new article: ${x}`, deleted_ok: "Deleted", renamed_ok: "Renamed", duplicated_ok: "Duplicated", imported_ok: "Imported",
     copied_text: "Copied to clipboard", mcp_installed: (p) => `Written: ${p}`,
     provider_saved: "Provider saved", connected: "Connected: ",
     first_run_hint: "Tip: the robot icon top-right connects wxwright to Claude / Cursor in one click",
@@ -234,6 +236,8 @@ let libraryFilter = "";
 /* ------------------------------------------------------------------ util */
 function t(key, ...args) {
   const v = I18N[lang][key];
+  // missing keys degrade to the key name itself (iron law 4: never undefined)
+  if (v === undefined) return key;
   return typeof v === "function" ? v(...args) : v;
 }
 function escapeHtml(s) {
@@ -373,6 +377,13 @@ async function convertNow() {
         updateRuleChip([]);
       } catch (e) {}
     }
+    // demo-side stats and status reset (desktop gets both from convert_preview)
+    const demoImgs = (md.match(/!\[[^\]]*\]\([^)]*\)|<img\s/g) || []).length;
+    const demoWords = md.trim() ? md.trim().split(/\s+/).length : 0;
+    $("stat-chars").textContent = `${t("chars")} ${md.length}`;
+    $("stat-words").textContent = `${t("words")} ${demoWords}`;
+    $("stat-images").textContent = `${t("images")} ${demoImgs}`;
+    $("status-text").textContent = t("ready");
     return;
   }
   try {
@@ -441,7 +452,12 @@ function autoTitle(md) {
 async function refreshLibrary() {
   const list = $("article-list");
   if (!invoke) {
-    list.innerHTML = `<div class="article-item" data-id="demo"><div class="a-main"><div class="a-title">${lang === "zh-CN" ? "wxwright 一分钟上手（演示）" : "wxwright quickstart (demo)"}</div><div class="a-date">2026-09-25</div></div></div>`;
+    const demoTitle = lang === "zh-CN" ? "wxwright 一分钟上手（演示）" : "wxwright quickstart (demo)";
+    if (libraryFilter && !demoTitle.toLowerCase().includes(libraryFilter.toLowerCase())) {
+      list.innerHTML = `<div class="sidebar-empty">${t("empty_library")}</div>`;
+      return;
+    }
+    list.innerHTML = `<div class="article-item" data-id="demo"><div class="a-main"><div class="a-title">${demoTitle}</div><div class="a-date">2026-09-25</div></div></div>`;
     return;
   }
   let articles = await invoke("list_articles");
@@ -1200,18 +1216,32 @@ function renderPlatformOptions() {
   });
 }
 
+/* preset labels arrive zh-canonical from core and the demo fallback;
+   translate the size vocabulary for EN instead of duplicating the tables */
+function presetLabel(label) {
+  if (lang === "zh-CN") return label;
+  const map = [
+    ["正文横图", "Landscape"], ["正文竖图", "Portrait"], ["小方图", "Small square"],
+    ["头图", "Cover"], ["次图", "Square"], ["贴图", "Sticker"], ["封面", "Cover"],
+    ["方图", "Square"], ["横图", "Landscape"], ["竖图", "Portrait"],
+  ];
+  let out = label;
+  for (const [zh, en] of map) out = out.split(zh).join(en);
+  return out;
+}
+
 /* rebuild poster + fit-studio preset options from the active platform */
 function renderPlatformPresets() {
   const spec = currentPlatformSpec();
   if (!Array.isArray(spec.presets)) return;
   const posterSel = $("poster-preset");
   posterSel.innerHTML = spec.presets
-    .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(label)}</option>`)
+    .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(presetLabel(label))}</option>`)
     .join("") + `<option value="custom">${t("custom_size")}</option>`;
   const fitSel = $("fit-preset");
   if (fitSel) {
     fitSel.innerHTML = spec.presets
-      .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(label)}</option>`)
+      .map(([label, w, h]) => `<option value="${w}x${h}">${escapeHtml(presetLabel(label))}</option>`)
       .join("");
   }
   const imgsetBtn = $("btn-poster-imgset");
@@ -2540,6 +2570,12 @@ function renderSvgKit() {
     kit = SVG_KIT[svgKitKey] || SVG_KIT.blink;
     svgKitParams = { ...kit.params, ...svgKitParams };
   }
+  const descView = $("svgkit-desc-view");
+  if (descView) {
+    descView.textContent = isCustom
+      ? (lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting.")
+      : kit.desc();
+  }
   const form = $("svgkit-params");
   form.innerHTML = "";
   if (isCustom) {
@@ -2652,6 +2688,10 @@ async function openAssetsPanel(opts = {}) {
           <button type="button" class="fit"><svg class="icon icon-sm"><use href="#i-crop"/></svg></button>
           <button type="button" class="del"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
         </div>`;
+      // demo stubs still answer every button (honest boundary, not dead UI)
+      item.querySelector(".ins").addEventListener("click", () => toast(t("demo_mode"), "err"));
+      item.querySelector(".fit").addEventListener("click", () => toast(t("demo_mode"), "err"));
+      item.querySelector(".del").addEventListener("click", () => toast(t("demo_mode"), "err"));
       grid.appendChild(item);
     }
     return;
@@ -2745,6 +2785,10 @@ function renderComfyStatus(st) {
 }
 async function openComfyPanel() {
   openModal("modal-comfy");
+  // the AI-drawing dialog mirrors the settings pane's launch path (single
+  // source of truth stays in #comfy-launch-path; typing in the dialog syncs back)
+  const im = $("imggen-launch-path"), sm = $("comfy-launch-path");
+  if (im && sm) im.value = sm.value;
   if (!invoke) {
     $("comfy-status-line").textContent = t("demo_mode");
     return;
@@ -2829,6 +2873,20 @@ function bindUI() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
       persistCurrent(false);
+    }
+    if (e.key === "Escape") {
+      // topmost visible modal closes on Escape; the prompt modal goes through
+      // prompt-cancel so a pending uiPrompt promise resolves cleanly
+      const promptOv = $("modal-prompt");
+      if (promptOv && !promptOv.hidden) {
+        if (document.activeElement !== $("prompt-input")) $("prompt-cancel").click();
+        return;
+      }
+      const open = [...document.querySelectorAll(".modal-overlay:not([hidden])")];
+      if (open.length) {
+        open[open.length - 1].hidden = true;
+        e.preventDefault();
+      }
     }
   });
 
@@ -3119,6 +3177,9 @@ function bindUI() {
   if (sBtn) sBtn.addEventListener("click", comfyStart);
   const sBtn2 = document.getElementById("imggen-comfy-start");
   if (sBtn2) sBtn2.addEventListener("click", comfyStart);
+  // dialog launch-path mirrors back into the settings pane input
+  const imlp = $("imggen-launch-path"), smlp = $("comfy-launch-path");
+  if (imlp && smlp) imlp.addEventListener("input", () => { smlp.value = imlp.value; });
 
   /* agent modal */
   $("btn-agent").addEventListener("click", () => { openModal("modal-agent"); loadAgentCard(); });
@@ -3286,10 +3347,6 @@ function bindUI() {
   });
   $("svgkit-ai-generate").addEventListener("click", svgKitAiGenerate);
 
-  /* prompt modal */
-  $("prompt-ok").addEventListener("click", () => {});
-  $("prompt-cancel").addEventListener("click", () => {});
-
   /* modal close */
   document.querySelectorAll(".modal-close").forEach((btn) => {
     btn.addEventListener("click", () => closeModal(btn.dataset.close));
@@ -3355,6 +3412,7 @@ function bindUI() {
     refreshLibrary();
     refreshModelSelect();
     renderPlatformOptions();
+    renderPlatformPresets();
     refreshCopyButton();
     convertNow();
   });
@@ -3464,9 +3522,14 @@ async function init() {
   }
 
   if (!invoke) {
-    // browser demo mode
-    $("theme-select").innerHTML = `<option value="minimal">${lang === "zh-CN" ? "素黑" : "Minimal"}</option>`;
-    $("theme-select").value = "minimal";
+    // browser demo mode: mirror the three core built-in themes
+    $("theme-select").innerHTML = [
+      ["minimal", lang === "zh-CN" ? "素黑" : "Minimal"],
+      ["techblue", lang === "zh-CN" ? "科技蓝" : "Tech Blue"],
+      ["magazine", lang === "zh-CN" ? "杂志" : "Magazine"],
+    ].map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+    if (![...$("theme-select").options].some((o) => o.value === currentTheme)) currentTheme = "minimal";
+    $("theme-select").value = currentTheme;
     try {
       const [demo, demoMd] = await Promise.all([
         fetch("demo-preview.html").then((r) => r.text()),

@@ -123,6 +123,8 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 22 | **demo 分支提前 return** | 渠道壳改动在 8742 浏览器里完全不可见，误判"没实现" | 非 invoke 分支同样接渠道壳（demoCaptionFromMd / demoPlainHtmlFromMd） |
 | 23 | **新增平台只改 core** | demo 回退/菜单 logo/壳调度缺一处就半联动 | 加平台五处同步：core PlatformSpec → demo 回退 PLATFORMS → PLATFORM_LOGOS → SHELL_BUILDERS → 预设 |
 | 24 | **Windows 下 `cargo test` 跑不了 mock_app 测试** | 测试二进制启动即 `STATUS_ENTRYPOINT_NOT_FOUND`（tauri#11028，DLL 入口点）；PATH 注入 WebView2Loader.dll 也无效 | 命令层测试走不需要 AppHandle 的纯函数/同步入口（如 `generate_theme`），并加 `#[ignore]` live 冒烟真实验证；jobs.rs 的 emit/chat_stream/run_chat_task 已改成 `R: tauri::Runtime` 泛型备用 |
+| 25 | **HTML 重复 id 二次发生（comfy-launch-path / svgkit-desc）** | getElementById 只认第一个，后出现的输入框/span 成静默死控件 | 加弹窗输入框先 `grep -o 'id="[^"]*"' index.html \| sort \| uniq -d` 扫重；两个弹窗需要同字段时一个改名 + 双向同步 |
+| 26 | **demo 存根 UI 没绑事件** | 素材存根卡的插入/工坊/删除按钮点击静默无反应，验收时被当 bug 报 | demo 回退的每个按钮要么绑真实 demo 行为、要么统一回 demo_mode toast，不留死按钮 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
@@ -131,8 +133,9 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定 / chart 图表引擎。
-- 测试 95；版本 0.9.0（workspace+tauri.conf）。
-- 已知未做：Meta/X/LinkedIn API 发布出口（需资质）；AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
+- 测试 96；版本 0.9.0（workspace+tauri.conf）。
+- 已知未做：Meta/X/LinkedIn API 发布出口（需资质）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，未在 JS 复刻）；
+  AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist
 

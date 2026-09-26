@@ -22,21 +22,21 @@
 
 | ID | 区域 | 严重度 | 问题 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| AUD-001 | C6 保存 | P1 | `saved_new_ok` 在 zh/en 两字典均缺失：新文章首次保存的 toast 渲染出字面量 `undefined`（3 处调用：app.js 527/529/543） | i18n 扫描 + 浏览器实测 `t("saved_new_ok")` 返回 `undefined` 且 toast 渲染 `undefined` | open |
-| AUD-002 | M3/G13 | P1 | `comfy-launch-path` 重复 id（index.html 435 设置页 / 657 AI 绘图弹窗）：读取（app.js 3084/3101/3108）与回填（2756/3508）全部命中 DOM 顺序在前的设置页输入框，**弹窗内输入框是死控件**——用户在弹窗里填启动路径完全不生效 | 代码链路证明 + 浏览器取值（两输入框互不同步） | open |
-| AUD-003 | 全局 | P2 | `t()` 缺 key 返回 `undefined` 而非 key 名（app.js 235-238），铁律 4「缺 key 必须返回 key 名，绝不显示 undefined」在实现层从未落实；AUD-001 即其直接后果 | 代码 + AUD-001 渲染复现 | open |
-| AUD-004 | G4 | P2 | `f_logo` 在两字典均缺失：英文模式下「自定义图标」标签残留中文（applyI18n 守卫保留静态文案，双语不齐） | 浏览器实测 EN 模式标签为中文 | open |
-| AUD-005 | O6 | P2 | `svgkit-desc` 重复 id（index.html 789 输入框 / 802 详情 span）：span 无任何写入方，组件详情描述**永不显示** | 浏览器取证 count=2（INPUT+SPAN），SPAN textContent 恒空 | open |
-| AUD-006 | H3 | P2 | `gui/ui/demo-agent-card.md` 与漂移锁定源（agentcard.rs 46-47，7 工具）不一致：demo 卡只列 4 个 MCP 工具，缺 `wxwright_upload_images / wxwright_draft_create / wxwright_draft_list` | 代码 diff 证明 | open |
-| AUD-007 | P 区 | P3 | Escape 不能关闭 8 个弹窗（仅 prompt 输入框内部处理 Escape；全局 keydown 只挂了 Ctrl+S） | 浏览器实测 modal-theme 按 Escape 仍开 | open |
-| AUD-008 | 状态栏 | P3 | demo 模式状态栏永久卡在「Converting...」：convertNow 的 demo 分支（app.js 423 `return;`）早于 ready 复位行（414）——坑 22 同类 | 代码 + 浏览器实测（转换完成后仍显示 Converting） | open |
-| AUD-009 | C1 | P3 | demo 模式字数/词数/图片数恒为 0：`updateStats` 只在 invoke 路径调用，demo 永不更新 | 浏览器实测打字后仍 0 | open |
-| AUD-010 | B3 | P3 | demo 模式搜索过滤无效：demo 文章列表是存根，`libraryFilter` 不参与渲染 | 浏览器实测搜「xyz-no-match」列表不变 | open |
-| AUD-011 | J1 | P3 | 海报尺寸预设选项标签无英文（EN 模式下显示「头图 1080x460（2.35:1）」等中文） | 浏览器实测 EN 模式选项为中文 | open |
-| AUD-012 | E4 | P3 | demo 微信预览是静态 `demo-preview.html`，编辑正文不实时刷新（其他 6 平台壳在 demo 下实时渲染） | app.js convertNow demo 分支 | open |
-| AUD-013 | K 区 | P3 | `prompt-ok/cancel` 两个空绑定 `() => {}`（app.js 3290-3291），噪音代码；真绑定在 uiPrompt 内且正确移除（无累积问题） | 代码 | open |
-| AUD-014 | A5 | P3 | demo 主题下拉硬编码单选项（app.js 3468 只填 minimal），3 个内置主题在 demo 不可见不可切换 | 代码 + 浏览器实测 | open |
-| AUD-015 | L 区 | P3 | demo 素材卡的插入/尺寸工坊/删除三按钮**未绑定任何事件**（app.js 2642-2657 存根只画壳），点击静默无反应——与其他 demo 边界「有 toast 提示」的行为不一致 | 代码 + 浏览器实测（点击后弹窗不开、无 toast） | open |
+| AUD-001 | C6 保存 | P1 | `saved_new_ok` 在 zh/en 两字典均缺失：新文章首次保存的 toast 渲染出字面量 `undefined`（3 处调用：app.js 527/529/543） | i18n 扫描 + 浏览器实测 `t("saved_new_ok")` 返回 `undefined` 且 toast 渲染 `undefined` | fixed (v22) |
+| AUD-002 | M3/G13 | P1 | `comfy-launch-path` 重复 id（index.html 435 设置页 / 657 AI 绘图弹窗）：读取（app.js 3084/3101/3108）与回填（2756/3508）全部命中 DOM 顺序在前的设置页输入框，**弹窗内输入框是死控件**——用户在弹窗里填启动路径完全不生效 | 代码链路证明 + 浏览器取值（两输入框互不同步） | fixed (v22，弹窗改名 imggen-launch-path + 双向同步) |
+| AUD-003 | 全局 | P2 | `t()` 缺 key 返回 `undefined` 而非 key 名（app.js 235-238），铁律 4「缺 key 必须返回 key 名，绝不显示 undefined」在实现层从未落实；AUD-001 即其直接后果 | 代码 + AUD-001 渲染复现 | fixed (v22，缺 key 回退 key 名) |
+| AUD-004 | G4 | P2 | `f_logo` 在两字典均缺失：英文模式下「自定义图标」标签残留中文（applyI18n 守卫保留静态文案，双语不齐） | 浏览器实测 EN 模式标签为中文 | fixed (v22) |
+| AUD-005 | O6 | P2 | `svgkit-desc` 重复 id（index.html 789 输入框 / 802 详情 span）：span 无任何写入方，组件详情描述**永不显示** | 浏览器取证 count=2（INPUT+SPAN），SPAN textContent 恒空 | fixed (v22，span 改名 svgkit-desc-view + 选中时写入) |
+| AUD-006 | H3 | P2 | `gui/ui/demo-agent-card.md` 与漂移锁定源（agentcard.rs 46-47，7 工具）不一致：demo 卡只列 4 个 MCP 工具，缺 `wxwright_upload_images / wxwright_draft_create / wxwright_draft_list` | 代码 diff 证明 | fixed (从 agentcard.rs 重生成 + 新增 demo_agent_card_drift_test 防再漂移) |
+| AUD-007 | P 区 | P3 | Escape 不能关闭 8 个弹窗（仅 prompt 输入框内部处理 Escape；全局 keydown 只挂了 Ctrl+S） | 浏览器实测 modal-theme 按 Escape 仍开 | fixed (v22，全局 Escape 关最上层弹窗，prompt 走 cancel 保证 promise 干净收尾) |
+| AUD-008 | 状态栏 | P3 | demo 模式状态栏永久卡在「Converting...」：convertNow 的 demo 分支（app.js 423 `return;`）早于 ready 复位行（414）——坑 22 同类 | 代码 + 浏览器实测（转换完成后仍显示 Converting） | fixed (v22) |
+| AUD-009 | C1 | P3 | demo 模式字数/词数/图片数恒为 0：`updateStats` 只在 invoke 路径调用，demo 永不更新 | 浏览器实测打字后仍 0 | fixed (v22，demo 本地计数) |
+| AUD-010 | B3 | P3 | demo 模式搜索过滤无效：demo 文章列表是存根，`libraryFilter` 不参与渲染 | 浏览器实测搜「xyz-no-match」列表不变 | fixed (v22) |
+| AUD-011 | J1 | P3 | 海报尺寸预设选项标签无英文（EN 模式下显示「头图 1080x460（2.35:1）」等中文） | 浏览器实测 EN 模式选项为中文 | fixed (v22，presetLabel 词汇表翻译，核心/demo 两源统一覆盖) |
+| AUD-012 | E4 | P3 | demo 微信预览是静态 `demo-preview.html`，编辑正文不实时刷新（其他 6 平台壳在 demo 下实时渲染） | app.js convertNow demo 分支 | documented（方言渲染器在 Rust 引擎内，JS 复刻失真风险大于收益；桌面端不受影响，见坑 8 边界） |
+| AUD-013 | K 区 | P3 | `prompt-ok/cancel` 两个空绑定 `() => {}`（app.js 3290-3291），噪音代码；真绑定在 uiPrompt 内且正确移除（无累积问题） | 代码 | fixed (v22，已删除) |
+| AUD-014 | A5 | P3 | demo 主题下拉硬编码单选项（app.js 3468 只填 minimal），3 个内置主题在 demo 不可见不可切换 | 代码 + 浏览器实测 | fixed (v22，镜像 3 内置主题) |
+| AUD-015 | L 区 | P3 | demo 素材卡的插入/尺寸工坊/删除三按钮**未绑定任何事件**（app.js 2642-2657 存根只画壳），点击静默无反应——与其他 demo 边界「有 toast 提示」的行为不一致 | 代码 + 浏览器实测（点击后弹窗不开、无 toast） | fixed (v22，存根按钮统一回 demo toast) |
 
 ### 修复建议（按依赖序）
 

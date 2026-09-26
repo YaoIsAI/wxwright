@@ -36,7 +36,8 @@ Read it, fix the source, retry. Do not ship while `blocking_violations` is non-e
 ## MCP alternative
 
 Start `wxwright mcp serve` (stdio) or `wxwright mcp install --target claude`.
-Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list.
+Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
+wxwright_upload_images, wxwright_draft_create, wxwright_draft_list.
 Resources: wxwright://themes, wxwright://spec/rules.
 
 ## Publishing (optional, needs credentials)
