@@ -7057,11 +7057,13 @@ version = "0.9.0"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
+ "getrandom 0.2.17",
  "image",
  "keyring",
  "pdf-extract",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
