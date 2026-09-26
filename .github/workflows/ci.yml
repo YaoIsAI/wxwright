@@ -44,10 +44,11 @@ jobs:
       - name: Official verify-article-structure-spec
         run: |
           git clone --depth 1 https://github.com/wechatjs/verify-article-structure-spec /tmp/spec
-          (cd /tmp/spec && npm install)
+          # the checker CLI lives in the cli/ subdirectory (puppeteer downloads Chromium on install)
+          (cd /tmp/spec/cli && npm install)
           for f in golden-*.html; do
-            cp "$f" /tmp/spec/
-            (cd /tmp/spec && npm run check -- "$f")
+            cp "$f" /tmp/spec/cli/
+            (cd /tmp/spec/cli && npm run check -- "$f")
           done
 
   gui:

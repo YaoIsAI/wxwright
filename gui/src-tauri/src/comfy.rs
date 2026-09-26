@@ -63,6 +63,7 @@ pub fn launch(launch_path: &str) -> Result<Value, String> {
     }
     let p = std::path::PathBuf::from(path);
     let dir = p.parent().map(|d| d.to_path_buf());
+    #[cfg(windows)]
     let lower = path.to_ascii_lowercase();
     #[cfg(windows)]
     {
