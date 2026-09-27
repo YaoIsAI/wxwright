@@ -99,7 +99,11 @@ fn no_hand_rolled_image_gate_exists() {
         for (n, line) in content.lines().enumerate() {
             let code = code_only(line);
             // The hand-rolled variants that diverged from paste_hostile().
-            if code.contains("inlined && !") || code.contains("starts_with(\"data:\")") {
+            // `source.starts_with("data:")` is deliberately narrower than a
+            // bare `starts_with("data:")`: SSE parsing legitimately tests the
+            // same prefix on a response line, and flagging that would make the
+            // guard cry wolf.
+            if code.contains("inlined && !") || code.contains("source.starts_with(\"data:\")") {
                 // The definition itself is the one legitimate place.
                 if path.ends_with("img.rs") {
                     continue;

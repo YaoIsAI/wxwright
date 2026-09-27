@@ -149,6 +149,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 35 | **契约测试只做前向断言**（`theme_roles_test` 只验「声明了的都被消费」，抓不到「渲染器支持但表里没声明」→ h6 漏网，`validate_generated_theme` 会拒绝一个合法 key） | 主题校验器拒绝一个实际生效的 role；同类问题在「动态拼 role」处（`format!("h{}", level)`）最容易发生 | 契约必须**双向**：前向用探针断言每个 key 生效；反向用端到端驱动枚举动态角色族（h1..=6）并断言「既生效又已声明」；再加算术自检测试锁住角色/key 数量 |
 | 36 | **列表上限截断不区分严重度**（`MAX_VIOLATIONS=500` 一视同仁丢弃 → 501 条 warn + 1 条 `<script>` 被判 compliant，退出码 0） | 「有阻断违规」被静默变成「没问题」，零失真承诺失效；MCP 的 validate 同样中招 | 阻断级给独立上限（`MAX_BLOCK_VIOLATIONS`），warn 可以被截断，**block 永不被隐藏**；回归测试构造「超额 warn + 1 个 block」断言 block 仍在 |
 | 37 | **同一判定在多条路径上各写一遍**（图片门禁 `inlined && !mmbiz` 曾在 CLI/GUI/MCP 各写一份，MCP 那份还漏 http 与读取失败；`wxwright_draft_create` 干脆一道门禁都没有） | 同一篇文章，四条路径给出四个不同答案 | 判定只留一处实现（`ImageOutcome::paste_hostile()`），全部写出口调用它；再加**源码扫描测试**（`tests/image_gate_test.rs`）让手写过滤无法复现 |
+| 38 | **`ureq` 不读环境变量也不读 Windows 系统代理**（本机 Clash 在 127.0.0.1:7897，`curl` 走 `HTTPS_PROXY` 能通，应用内直连 Cloudflare 前置的境外端点全部 `os error 10060`） | 桌面端 AI 助手 / 云端生图 / X·LinkedIn 换 token **全部不可用**，但日志只显示「连接超时」，极易误判成「服务商挂了」或「密钥错了」 | 境外出口一律走 `gui/src-tauri/src/net.rs` 的 `with_env_proxy`（读 `HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY` + `NO_PROXY=*` 退出）。**本地（ComfyUI 127.0.0.1）与境内（微信 API）保持直连**——别开 ureq 的 `proxy-from-env` feature，它没有 NO_PROXY 支持且 `ALL_PROXY` 优先于 `HTTPS_PROXY`，会把回环请求也塞进代理 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

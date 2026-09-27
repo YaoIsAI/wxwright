@@ -379,8 +379,11 @@ pub fn exchange_code(
     if spec.id == "x" {
         form.push(("code_verifier", verifier));
     }
-    let resp = ureq::post(spec.token_url)
-        .timeout(Duration::from_secs(30))
+    // X / LinkedIn token endpoints are foreign: behind a local proxy a direct
+    // connection times out (see net.rs).
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(30));
+    let resp = agent
+        .post(spec.token_url)
         .send_form(&form)
         .map_err(|e| format!("令牌交换失败 / token exchange failed: {e}"))?;
     resp.into_json::<Value>()

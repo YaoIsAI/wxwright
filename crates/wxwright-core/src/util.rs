@@ -124,6 +124,57 @@ pub fn write_private(path: &std::path::Path, contents: &str) -> std::io::Result<
     Ok(())
 }
 
+/// Proxy URL for outbound HTTP, from the conventional environment variables.
+///
+/// Why the engine exposes this at all: `ureq` (used by every host crate)
+/// deliberately does not read the environment nor the Windows system proxy, so
+/// on a machine behind a local proxy (Clash/Mihomo on 127.0.0.1:7897 and the
+/// like) every call to a foreign endpoint failed with `os error 10060` while
+/// `curl` - which does read `HTTPS_PROXY` - worked fine. The AI assistant and
+/// cloud image generation were simply dead on such machines.
+///
+/// Returns the raw URL so core stays free of HTTP client types; each host
+/// crate builds its own `ureq::Proxy` from it.
+pub fn proxy_url_from_env() -> Option<String> {
+    pick_proxy(
+        std::env::var("HTTPS_PROXY").ok().as_deref(),
+        std::env::var("https_proxy").ok().as_deref(),
+        std::env::var("ALL_PROXY").ok().as_deref(),
+        std::env::var("all_proxy").ok().as_deref(),
+        std::env::var("HTTP_PROXY").ok().as_deref(),
+        std::env::var("http_proxy").ok().as_deref(),
+        std::env::var("NO_PROXY")
+            .or_else(|_| std::env::var("no_proxy"))
+            .ok()
+            .as_deref(),
+    )
+}
+
+/// The selection itself, over explicit values, so it is testable without
+/// mutating process-global environment variables.
+#[allow(clippy::too_many_arguments)]
+fn pick_proxy(
+    https: Option<&str>,
+    https_lower: Option<&str>,
+    all: Option<&str>,
+    all_lower: Option<&str>,
+    http: Option<&str>,
+    http_lower: Option<&str>,
+    no_proxy: Option<&str>,
+) -> Option<String> {
+    if let Some(no) = no_proxy {
+        if no.split(',').any(|h| h.trim() == "*") {
+            return None;
+        }
+    }
+    [https, https_lower, all, all_lower, http, http_lower]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|v| !v.is_empty())
+        .map(str::to_string)
+}
+
 /// Split text into lines, keeping line endings out of the returned strings.
 pub fn split_lines(s: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -288,5 +339,66 @@ mod tests {
         ] {
             assert_eq!(super::redact_secrets(s), s, "must not touch: {s}");
         }
+    }
+
+    #[test]
+    fn proxy_prefers_https_then_all_then_http() {
+        let pick = |a, b, c, d, e, f, g| super::pick_proxy(a, b, c, d, e, f, g);
+        // HTTPS_PROXY wins.
+        assert_eq!(
+            pick(
+                Some("http://p1:1"),
+                None,
+                Some("http://p2:2"),
+                None,
+                None,
+                None,
+                None
+            ),
+            Some("http://p1:1".to_string())
+        );
+        // Falls through the chain in order.
+        assert_eq!(
+            pick(
+                None,
+                None,
+                Some("socks5://p2:2"),
+                None,
+                Some("http://p3:3"),
+                None,
+                None
+            ),
+            Some("socks5://p2:2".to_string())
+        );
+        // Lowercase spellings are honoured too.
+        assert_eq!(
+            pick(None, None, None, None, None, Some("http://p6:6"), None),
+            Some("http://p6:6".to_string())
+        );
+        // Nothing set.
+        assert_eq!(pick(None, None, None, None, None, None, None), None);
+        // Blank values do not count as configured.
+        assert_eq!(pick(Some("  "), None, None, None, None, None, None), None);
+        // Trailing whitespace is trimmed.
+        assert_eq!(
+            pick(Some(" http://p1:1 "), None, None, None, None, None, None),
+            Some("http://p1:1".to_string())
+        );
+    }
+
+    #[test]
+    fn no_proxy_wildcard_disables_the_proxy() {
+        let pick = |np: Option<&str>| {
+            super::pick_proxy(Some("http://p1:1"), None, None, None, None, None, np)
+        };
+        assert_eq!(pick(Some("*")), None);
+        assert_eq!(pick(Some(" * ")), None);
+        assert_eq!(pick(Some("example.com,*")), None);
+        // A concrete NO_PROXY list must not disable a foreign endpoint: the AI
+        // hosts are never localhost, so the entry simply does not apply.
+        assert_eq!(
+            pick(Some("localhost,127.0.0.1,::1")),
+            Some("http://p1:1".to_string())
+        );
     }
 }

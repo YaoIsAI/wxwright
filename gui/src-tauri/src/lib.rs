@@ -7,6 +7,7 @@ mod comfy;
 mod commands;
 mod extract;
 mod jobs;
+mod net;
 mod social;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};

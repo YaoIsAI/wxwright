@@ -55,6 +55,26 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   end-to-end and asserts both that the override lands *and* that the key is
   declared. `toc_title` was renamed `toc_heading` because it looked
   indistinguishable from a `toc` + `_title` suffix expansion.
+- **A stop that landed before the first chunk looked like a transport
+  error.** `chat()` treats "stream ended with no `data:` line" as "the
+  provider ignored `stream: true`, try to parse a whole JSON body". A stop
+  click that arrived before the first token therefore fell into that branch,
+  failed to parse an empty body and surfaced `响应不是 SSE 流也不是 JSON: ` -
+  a user who stopped a slow generation saw a confusing protocol error instead
+  of a clean stop. The fallback now runs only when the run was not stopped.
+  Found by driving the real provider end to end: the stop worked (the loop
+  broke on its first iteration) but the reporting did not.
+- **Every foreign HTTP call was dead on a machine behind a proxy.** `ureq`
+  reads neither the environment nor the Windows system proxy (its
+  `proxy-from-env` feature is opt-in, has no `NO_PROXY` support, and prefers
+  `ALL_PROXY` over the scheme-specific `HTTPS_PROXY`), so with Clash/Mihomo on
+  127.0.0.1:7897 the AI assistant, cloud image generation and the X/LinkedIn
+  token exchange all failed with `os error 10060` while `curl` worked fine.
+  The foreign endpoints now build their agents through `net::with_env_proxy`
+  (`util::proxy_url_from_env` honours `HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY`
+  in that order, plus a `NO_PROXY=*` opt-out). ComfyUI and the WeChat MP API
+  stay direct on purpose: loopback through a proxy is pointless, and routing a
+  domestic API through a foreign tunnel would make a working path worse.
 - **`redact_secrets` missed two shapes.** The parameter-boundary set had no
   `;` separator and key matching was case-sensitive, so `?a=1;secret=LEAK`
   and `?SECRET=LEAK` passed through untouched. Both are covered now, with a

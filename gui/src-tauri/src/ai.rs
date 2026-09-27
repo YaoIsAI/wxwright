@@ -213,6 +213,14 @@ fn next_generation(seq: &AtomicU64) -> u64 {
 }
 
 /// Mark the currently running generation as stopped.
+///
+/// Granularity: the streaming loop only checks the flag between lines, so a
+/// stop lands at the next line boundary. Mid-stream that is a few hundred
+/// milliseconds (measured ~420ms against a live provider); if the model has
+/// not emitted anything yet the loop is parked in a blocking read and the
+/// backend notices only when the first line arrives. The UI does not wait for
+/// that - the send button flips to its stopped state immediately - so the
+/// delay costs an open connection, not user-visible latency.
 fn mark_stop_for_current(seq: &AtomicU64, stop: &AtomicU64) {
     stop.store(seq.load(Ordering::Relaxed), Ordering::Relaxed);
 }
@@ -222,11 +230,13 @@ pub fn stop() {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(15))
-        .timeout_read(Duration::from_secs(180))
-        .timeout_write(Duration::from_secs(30))
-        .build()
+    crate::net::with_env_proxy(
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(15))
+            .timeout_read(Duration::from_secs(180))
+            .timeout_write(Duration::from_secs(30)),
+    )
+    .build()
 }
 
 fn completions_url(base: &str) -> String {
@@ -420,7 +430,13 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
         }
     }
 
-    if !saw_data {
+    // No `data:` line was seen. That means either the provider ignored
+    // `stream: true` and answered with a whole JSON body, or the user stopped
+    // the run before the first chunk arrived. The second case used to fall
+    // into the JSON probe, fail to parse an empty body and surface
+    // "响应不是 SSE 流也不是 JSON: " - a stop click that landed early showed a
+    // confusing transport error instead of just stopping.
+    if should_try_whole_body_json(saw_data, stopped) {
         let whole = lines.join("\n");
         match serde_json::from_str::<serde_json::Value>(&whole) {
             Ok(v) => {
@@ -443,6 +459,14 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
         serde_json::json!({ "model": p.model, "stopped": stopped, "usage": usage }),
     );
     Ok(())
+}
+
+/// True when a finished stream should be probed for a whole-body JSON reply:
+/// no `data:` line arrived AND the run was not stopped by the user. A stop
+/// that lands before the first chunk leaves nothing to parse, so it must not
+/// be reported as a malformed response.
+fn should_try_whole_body_json(saw_data: bool, stopped: bool) -> bool {
+    !saw_data && !stopped
 }
 
 /// One-shot non-streaming completion (poster HTML, theme generation, ...).
@@ -623,9 +647,7 @@ pub fn generate_image(prompt: &str, w: u32, h: u32) -> Result<Vec<String>, Strin
         .get("data")
         .and_then(|d| d.as_array())
         .ok_or("images 响应缺少 data 字段")?;
-    let agent = ureq::AgentBuilder::new()
-        .timeout_read(Duration::from_secs(120))
-        .build();
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(120));
     let mut paths = Vec::new();
     for (i, item) in items.iter().enumerate() {
         let b64 = item.get("b64_json").and_then(|x| x.as_str()).unwrap_or("");
@@ -1106,6 +1128,96 @@ mod tests {
             chat,
             "an idle stop must not be interpreted as stopping the next chat"
         );
+    }
+
+    /// A stop that lands before the first chunk must not be mistaken for a
+    /// malformed response. Regression for the confusing
+    /// "响应不是 SSE 流也不是 JSON: " error users saw when they clicked stop
+    /// early.
+    #[test]
+    fn an_early_stop_is_not_treated_as_a_malformed_response() {
+        // Stopped before any data arrived: finish cleanly, do not probe.
+        assert!(!should_try_whole_body_json(false, true));
+        // Provider ignored stream:true and sent a whole JSON body.
+        assert!(should_try_whole_body_json(false, false));
+        // Normal SSE stream: the probe is irrelevant.
+        assert!(!should_try_whole_body_json(true, false));
+        assert!(!should_try_whole_body_json(true, true));
+    }
+
+    /// Live diagnostic: what does ureq actually receive on the chat path?
+    /// Opt-in, prints the raw status / content-type / body head so a proxy or
+    /// gateway that returns an empty 200 is visible instead of being reported
+    /// as "response is neither SSE nor JSON".
+    /// `cargo test -p wxwright-gui live_chat_transport_diagnostic -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live: calls the configured AI provider"]
+    fn live_chat_transport_diagnostic() {
+        let (p, key) = match active_provider() {
+            Ok(v) => v,
+            Err(e) => {
+                println!("skip: no provider: {e}");
+                return;
+            }
+        };
+        println!("provider: {} / {} @ {}", p.name, p.model, p.base_url);
+        println!(
+            "proxy from env: {:?}",
+            wxwright_core::util::proxy_url_from_env()
+        );
+        let body = serde_json::json!({
+            "model": p.model,
+            "messages": [
+                { "role": "system", "content": "你是写作助手，只输出正文。" },
+                { "role": "user", "content": "写一篇 800 字左右的散文，主题：清晨的河。不要标题，不要解释。" }
+            ],
+            "temperature": 0.7,
+            "stream": true,
+            "stream_options": { "include_usage": true },
+        });
+        match call_completions_post(&p.base_url, &key, "/chat/completions", &body) {
+            Ok(resp) => {
+                println!("status = {}", resp.status());
+                println!("content-type = {:?}", resp.header("content-type"));
+                println!("content-length = {:?}", resp.header("content-length"));
+                let text = resp.into_string().unwrap_or_default();
+                println!("into_string bytes = {}", text.len());
+                let head: String = text.chars().take(200).collect();
+                println!("into_string head = {head:?}");
+            }
+            Err(e) => println!("ERROR = {e}"),
+        }
+
+        // Second pass: exactly the read path chat() uses.
+        match call_completions_post(&p.base_url, &key, "/chat/completions", &body) {
+            Ok(resp) => {
+                let reader = std::io::BufReader::new(resp.into_reader());
+                let mut n = 0usize;
+                let mut data = 0usize;
+                let mut sample = String::new();
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => {
+                            n += 1;
+                            if l.starts_with("data:") {
+                                data += 1;
+                            }
+                            if sample.len() < 160 {
+                                sample.push_str(&l.chars().take(80).collect::<String>());
+                                sample.push('|');
+                            }
+                        }
+                        Err(e) => {
+                            println!("line error: {e}");
+                            break;
+                        }
+                    }
+                }
+                println!("into_reader lines = {n}, data lines = {data}");
+                println!("sample = {sample:?}");
+            }
+            Err(e) => println!("ERROR(reader) = {e}"),
+        }
     }
 
     /// Live smoke for the cloud image engine - generates the README banner.
