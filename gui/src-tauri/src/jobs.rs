@@ -760,12 +760,13 @@ mod tests {
     fn diagnostic_push_chain_upload() {
         let creds = wxwright_mp::load_credentials().expect("MP credentials bound");
         let client = wxwright_mp::MpClient::new(creds.clone());
-        let md_path = std::path::Path::new("C:/Users/yao/Documents/wxwright/articles/20260927-100000-opensource.md");
+        let md_path = std::path::Path::new(
+            "C:/Users/yao/Documents/wxwright/articles/20260927-100000-opensource.md",
+        );
         let raw = std::fs::read_to_string(md_path).unwrap();
         let md = wxwright_core::util::strip_frontmatter(&raw).1;
-        let mut opts = wxwright_core::ConvertOptions::new(
-            crate::commands::load_theme_or_default("magazine"),
-        );
+        let mut opts =
+            wxwright_core::ConvertOptions::new(crate::commands::load_theme_or_default("magazine"));
         opts.image_mode = wxwright_core::img::ImageMode::Upload;
         opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
         let result = wxwright_core::pipeline(&md, &opts).expect("pipeline ok");
@@ -776,6 +777,9 @@ mod tests {
                 img.source, img.media_id, img.mmbiz, img.inlined, img.warning
             );
         }
-        println!("blocking violations: {}", result.blocking_violations().len());
+        println!(
+            "blocking violations: {}",
+            result.blocking_violations().len()
+        );
     }
 }

@@ -39,6 +39,7 @@ jobs:
             archive: wxwright-cli-linux-x64.tar.gz
             use_zip: false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
@@ -79,6 +80,7 @@ jobs:
             bundles: deb,appimage
             label: linux
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
@@ -112,6 +114,7 @@ jobs:
   release:
     needs: [build-cli, build-gui]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
