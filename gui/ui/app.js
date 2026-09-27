@@ -31,6 +31,7 @@ const I18N = {
     push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
     push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
     push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
+    push_draft_busy: "推送中…",
     f_key_hint: "留空表示保留原 Key", test: "测试连接", cancel: "取消", ok: "确定",
     save_provider: "保存 Provider", active_badge: "使用中",
     ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
@@ -147,6 +148,7 @@ const I18N = {
     push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
     push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
     push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
+    push_draft_busy: "Pushing…",
     f_key_hint: "leave empty to keep the current key", test: "Test", cancel: "Cancel", ok: "OK",
     save_provider: "Save provider", active_badge: "active",
     ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
@@ -3255,7 +3257,14 @@ function bindUI() {
     if (!invoke) { toast(t("demo_mode"), "err"); return; }
     if (currentPlatform !== "wechat") { toast(t("push_draft_need_wechat"), "err"); return; }
     const btn = $("btn-push-draft");
-    btn.disabled = true;
+    const btnOriginal = btn.innerHTML;
+    const btnBusy = (on) => {
+      btn.disabled = on;
+      btn.innerHTML = on
+        ? '<span class="spin"></span>' + escapeHtml(t("push_draft_busy"))
+        : btnOriginal;
+    };
+    btnBusy(true);
     try {
       const st = await invoke("wx_bind_status");
       if (!st.bound) { toast(t("push_draft_need_bind"), "err"); return; }
@@ -3269,7 +3278,7 @@ function bindUI() {
           multiple: false,
           filters: [{ name: lang === "zh-CN" ? "图片" : "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
         });
-        if (!picked) { btn.disabled = false; return; }
+        if (!picked) { btnBusy(false); return; }
         cover = picked;
       }
       const r = await invoke("wx_push_draft", {
@@ -3309,7 +3318,7 @@ function bindUI() {
         toast(msg, "err");
       }
     } finally {
-      btn.disabled = false;
+      btnBusy(false);
     }
   });
   updatePushDraftButton();

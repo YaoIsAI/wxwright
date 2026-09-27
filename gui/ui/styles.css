@@ -1473,6 +1473,10 @@ body { display: flex; flex-direction: column; }
 .btn-busy .btn-busy-spin { animation: btn-spin 0.8s linear infinite; vertical-align: -2px; }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 
+/* push-draft busy spinner */
+.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: wxspin 0.8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes wxspin { to { transform: rotate(360deg); } }
+
 /* publish binding cards + help center */
 .pub-card {
   border: 1px solid var(--border);
