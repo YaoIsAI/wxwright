@@ -959,13 +959,6 @@ fn render_card(kind: CardKind, blocks: &[Block], ctx: &Ctx) -> String {
             ("letter-spacing".into(), "0.5px".into()),
         ],
     );
-    let mut html = section(
-        &container,
-        &section(
-            "margin-bottom: 6px;",
-            &leaf(&title, &escape_text(&i18n::t(kind.i18n_key()))),
-        ),
-    );
     let scope = BodyCtx {
         leaf: css_owned(
             ctx.theme,
@@ -978,8 +971,14 @@ fn render_card(kind: CardKind, blocks: &[Block], ctx: &Ctx) -> String {
         ),
         para_margin: "margin: 0 0 8px;".into(),
     };
-    html.push_str(&render_blocks(blocks, ctx, &scope));
-    html
+    // Body blocks must stay inside the container section, or the card
+    // background only covers the title strip.
+    let mut inner = section(
+        "margin-bottom: 6px;",
+        &leaf(&title, &escape_text(&i18n::t(kind.i18n_key()))),
+    );
+    inner.push_str(&render_blocks(blocks, ctx, &scope));
+    section(&container, &inner)
 }
 
 fn render_list(ordered: bool, start: u64, items: &[ListItem], ctx: &Ctx, depth: usize) -> String {

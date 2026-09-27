@@ -139,6 +139,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 29 | **`cargo run ... > file` 且构建失败时把目标文件写空** | 生成物（如 `gui/ui/demo-agent-card.md`）被截断成 0 字节，且 stderr 被 `2>/dev/null` 吞掉，看上去像「命令成功但没输出」 | 先输出到临时文件并判空再覆盖：`cargo run ... > /tmp/x 2>/tmp/x.err; [ -s /tmp/x ] && cp /tmp/x dest || cat /tmp/x.err` |
 | 30 | **C 盘满到 `rm -rf` 之后可用空间反而更少** | 其他进程（系统更新/索引/备份）在同时吃盘，跟 C 盘抢空间没有胜算 | 直接换盘：`CARGO_TARGET_DIR=E:/wxwright-build cargo build --release`（E 盘 134G 可用），零风险且不影响 dist 同步 |
 | 31 | **主题 role 声明了但渲染器不读** | AI 生成主题「合规却无效」，用户感知为「AI 排版没用」（card_* 事故：`let _ = row;` 式的 `let _ = role;`） | 见铁律 11；`roles.rs` + `theme_roles_test.rs` 双重锁定 |
+| 32 | **卡片容器在标题后闭合，正文被 append 成兄弟节点**（render_card 事故） | 所有 callout（[!WARNING]/[!IMPORTANT]/[!TIP]/[!NOTE]）底色只盖住标签行，正文落白底，卡片视觉=细条；用户感知为「卡片效果没有」 | 正文块必须渲染在容器 section 内部；验证卡片要看「正文是否在色底上」，不能只 grep 背景色出现与否 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

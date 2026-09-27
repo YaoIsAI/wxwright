@@ -11,6 +11,12 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Fixed
+- **Callout card bodies rendered outside the card.** `render_card` closed the
+  card container right after the title strip and appended the body blocks as
+  sibling sections, so on every theme the `[!WARNING]` / `[!IMPORTANT]` /
+  `[!TIP]` / `[!NOTE]` backgrounds covered only the label line while the body
+  sat on the plain page background - cards looked like thin colored strips.
+  Body blocks now render inside the container section, on the card background.
 - **AppSecret could reach logs, JSON output and toasts.** `wxwright-mp` builds
   its request URLs with the AppSecret / access_token in the query string, and
   `ureq`'s status-error `Display` renders as `"{full_url}: status code {code}"`.
