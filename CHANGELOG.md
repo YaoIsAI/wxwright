@@ -11,6 +11,13 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Fixed
+- **The article sidebar never noticed externally created articles.** `refreshLibrary`
+  ran only after in-app actions, so an article written by the MCP server or the
+  CLI showed up in the GUI's library list only after a restart (and re-opening
+  the window). The sidebar now polls `list_articles` every 4 seconds and
+  re-renders only when the id/updated signature changes, plus an immediate
+  check on window focus. The refresh touches the list only - the open editor
+  keeps its content, so an external rewrite can never clobber unsaved edits.
 - **Callout card bodies rendered outside the card.** `render_card` closed the
   card container right after the title strip and appended the body blocks as
   sibling sections, so on every theme the `[!WARNING]` / `[!IMPORTANT]` /

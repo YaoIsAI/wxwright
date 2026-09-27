@@ -544,7 +544,25 @@ async function refreshLibrary() {
       refreshLibrary();
     });
   });
+  librarySignature = librarySig(articles);
 }
+/* Articles can appear on disk without the GUI knowing (MCP server, CLI).
+   The sidebar therefore polls the library and re-renders only when the
+   signature changes. Refresh touches the list only - the open editor keeps
+   its content, so an external rewrite can never clobber unsaved edits. */
+let librarySignature = "";
+function librarySig(articles) {
+  return articles.map((a) => `${a.id}:${a.updated || a.created}`).join("|");
+}
+async function pollLibrary() {
+  if (!invoke || document.hidden) return;
+  try {
+    const articles = await invoke("list_articles");
+    if (librarySig(articles) !== librarySignature) await refreshLibrary();
+  } catch (e) {}
+}
+setInterval(pollLibrary, 4000);
+window.addEventListener("focus", pollLibrary);
 let loadedTitle = null; // title of the article currently open (library truth)
 async function persistCurrent(silent = false) {
   if (!invoke) return;
