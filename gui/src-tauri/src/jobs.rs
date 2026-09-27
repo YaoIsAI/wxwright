@@ -759,7 +759,6 @@ mod tests {
     #[ignore = "live: uploads a real image to the MP material library (needs bound MP credentials)"]
     fn diagnostic_push_chain_upload() {
         let creds = wxwright_mp::load_credentials().expect("MP credentials bound");
-        let client = wxwright_mp::MpClient::new(creds.clone());
         let md_path = std::path::Path::new(
             "C:/Users/yao/Documents/wxwright/articles/20260927-100000-opensource.md",
         );
