@@ -16,10 +16,7 @@ pub const DEFAULT_NEGATIVE: &str =
     "lowres, bad anatomy, bad hands, watermark, text, jpeg artifacts, blurry";
 
 pub fn comfy_settings_full() -> (String, String, String) {
-    let path = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("wxwright")
-        .join("settings.json");
+    let path = wxwright_core::util::config_root().join("settings.json");
     if let Ok(raw) = std::fs::read_to_string(&path) {
         if let Ok(v) = serde_json::from_str::<Value>(&raw) {
             let g = |pointer: &str, dflt: &str| {
@@ -111,10 +108,7 @@ pub fn launch(launch_path: &str) -> Result<Value, String> {
 }
 
 fn comfy_settings() -> (String, String) {
-    let path = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("wxwright")
-        .join("settings.json");
+    let path = wxwright_core::util::config_root().join("settings.json");
     if let Ok(raw) = std::fs::read_to_string(&path) {
         if let Ok(v) = serde_json::from_str::<Value>(&raw) {
             let url = v
@@ -134,10 +128,7 @@ fn comfy_settings() -> (String, String) {
 }
 
 pub fn save_config(url: &str, model: &str, launch_path: &str) -> Result<Value, String> {
-    let path = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("wxwright")
-        .join("settings.json");
+    let path = wxwright_core::util::config_root().join("settings.json");
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let mut root: Value = std::fs::read_to_string(&path)
         .ok()

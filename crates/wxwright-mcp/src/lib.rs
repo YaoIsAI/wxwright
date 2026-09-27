@@ -204,6 +204,20 @@ fn tools_list() -> Value {
                         "count": { "type": "integer", "default": 10 }
                     }
                 })
+            ),
+            tool(
+                "wxwright_export",
+                "Export one Markdown source for a specific platform. Returns the artifact that platform actually consumes: WeChat gets dialect rich text (html), Xiaohongshu/Facebook/Instagram/X/LinkedIn get a plain-text caption, Zhihu gets Markdown unchanged. Use `wxwright platforms` for the id list.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "markdown": { "type": "string", "description": "Markdown source (GFM). Required." },
+                        "platform": { "type": "string", "description": "Platform id: wechat | xhs | zhihu | meta | instagram | x | linkedin. Default: wechat. An unknown id is reported via platform_known=false." },
+                        "title": { "type": "string", "description": "Article title, used for caption-style exports." },
+                        "theme": { "type": "string", "description": "Theme id or TOML path (WeChat dialect only). Default: minimal." }
+                    },
+                    "required": ["markdown"]
+                })
             )
         ]
     })
@@ -384,6 +398,51 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     }
                 }
                 Ok(json!({ "ok": all_ok, "uploads": uploads }))
+            }
+            "wxwright_export" => {
+                let md = get_str("markdown").ok_or("missing argument: markdown")?;
+                let platform = get_str("platform").unwrap_or_else(|| "wechat".into());
+                let (spec, known) = wxwright_core::platform::resolve_platform(&platform);
+                let doc = wxwright_core::parser::parse_markdown(&md);
+                match spec.export_kind {
+                    wxwright_core::platform::ExportKind::RichTextDialect => {
+                        // WeChat pastes styled HTML: return the dialect artifact.
+                        let opts = ConvertOptions::new(t);
+                        let out = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+                        let blocking = out.blocking_violations().len();
+                        Ok(json!({
+                            "platform": spec.id,
+                            "platform_known": known,
+                            "export_kind": "rich_text_dialect",
+                            "html": out.html,
+                            "blocking_violations": blocking,
+                            "warnings": out.violations.iter().filter(|v| !v.is_block()).count(),
+                        }))
+                    }
+                    wxwright_core::platform::ExportKind::Markdown => Ok(json!({
+                        "platform": spec.id,
+                        "platform_known": known,
+                        "export_kind": "markdown",
+                        "text": md,
+                    })),
+                    wxwright_core::platform::ExportKind::Caption => {
+                        let title = get_str("title").unwrap_or_default();
+                        Ok(json!({
+                            "platform": spec.id,
+                            "platform_known": known,
+                            "export_kind": "caption",
+                            "text": wxwright_core::platform::render_caption(
+                                &doc,
+                                if title.trim().is_empty() { None } else { Some(&title) },
+                            ),
+                            "caption_violations": wxwright_core::platform::validate_platform_caption(
+                                spec.id, &title,
+                                &wxwright_core::platform::render_caption(&doc, None),
+                                0,
+                            ),
+                        }))
+                    }
+                }
             }
             "wxwright_draft_list" => {
                 let creds = wxwright_mp::load_credentials()

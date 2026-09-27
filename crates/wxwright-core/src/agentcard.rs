@@ -34,6 +34,11 @@ If this machine has no wxwright yet, install it before anything else:
 - Doctor:   `wxwright doctor`                         (environment check)
 - JSON out: append `--json` to any command for a stable machine-readable schema; non-TTY defaults to JSON.
 - stdin:    use `-` as input path.
+- Platforms: `wxwright platforms` lists the ids (wechat / xhs / zhihu / meta /
+  instagram / x / linkedin). `wxwright convert --platform xhs` and the MCP
+  `wxwright_export` tool return the artifact each platform actually consumes:
+  WeChat = dialect rich text, Xiaohongshu and the western feeds = plain-text
+  caption, Zhihu = Markdown.
 
 ## Full pipeline (one command)
 
@@ -57,13 +62,17 @@ Read it, fix the source, retry. Do not ship while `blocking_violations` is non-e
 
 Start `wxwright mcp serve` (stdio) or `wxwright mcp install --target claude`.
 Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
-wxwright_upload_images, wxwright_draft_create, wxwright_draft_list.
+wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
+wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
 
 ## Publishing (optional, needs credentials)
 
 - `wxwright draft create --file article.md --title "..."` creates a 草稿箱 (Drafts) entry.
-- `wxwright publish <draft_id> --yes` performs 群发 (mass send); requires explicit --yes, never run it unprompted.
+- `wxwright draft update|list` manages existing drafts.
+- 群发 (mass send) is intentionally NOT part of the agent surface: it is
+  irreversible and reaches real subscribers, so a human must trigger it from
+  the desktop app. Do not look for a way to automate it.
 "#
     .to_string()
 }
@@ -75,7 +84,7 @@ pub fn card_json() -> Value {
         "role": "Markdown -> WeChat MP compliant rich text engine (CLI + MCP)",
         "exit_codes": { "0": "success", "1": "rule violations (blocking)", "2": "runtime error" },
         "cli": [
-            { "cmd": "convert <input.md|->", "args": ["--theme <name|path>", "--out <file.html|->", "--json"], "desc": "markdown to MP dialect HTML" },
+            { "cmd": "convert <input.md|->", "args": ["--theme <name|path>", "--platform <id>", "--out <file.html|->", "--json"], "desc": "markdown to the target platform's artifact (default: MP dialect HTML)" },
             { "cmd": "validate <input.md|html>", "args": ["--json", "--strict", "--official-check"], "desc": "compliance validation" },
             { "cmd": "fix <input.html>", "args": ["--out <fixed.html>"], "desc": "auto-fix violations, report mode" },
             { "cmd": "copy <input.md>", "args": ["--theme", "--dry-run", "--json"], "desc": "full chain, write rich text to clipboard" },
@@ -86,13 +95,13 @@ pub fn card_json() -> Value {
             { "cmd": "login / logout", "args": ["--appid", "--secret"], "desc": "store MP credentials in OS keychain" },
             { "cmd": "image upload <paths...>", "args": ["--json"], "desc": "upload to material library, print mmbiz mapping" },
             { "cmd": "draft create|update|list", "args": ["--file", "--title", "--author", "--digest", "--thumb-media-id"], "desc": "草稿箱 (Drafts) API" },
-            { "cmd": "publish <draft_id>", "args": ["--yes"], "desc": "群发 (mass send); explicit confirmation required" },
+            { "cmd": "publish <draft_id>", "args": ["--yes"], "desc": "群发 (mass send); HUMAN-ONLY, irreversible, not for agents" },
             { "cmd": "agent-card", "args": ["--md", "--json"], "desc": "this card" }
         ],
         "mcp": {
             "transport": "stdio",
             "start": "wxwright mcp serve",
-            "tools": ["wxwright_convert", "wxwright_validate", "wxwright_copy", "wxwright_themes_list", "wxwright_upload_images", "wxwright_draft_create", "wxwright_draft_list"],
+            "tools": ["wxwright_convert", "wxwright_validate", "wxwright_copy", "wxwright_themes_list", "wxwright_upload_images", "wxwright_draft_create", "wxwright_draft_list", "wxwright_export"],
             "resources": ["wxwright://themes", "wxwright://spec/rules"],
             "prompts": ["wxwright-publish-guide"]
         },
@@ -127,6 +136,7 @@ mod tests {
             "wxwright_upload_images",
             "wxwright_draft_create",
             "wxwright_draft_list",
+            "wxwright_export",
         ] {
             assert!(j.contains(tool), "agent card missing tool {}", tool);
         }

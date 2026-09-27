@@ -7026,7 +7026,6 @@ name = "wxwright-cli"
 version = "0.10.0"
 dependencies = [
  "clap",
- "dirs 5.0.1",
  "serde",
  "serde_json",
  "sys-locale",

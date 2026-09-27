@@ -252,23 +252,7 @@ pub fn load_builtin_theme(id: &str) -> Option<Theme> {
 /// ~/.config/wxwright/themes (Unix). AI-generated and community themes live
 /// here and are picked up by `load_theme` / `list_user_themes` everywhere.
 pub fn user_themes_dir() -> PathBuf {
-    #[cfg(windows)]
-    let base = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("USERPROFILE")
-                .map(|h| PathBuf::from(h).join("AppData").join("Roaming"))
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
-    #[cfg(not(windows))]
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME")
-                .map(|h| PathBuf::from(h).join(".config"))
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
-    base.join("wxwright").join("themes")
+    crate::util::config_root().join("themes")
 }
 
 /// Load a theme by built-in id, user-theme id, or file path.

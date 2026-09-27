@@ -46,6 +46,31 @@ pub struct ImageOutcome {
     pub mmbiz: bool,
 }
 
+impl ImageOutcome {
+    /// True when this image cannot survive a paste into the MP editor or a
+    /// draft push (PRD I-03): the payload must reference a mmbiz URL or an
+    /// https URL WeChat can fetch. base64 payloads, plain-`http` hosts and
+    /// images that failed to load all break after paste.
+    ///
+    /// One predicate shared by `wxwright copy`, the GUI copy button and the
+    /// GUI draft push - previously each site filtered slightly differently and
+    /// the draft path had no gate at all.
+    pub fn paste_hostile(&self) -> bool {
+        if self.mmbiz {
+            return false;
+        }
+        if self.inlined || self.source.starts_with("data:") {
+            return true;
+        }
+        if self.final_src.is_empty() {
+            // Read/upload failed: the renderer emits a placeholder, which is
+            // not something the reader should ever see in a published article.
+            return true;
+        }
+        self.final_src.to_ascii_lowercase().starts_with("http://")
+    }
+}
+
 pub struct Resolved {
     pub src: String,
     pub data_w: Option<u32>,

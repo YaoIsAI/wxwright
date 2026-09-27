@@ -9,6 +9,21 @@
 
 use crate::ir::{Block, Inline, InlineKind};
 
+/// What artifact a platform's primary "copy" action produces. This is the
+/// essential per-platform difference: WeChat pastes dialect rich text into
+/// the MP editor; Xiaohongshu posts a plain-text caption plus an image set;
+/// Zhihu accepts Markdown directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportKind {
+    /// Dialect HTML via the clipboard rich-text flavor (WeChat MP editor).
+    RichTextDialect,
+    /// Plain-text caption (Xiaohongshu note text, Meta/X/LinkedIn text).
+    Caption,
+    /// Raw Markdown (Zhihu and other Markdown-friendly hosts).
+    Markdown,
+}
+
 /// One social-media platform the engine can target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PlatformSpec {
@@ -25,6 +40,10 @@ pub struct PlatformSpec {
     pub image_note: bool,
     /// A publishing API adapter is implemented (draft push or equivalent).
     pub api_publish: bool,
+    /// What this platform's primary export produces. Living here (rather than
+    /// in a `match id` elsewhere) is what makes "descriptor is data" true for
+    /// behaviour as well as for the capability flags.
+    pub export_kind: ExportKind,
     /// Poster / size-studio presets: (label_zh, width, height).
     pub presets: &'static [(&'static str, u32, u32)],
     /// Honest capability note (surfaced in the GUI switcher tooltip).
@@ -33,6 +52,7 @@ pub struct PlatformSpec {
 
 pub const WECHAT: PlatformSpec = PlatformSpec {
     id: "wechat",
+    export_kind: ExportKind::RichTextDialect,
     name_zh: "微信公众号",
     name_en: "WeChat MP",
     rich_text: true,
@@ -52,6 +72,7 @@ pub const WECHAT: PlatformSpec = PlatformSpec {
 
 pub const XHS: PlatformSpec = PlatformSpec {
     id: "xhs",
+    export_kind: ExportKind::Caption,
     name_zh: "小红书",
     name_en: "Xiaohongshu",
     rich_text: false,
@@ -67,6 +88,7 @@ pub const XHS: PlatformSpec = PlatformSpec {
 
 pub const ZHIHU: PlatformSpec = PlatformSpec {
     id: "zhihu",
+    export_kind: ExportKind::Markdown,
     name_zh: "知乎",
     name_en: "Zhihu",
     rich_text: true,
@@ -78,6 +100,7 @@ pub const ZHIHU: PlatformSpec = PlatformSpec {
 
 pub const META: PlatformSpec = PlatformSpec {
     id: "meta",
+    export_kind: ExportKind::Caption,
     name_zh: "Facebook",
     name_en: "Facebook",
     rich_text: false,
@@ -93,6 +116,7 @@ pub const META: PlatformSpec = PlatformSpec {
 
 pub const INSTAGRAM: PlatformSpec = PlatformSpec {
     id: "instagram",
+    export_kind: ExportKind::Caption,
     name_zh: "Instagram",
     name_en: "Instagram",
     rich_text: false,
@@ -108,6 +132,7 @@ pub const INSTAGRAM: PlatformSpec = PlatformSpec {
 
 pub const X: PlatformSpec = PlatformSpec {
     id: "x",
+    export_kind: ExportKind::Caption,
     name_zh: "X (Twitter)",
     name_en: "X (Twitter)",
     rich_text: false,
@@ -122,6 +147,7 @@ pub const X: PlatformSpec = PlatformSpec {
 
 pub const LINKEDIN: PlatformSpec = PlatformSpec {
     id: "linkedin",
+    export_kind: ExportKind::Caption,
     name_zh: "LinkedIn",
     name_en: "LinkedIn",
     rich_text: false,
@@ -156,29 +182,23 @@ pub fn get_platform(id: &str) -> PlatformSpec {
         .unwrap_or(WECHAT)
 }
 
-// ------------------------------------------------------- export adapters --
-
-/// What artifact a platform's primary "copy" action produces. This is the
-/// essential per-platform difference: WeChat pastes dialect rich text into
-/// the MP editor; Xiaohongshu posts a plain-text caption plus an image set;
-/// Zhihu accepts Markdown directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExportKind {
-    /// Dialect HTML via the clipboard rich-text flavor (WeChat MP editor).
-    RichTextDialect,
-    /// Plain-text caption (Xiaohongshu note text, Meta/X/LinkedIn text).
-    Caption,
-    /// Raw Markdown (Zhihu and other Markdown-friendly hosts).
-    Markdown,
+/// Same lookup, but reports whether the id was recognised. Anywhere the
+/// platform comes from user input (frontmatter `platform:`, CLI `--platform`)
+/// callers should surface a warning on `false` - a one-character typo
+/// otherwise silently renders the whole article as WeChat dialect.
+pub fn resolve_platform(id: &str) -> (PlatformSpec, bool) {
+    match list_platforms().into_iter().find(|p| p.id == id) {
+        Some(p) => (p, true),
+        None => (WECHAT, false),
+    }
 }
 
+// ------------------------------------------------------- export adapters --
+
+/// The export artifact for a platform id. Reads the registry, so a new
+/// platform only has to declare its kind once.
 pub fn export_kind(id: &str) -> ExportKind {
-    match id {
-        "wechat" => ExportKind::RichTextDialect,
-        "xhs" => ExportKind::Caption,
-        "zhihu" => ExportKind::Markdown,
-        _ => ExportKind::Caption,
-    }
+    get_platform(id).export_kind
 }
 
 /// Render the document as the platform's plain-text caption: structure is
@@ -192,8 +212,10 @@ pub fn render_caption(doc: &[Block], title: Option<&str>) -> String {
         out.push_str("\n\n");
     }
     push_blocks(doc, &mut out);
-    while out.contains("\n\n\n\n") {
-        out = out.replace("\n\n\n\n", "\n\n\n");
+    // Collapse the blank lines the block renderers emit down to a single
+    // paragraph break - caption hosts render every extra newline literally.
+    while out.contains("\n\n\n") {
+        out = out.replace("\n\n\n", "\n\n");
     }
     out.trim().to_string()
 }
@@ -625,6 +647,65 @@ mod tests {
     fn every_platform_has_at_least_one_preset() {
         for p in list_platforms() {
             assert!(!p.presets.is_empty(), "{} has no presets", p.id);
+        }
+    }
+
+    #[test]
+    fn export_kind_comes_from_the_descriptor() {
+        for p in list_platforms() {
+            assert_eq!(
+                export_kind(p.id),
+                p.export_kind,
+                "export_kind({}) must read the descriptor, not a separate match",
+                p.id
+            );
+        }
+        assert_eq!(export_kind("wechat"), ExportKind::RichTextDialect);
+        assert_eq!(export_kind("xhs"), ExportKind::Caption);
+        assert_eq!(export_kind("zhihu"), ExportKind::Markdown);
+        // Unknown ids fall back to the WeChat dialect, same as get_platform.
+        assert_eq!(export_kind("wechta"), ExportKind::RichTextDialect);
+    }
+
+    #[test]
+    fn resolve_platform_reports_unknown_ids() {
+        let (spec, known) = resolve_platform("xhs");
+        assert!(known);
+        assert_eq!(spec.id, "xhs");
+        let (fallback, known) = resolve_platform("not-a-platform");
+        assert!(!known, "a typo must be reported, not silently accepted");
+        assert_eq!(fallback.id, "wechat");
+    }
+
+    #[test]
+    fn export_kinds_match_the_platforms_actual_intake() {
+        // Explicit table rather than a derived invariant: Zhihu is
+        // rich-text friendly but still takes Markdown as its primary export,
+        // so "rich_text implies dialect" would be wrong.
+        let expected = [
+            ("wechat", ExportKind::RichTextDialect),
+            ("xhs", ExportKind::Caption),
+            ("zhihu", ExportKind::Markdown),
+            ("meta", ExportKind::Caption),
+            ("instagram", ExportKind::Caption),
+            ("x", ExportKind::Caption),
+            ("linkedin", ExportKind::Caption),
+        ];
+        for (id, kind) in expected {
+            let spec = get_platform(id);
+            assert_eq!(spec.id, id, "{id} must be registered");
+            assert_eq!(spec.export_kind, kind, "wrong export kind for {id}");
+        }
+        // Image-note platforms must never claim to paste styled HTML.
+        for p in list_platforms() {
+            if p.image_note {
+                assert_eq!(
+                    p.export_kind,
+                    ExportKind::Caption,
+                    "{} is an image-note platform, so its text export is a caption",
+                    p.id
+                );
+            }
         }
     }
 }

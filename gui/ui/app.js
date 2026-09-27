@@ -35,7 +35,7 @@ const I18N = {
     save_provider: "保存 Provider", active_badge: "使用中",
     ai_assistant: "AI 助手", clear: "清空", send_placeholder: "向 AI 描述你的需求，Enter 发送，Shift+Enter 换行",
     q_polish: "润色当前文章", q_continue: "续写", q_title: "起 5 个标题", q_outline: "帮我列提纲", q_poster: "生成头图文案",
-    ai_insert: "插入编辑器", ai_replace: "替换文章", ai_copy: "复制",
+    ai_insert: "插入编辑器", ai_replace: "替换文章", ai_copy: "复制", ai_copy_rich: "复制富文本",
     agent_title: "Agent 接入", agent_mcp: "MCP 一键接入",
     agent_mcp_hint: "点击对应客户端，wxwright 的 MCP 配置（wxwright mcp serve）会自动写入；写入后重启客户端即可看到 wxwright 工具。",
     agent_card: "Agent 接手卡", agent_card_hint: "把整段卡片复制进任意 AI Agent 的系统提示，Agent 即刻接手；或让它直接调用 CLI / MCP。",
@@ -151,7 +151,7 @@ const I18N = {
     save_provider: "Save provider", active_badge: "active",
     ai_assistant: "AI Assistant", clear: "Clear", send_placeholder: "Describe what you need. Enter to send, Shift+Enter for newline",
     q_polish: "Polish article", q_continue: "Continue writing", q_title: "5 title ideas", q_outline: "Draft an outline", q_poster: "Cover copy",
-    ai_insert: "Insert", ai_replace: "Replace article", ai_copy: "Copy",
+    ai_insert: "Insert", ai_replace: "Replace article", ai_copy: "Copy", ai_copy_rich: "Copy rich text",
     agent_title: "Agent integration", agent_mcp: "One-click MCP setup",
     agent_mcp_hint: "Click a client to write the wxwright MCP config (wxwright mcp serve). Restart the client afterwards.",
     agent_card: "Agent card", agent_card_hint: "Paste this card into any AI agent's system prompt, or let it call the CLI / MCP directly.",
@@ -1033,24 +1033,34 @@ async function doCopy() {
   const btn = $("btn-copy");
   btn.disabled = true;
   try {
-    const res = await invoke("copy_rich", { markdown: $("editor").value, themeId: currentTheme });
-    if (res.copied) {
-      toast(res.html_flavor ? t("copied_ok") : t("copied_plain"), "ok");
-      window.Mozai && Mozai.celebrate();
-    } else if (res.reason === "blocking violations" && res.blocking.length > 0) {
-      const list = `<ul class="toast-list">${res.blocking.slice(0, 5).map((v) => `<li>${v.rule_id}: ${escapeHtml(v.message)}</li>`).join("")}</ul>`;
-      toast(t("copy_blocked_rules"), "err", list);
-    } else if (res.reason === "paste-hostile images" && res.paste_hostile_images.length > 0) {
-      const list = `<ul class="toast-list">${res.paste_hostile_images.slice(0, 5).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`;
-      toast(t("copy_blocked_images"), "err", list);
-    } else {
-      toast(t("copy_failed") + (res.reason || "unknown"), "err");
-    }
+    await copyRichMarkdown($("editor").value);
   } catch (e) {
     toast(t("copy_failed") + String(e), "err");
   } finally {
     btn.disabled = false;
   }
+}
+
+/* Copy an arbitrary Markdown string as WeChat dialect rich text. Shared by the
+   topbar copy button and the AI reply action, so a reply can go straight into
+   the 公众号 editor without first replacing the article body. */
+async function copyRichMarkdown(md) {
+  const res = await invoke("copy_rich", { markdown: md, themeId: currentTheme });
+  if (res.copied) {
+    toast(res.html_flavor ? t("copied_ok") : t("copied_plain"), "ok");
+    window.Mozai && Mozai.celebrate();
+    return true;
+  }
+  if (res.reason === "blocking violations" && res.blocking.length > 0) {
+    const list = `<ul class="toast-list">${res.blocking.slice(0, 5).map((v) => `<li>${v.rule_id}: ${escapeHtml(v.message)}</li>`).join("")}</ul>`;
+    toast(t("copy_blocked_rules"), "err", list);
+  } else if (res.reason === "paste-hostile images" && res.paste_hostile_images.length > 0) {
+    const list = `<ul class="toast-list">${res.paste_hostile_images.slice(0, 5).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`;
+    toast(t("copy_blocked_images"), "err", list);
+  } else {
+    toast(t("copy_failed") + (res.reason || "unknown"), "err");
+  }
+  return false;
 }
 async function doExport() {
   if (!invoke) { toast(t("demo_mode"), "err"); return; }
@@ -1174,6 +1184,10 @@ function finalizeAiMessage(el, content, info = {}) {
       convertNow();
     }],
     [t("ai_copy"), async () => { await copyPlain(content); toast(t("copied_text"), "ok"); }],
+    [t("ai_copy_rich"), async () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      try { await copyRichMarkdown(content); } catch (e) { toast(t("copy_failed") + String(e), "err"); }
+    }],
   ];
   for (const [label, fn] of actionsSpec) {
     const b = document.createElement("button");
@@ -3267,7 +3281,33 @@ function bindUI() {
       toast(t("push_draft_ok", String(r.draft_media_id).slice(0, 12) + "..."), "ok");
       window.Mozai && Mozai.celebrate();
     } catch (e) {
-      toast(String(e), "err");
+      const msg = String(e);
+      if (msg.startsWith("NO_COVER")) {
+        // the drafts API demands a cover: ask for one and retry once
+        try {
+          const { open } = window.__TAURI__.dialog;
+          const picked = await open({
+            multiple: false,
+            filters: [{ name: lang === "zh-CN" ? "图片" : "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+          });
+          if (picked) {
+            const r2 = await invoke("wx_push_draft", {
+              title: loadedTitle || autoTitle($("editor").value),
+              markdown: $("editor").value,
+              themeId: currentTheme,
+              coverImagePath: picked,
+            });
+            toast(t("push_draft_ok", String(r2.draft_media_id).slice(0, 12) + "..."), "ok");
+            window.Mozai && Mozai.celebrate();
+          } else {
+            toast(msg, "err");
+          }
+        } catch (e2) {
+          toast(String(e2), "err");
+        }
+      } else {
+        toast(msg, "err");
+      }
     } finally {
       btn.disabled = false;
     }

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Runtime};
@@ -218,19 +218,21 @@ fn keyring_entry(platform: &str) -> Option<keyring::Entry> {
     keyring::Entry::new("wxwright", &format!("social-{platform}")).ok()
 }
 
-fn read_file_map(path: &PathBuf) -> HashMap<String, SocialBinding> {
+fn read_file_map(path: &Path) -> HashMap<String, SocialBinding> {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn write_file_map(path: &PathBuf, map: &HashMap<String, SocialBinding>) -> Result<(), String> {
+fn write_file_map(path: &Path, map: &HashMap<String, SocialBinding>) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let s = serde_json::to_string_pretty(map).map_err(|e| e.to_string())?;
-    std::fs::write(path, s).map_err(|e| e.to_string())
+    // This file holds client secrets and refresh tokens when the OS keychain
+    // is unavailable, so it gets owner-only permissions on Unix.
+    wxwright_core::util::write_private(path, &s).map_err(|e| e.to_string())
 }
 
 pub fn load_binding(platform: &str) -> Option<SocialBinding> {
@@ -518,11 +520,11 @@ pub fn social_oauth_cancel() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn load_binding_from(platform: &str, path: &PathBuf) -> Option<SocialBinding> {
+    fn load_binding_from(platform: &str, path: &Path) -> Option<SocialBinding> {
         read_file_map(path).get(platform).cloned()
     }
 
-    fn save_binding_to(platform: &str, b: &SocialBinding, path: &PathBuf) -> Result<(), String> {
+    fn save_binding_to(platform: &str, b: &SocialBinding, path: &Path) -> Result<(), String> {
         let mut map = read_file_map(path);
         map.insert(platform.to_string(), b.clone());
         write_file_map(path, &map)

@@ -10,16 +10,122 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Fixed
+- **AppSecret could reach logs, JSON output and toasts.** `wxwright-mp` builds
+  its request URLs with the AppSecret / access_token in the query string, and
+  `ureq`'s status-error `Display` renders as `"{full_url}: status code {code}"`.
+  Any 4xx/5xx (proxy, WAF, CDN) therefore printed the credential in clear text.
+  All engine error paths now run through `util::redact_secrets`, a hand-written
+  scanner (no regex) that masks the value of `secret`, `appsecret`,
+  `access_token`, `client_secret`, `refresh_token`, `session_key`, `code`,
+  `code_verifier` and `ticket` - only at parameter boundaries, so `errcode=`
+  is never mistaken for `code=`. Four unit tests cover the ureq-shaped string,
+  the OAuth case, the `errcode` trap and multibyte input.
+- **AI-authored card styling was silently discarded.** The theme prompt
+  advertised `card_note` / `card_tip` / `card_keypoint` and friends, but
+  `render_card` computed the role and then threw it away (`let _ = role;`), and
+  `base_leaf` hardcoded `paragraph_leaf`. A theme that only styled cards
+  produced byte-identical output and nothing failed. `render_card`,
+  `base_leaf`, `render_paragraph`, `render_quote`, `render_code`,
+  `render_table`, `render_list_item`, `render_standalone_image`, `render_toc`,
+  `render_rule` and `render_formula` now all consult `theme.blocks` through
+  `css()` / `css_owned()`. The `paragraph` role was ignored the same way and is
+  fixed too.
+- **The role contract can no longer drift.** New `wxwright_core::roles`
+  module holds the canonical table (25 roles, 39 expanded keys); the renderer,
+  the AI theme prompt (`theme_schema()` builds the advertised list from it) and
+  `validate_generated_theme` (which now rejects any `[block.*]` key the
+  renderer would never read, instead of accepting a theme that silently
+  no-ops) all read the same source. `tests/theme_roles_test.rs` gives every key
+  a distinctive declaration and asserts it reaches the rendered HTML.
+- **The GUI draft push had no I-03 gate.** `wx_push_draft` checked blocking
+  violations only, so a failed image upload silently degraded to a base64 data
+  URI and the draft shipped with images the MP editor renders as broken. It now
+  shares `ImageOutcome::paste_hostile()` with the CLI copy path. The predicate
+  also covers plain-`http` hosts and images that failed to load, both of which
+  previously slipped past the CLI filter too.
+- **`wxwright doctor` always exited 0**, so it could not gate a CI or SCP run.
+  It now returns 1 when any check fails, gains `--strict` (warnings fail too),
+  and reports two new checks: a writable state directory (`err` when read-only)
+  and whether the desktop app has an AI provider configured (`warn`).
+- **A fast AI job could hang the trigger button forever.** The backend inserts
+  the job, spawns it and only then returns the id, so a job that failed
+  immediately emitted `done`/`error` before `ai-jobs.js` had registered a
+  handler; the event was dropped and the promise never settled.
+  `ai-jobs.js` now buffers events that arrive before their handler exists and
+  replays them on registration.
+- **A panicking job leaked its registry entry.** `jobs.rs` removed the job as
+  the last statement of the worker closure, so an unwind skipped it and
+  `ai_job_stop` kept answering `true` for a job that was gone. A `JobGuard`
+  with `Drop` now does the cleanup, the worker body is wrapped in
+  `catch_unwind`, and a panic emits a terminal `error` event so the UI
+  recovers.
+- **Token expiry only retried on one of three call paths.**
+  `upload_material_once` and `post_with_token` (draft add/update) never
+  refreshed, so a long session died half way through. All authenticated calls
+  now funnel through `with_token_retry`. Upload backoff is exponential
+  (500ms/1s/2s/4s) instead of a flat `500ms * attempt`.
+- **Cache-bust versions had drifted** (`app.js`, `pet.js`, `ai-jobs.js` were
+  all edited after their `?v=` was set, so a WebView could serve the old
+  script). Bumped to app v25 / pet v20 / ai-jobs v20.
+- **Fallback credential files were world-readable on Unix.** `config.toml`
+  (which holds the AppSecret in clear text under `--no-keyring`),
+  `settings.json` and `social-bindings.json` are now written through
+  `util::write_private`, which applies 0600. Windows keeps the per-user
+  %APPDATA% ACL; the difference is documented in the function.
+- **7 dead Tauri commands removed** (`ai_complete`, `ai_generate_svg`,
+  `ai_generate_theme`, `ai_image`, `comfy_txt2img`, `comfy_img2img`,
+  `validate_md`). The frontend never invoked any of them after the unified
+  `ai_job_start` runtime landed, leaving two generation runtimes side by side
+  with different budget ladders. `ai::complete` / `chat_once` /
+  `generate_theme` are now `#[cfg(test)]`-only (the opt-in live smoke tests
+  still drive them); `generate_svg_component` was genuinely dead and is gone.
+- **`platform` id dispatch moved into the descriptor.** `export_kind(id)`
+  matched on strings while the registry claimed "descriptors are data"; the
+  kind is now a `PlatformSpec` field. `resolve_platform(id)` reports whether an
+  id was recognised, so a typo in `frontmatter` or `--platform` warns instead
+  of silently rendering WeChat dialect.
+- **The state directory had three definitions** (`theme::user_themes_dir`,
+  `mp::config_path`, `ai::settings_path`, plus three copies in `comfy.rs`).
+  They all read `wxwright_core::util::config_root()` now, which is what
+  `doctor` probes.
+- **Caption exports emitted stray blank lines** - the collapser only reduced
+  runs of four newlines to three. Captions now collapse to a single paragraph
+  break.
+
 ### Added
 - **Push-draft cover picker**: articles without an inline image now ask for
   a local cover image (file dialog) when pushing to the MP drafts box; the
   picked file uploads to the material library as the cover thumb. Backend
-  accepts `coverImagePath`; the "no cover" dead end is gone.
+  accepts `coverImagePath`; on the NO_COVER failure the UI now asks for a
+  cover file and retries once, and the error surfaces the per-image upload
+  warnings (the classic cause: the MP IP whitelist, errcode 40164).
 - **GUI draft-box push**: the editor status row gains a Push-draft button
   (WeChat platform only) that runs the same chain as `wxwright draft create`:
   dialect render with the article theme, local images uploaded to mmbiz,
   blocking-violation gate, then the MP drafts API. Closes the
   "promise-without-button" gap found in the release review.
+- **`wxwright convert --platform <id>`** and the MCP **`wxwright_export`** tool:
+  one Markdown source now reaches every registered platform from the CLI and
+  from an agent, not just from the desktop app. WeChat returns dialect rich
+  text, Xiaohongshu / Facebook / Instagram / X / LinkedIn return the plain-text
+  caption they actually consume, Zhihu returns Markdown unchanged.
+- **AI replies gained a "Copy rich text" action**: the reply can go straight
+  into the 公众号 editor without first replacing the article body. The copy
+  chain is shared with the topbar button (`copyRichMarkdown`), so the blocking
+  and paste-hostile reporting is identical.
+- **Draft metadata**: `wx_push_draft` now reads `author` and
+  `digest`/`summary`/`description` from the article frontmatter (digest capped
+  at the WeChat 120-character limit) instead of sending empty strings.
+
+### Changed
+- The agent card no longer hands agents `wxwright publish <draft_id> --yes`.
+  群发 is irreversible and reaches real subscribers; the card now states
+  explicitly that a human must trigger it from the desktop app.
+- `wxwright-mp` no longer depends on `dirs` directly (the CLI dropped it too).
+
+### Docs
+- README / README.zh-CN / docs/agent-integration.md list the 8th MCP tool.
 
 ## [0.10.0] - 2026-09-26
 

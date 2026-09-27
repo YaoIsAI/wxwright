@@ -43,10 +43,7 @@ pub struct AiSettings {
 }
 
 fn settings_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("wxwright")
-        .join("settings.json")
+    wxwright_core::util::config_root().join("settings.json")
 }
 
 fn load_settings() -> AiSettings {
@@ -62,7 +59,7 @@ fn save_settings(s: &AiSettings) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let body = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
-    std::fs::write(&path, body).map_err(|e| e.to_string())
+    wxwright_core::util::write_private(&path, &body).map_err(|e| e.to_string())
 }
 
 fn key_entry(id: &str) -> Option<keyring::Entry> {
@@ -434,6 +431,7 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
 /// Budget ladder: reasoning models can burn the whole initial budget on
 /// thinking, so an empty content with finish_reason=length retries at a
 /// doubled budget (capped) before giving up with a clear diagnostic.
+#[cfg(test)]
 pub fn complete(
     system: &str,
     user: &str,
@@ -469,6 +467,7 @@ pub(crate) struct OnceReply {
 }
 
 /// One raw non-streaming chat call, parsed into content + finish_reason.
+#[cfg(test)]
 fn chat_once(
     base_url: &str,
     key: &str,
@@ -524,7 +523,22 @@ pub(crate) fn empty_reply_diagnostic(reply: &OnceReply) -> String {
         ),
         "content_filter" => "AI 输出被服务端内容安全过滤".into(),
         _ if reply.has_reasoning => "AI 只返回了思考内容、正文为空（推理型模型常见）；重试一次或更换模型".into(),
-        _ => format!("AI 返回的正文为空（finish_reason={}）；可重试或检查该模型的输出格式", reply.finish),
+        _ => {
+            // Include what actually came back - an empty-content failure with a
+            // non-empty body is almost always a formatting problem worth seeing.
+            let preview: String = reply.content.chars().take(80).collect();
+            if preview.trim().is_empty() {
+                format!(
+                    "AI 返回的正文为空（finish_reason={}）；可重试或检查该模型的输出格式",
+                    reply.finish
+                )
+            } else {
+                format!(
+                    "AI 未产出可用正文（finish_reason={}），原始返回片段：{}",
+                    reply.finish, preview
+                )
+            }
+        }
     }
 }
 
@@ -638,29 +652,6 @@ pub(crate) const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组�
 5. 不使用 font-family；颜色避开纯黑（Dark Mode 下 SVG 不转换，建议浅背景深色字）；
 6. 交互逻辑要简单可靠：点击渐显/切换/描边/进度点亮等，不要依赖复杂状态机。";
 
-pub fn generate_svg_component(desc: &str) -> Result<String, String> {
-    let mut last_err = String::new();
-    for attempt in 0..2 {
-        let user_text = if attempt == 0 {
-            format!("组件效果需求：{}", desc)
-        } else {
-            format!(
-                "组件效果需求：{}
-
-注意：上一次输出未通过合规校验，错误：{}。请修正后重新输出完整片段。",
-                desc, last_err
-            )
-        };
-        let content = complete(SVG_EXPERT_SYSTEM, &user_text, 4096, 0.8)?;
-        let snippet = extract_svg_snippet(&content)?;
-        match validate_svg_snippet(&snippet) {
-            Ok(()) => return Ok(snippet),
-            Err(e) => last_err = e,
-        }
-    }
-    Err(format!("AI 组件未通过合规校验：{}", last_err))
-}
-
 pub(crate) fn extract_svg_snippet(text: &str) -> Result<String, String> {
     let t = text.trim();
     let start = t.find("<section").or_else(|| t.find("<svg"));
@@ -700,7 +691,7 @@ pub(crate) const THEME_SYSTEM: &str = "你是微信公众号排版主题设计�
 4. 必须包含 [meta]（id 用小写字母数字和连字符）与 [colors]；\n\
 5. [block.*] 覆盖只能使用安全 CSS 属性（margin/padding/border/color/font-size/font-weight/letter-spacing/text-align/line-height/background/border-radius）。";
 
-pub(crate) const THEME_SCHEMA: &str = r##"可用 color 键（全部可选，未提供的用引擎默认）：
+const THEME_SCHEMA_TEMPLATE: &str = r##"可用 color 键（全部可选，未提供的用引擎默认）：
 accent, text, text_secondary, text_tertiary, border, border_strong,
 quote_bg, quote_text, code_bg, code_text, code_border, inline_code_color,
 table_head_bg, table_border, note_bg, note_border, tip_bg, tip_border,
@@ -744,13 +735,31 @@ padding-left = "10px"
 [block.h2_leaf]
 color = "#2F6CEA"
 
+[block.card_keypoint]
+background = "#EFF4FE"
+border-left = "4px solid #2F6CEA"
+padding = "14px 16px"
+border-radius = "0 8px 8px 0"
+
+[block.card_keypoint_leaf]
+color = "#0C447C"
+font-size = "15px"
+
 [block.*] 覆盖规则（严格遵守）：
-1. role 只能取：h1 / h2 / h3 / paragraph / card_note / card_tip / card_important /
-   card_warning / card_caution / card_comment / card_keypoint，可加 _leaf 后缀修饰行内文字；
+1. role 只能取：{ROLES}；
+   可加 _leaf 后缀修饰行内文字；卡片类（card_*）还可加 _title 后缀修饰卡片标题标签；
 2. 禁止任何伪类与复杂选择器：没有 a:hover、没有 [block.a]、没有嵌套——写 [block.a:hover] 是非法 TOML，会直接被拒；
 3. 想要发光、渐变、悬浮效果，用安全属性近似：border + 鲜明 accent 色、background、letter-spacing、border-radius；
 4. 属性只允许：margin / padding / border / color / font-size / font-weight /
    letter-spacing / text-align / line-height / background / border-radius。"##;
+
+/// The theme schema with its role list generated from
+/// `wxwright_core::roles::ROLES`. Generating it means the prompt can never
+/// advertise a role the renderer does not consume - the drift that used to
+/// silently discard every AI-authored card style.
+pub(crate) fn theme_schema() -> String {
+    THEME_SCHEMA_TEMPLATE.replace("{ROLES}", &wxwright_core::roles::prompt_role_list())
+}
 
 const THEME_SAMPLE_DOC: &str = r#"# 标题一
 
@@ -900,6 +909,24 @@ pub(crate) fn sanitize_model_toml(src: &str) -> String {
 /// blocking violations. Returns non-blocking warnings.
 pub(crate) fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, String> {
     let t = theme::parse_theme(toml_src).map_err(|e| format!("TOML 解析失败: {}", e))?;
+
+    // A role the renderer does not consume can never have an effect. Reject it
+    // loudly instead of accepting a theme that silently does nothing - the
+    // failure mode that made AI-authored card styling invisible for so long.
+    let unknown: Vec<String> = t
+        .blocks
+        .keys()
+        .filter(|k| !wxwright_core::roles::is_known_key(k))
+        .cloned()
+        .collect();
+    if !unknown.is_empty() {
+        return Err(format!(
+            "以下 [block.*] 角色不会被渲染器读取，请删除或改用受支持的角色: {}。受支持的角色：{}",
+            unknown.join(", "),
+            wxwright_core::roles::prompt_role_list()
+        ));
+    }
+
     let opts = ConvertOptions::new(t);
     let out = pipeline(THEME_SAMPLE_DOC, &opts).map_err(|e| format!("渲染失败: {}", e))?;
     let blocks = out.blocking_violations();
@@ -935,12 +962,13 @@ pub(crate) fn save_theme_artifact(toml_src: &str) -> Result<serde_json::Value, S
 /// Generate a brand-new theme via the active AI provider, validate it
 /// against the official rules, persist it into the user themes dir.
 /// One automatic retry feeds the validation errors back to the model.
+#[cfg(test)]
 pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
     let (p, key) = active_provider()?;
     let base_user = format!(
         "请设计一个微信公众号排版主题。风格要求：{}\n\n{}",
         description.trim(),
-        THEME_SCHEMA
+        theme_schema()
     );
     let mut last_err = String::new();
     let mut last_raw = String::new();

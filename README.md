@@ -67,7 +67,7 @@ wxwright mcp install --target claude   # or cursor | vscode | opencode
 wxwright mcp serve                     # stdio MCP server
 ```
 
-MCP tools: `wxwright_convert`, `wxwright_validate`, `wxwright_copy`, `wxwright_themes_list`, `wxwright_upload_images`, `wxwright_draft_create`, `wxwright_draft_list`.
+MCP tools: `wxwright_convert`, `wxwright_validate`, `wxwright_copy`, `wxwright_themes_list`, `wxwright_upload_images`, `wxwright_draft_create`, `wxwright_draft_list`, `wxwright_export`.
 Resources: `wxwright://themes`, `wxwright://spec/rules` (the full rule table, bilingual).
 Prompts: `wxwright-publish-guide`.
 

@@ -78,7 +78,8 @@ Start: `wxwright mcp serve` (stdio, newline-delimited JSON-RPC 2.0) or install
 into a client with `wxwright mcp install --target claude|cursor|vscode|opencode`.
 
 - Tools: `wxwright_convert`, `wxwright_validate`, `wxwright_copy`,
-  `wxwright_themes_list`, `wxwright_draft_create`, `wxwright_draft_list`
+  `wxwright_themes_list`, `wxwright_draft_create`, `wxwright_draft_list`,
+  `wxwright_export`
 - Resources: `wxwright://themes`, `wxwright://spec/rules`
 - Prompts: `wxwright-publish-guide`
 - Tool results carry both `content[0].text` (JSON string) and

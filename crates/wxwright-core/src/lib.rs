@@ -14,6 +14,7 @@ pub mod normalizer;
 pub mod parser;
 pub mod platform;
 pub mod render;
+pub mod roles;
 pub mod rules;
 pub mod theme;
 pub mod util;

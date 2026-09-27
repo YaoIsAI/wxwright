@@ -72,10 +72,26 @@ impl BodyCtx {
 /// Compose a style string: token-expanded defaults, overlaid by the theme's
 /// role overrides.
 fn css(theme: &Theme, role: &str, defaults: &[(&str, &str)]) -> String {
-    let mut decls: Vec<(String, String)> = defaults
+    let decls: Vec<(String, String)> = defaults
         .iter()
         .map(|(p, v)| (p.to_string(), expand(v, theme)))
         .collect();
+    apply_role_overrides(theme, role, decls)
+}
+
+/// Same contract as `css`, for defaults computed at runtime (theme colours,
+/// per-column widths) that cannot live in a `&'static` slice. Values still go
+/// through token expansion, so `"{accent}"` works here too.
+fn css_owned(theme: &Theme, role: &str, mut decls: Vec<(String, String)>) -> String {
+    for (_, v) in decls.iter_mut() {
+        *v = expand(v, theme);
+    }
+    apply_role_overrides(theme, role, decls)
+}
+
+/// Theme overrides win per property; `font-family` is dropped even if a theme
+/// asks for it (R-3.1 is absolute).
+fn apply_role_overrides(theme: &Theme, role: &str, mut decls: Vec<(String, String)>) -> String {
     if let Some(over) = theme.blocks.get(role) {
         for (p, v) in over {
             if p.eq_ignore_ascii_case("font-family") {
@@ -419,22 +435,24 @@ pub fn render_chart(spec: &ChartSpec) -> String {
     out
 }
 
+/// Inline style for text runs. A nested scope (quote / card / list item) has
+/// already resolved its own leaf style, so it wins; at the document root the
+/// style comes from the theme's `<role>_leaf` entry (PRD 8: the theme is the
+/// single place a role's typography is decided).
 fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
-    let _ = role;
-    if scope.leaf.is_empty() {
-        css(
-            ctx.theme,
-            "paragraph_leaf",
-            &[
-                ("font-size", "15px"),
-                ("color", "{text}"),
-                ("line-height", "1.75"),
-                ("letter-spacing", "0.3px"),
-            ],
-        )
-    } else {
-        scope.leaf.clone()
+    if !scope.leaf.is_empty() {
+        return scope.leaf.clone();
     }
+    css(
+        ctx.theme,
+        &format!("{}_leaf", role),
+        &[
+            ("font-size", "15px"),
+            ("color", "{text}"),
+            ("line-height", "1.75"),
+            ("letter-spacing", "0.3px"),
+        ],
+    )
 }
 
 fn render_heading(
@@ -514,7 +532,25 @@ fn render_paragraph(inlines: &[Inline], ctx: &Ctx, scope: &BodyCtx) -> String {
         return String::new();
     }
     let inner = render_inlines(inlines, ctx, scope);
-    section(&scope.para_margin, &inner)
+    // `scope.para_margin` arrives as a ready declaration ("margin: 0 0 16px;").
+    // Split it back into a property/value pair so a theme can still override
+    // `margin` through [block.paragraph] - otherwise the advertised
+    // `paragraph` role would be the one key the renderer never read.
+    let style = css_owned(ctx.theme, "paragraph", vec![split_decl(&scope.para_margin)]);
+    section(&style, &inner)
+}
+
+/// Split a single declaration ("margin: 0 0 16px;" / "margin: 0 0 16px")
+/// into (property, value). Falls back to a paragraph margin when the input is
+/// empty or malformed.
+fn split_decl(decl: &str) -> (String, String) {
+    let d = decl.trim().trim_end_matches(';');
+    match d.split_once(':') {
+        Some((p, v)) if !p.trim().is_empty() && !v.trim().is_empty() => {
+            (p.trim().to_string(), v.trim().to_string())
+        }
+        _ => ("margin".to_string(), "0 0 16px".to_string()),
+    }
 }
 
 fn render_inlines(inlines: &[Inline], ctx: &Ctx, scope: &BodyCtx) -> String {
@@ -736,17 +772,25 @@ fn render_standalone_image(
         &render_img_tag(img, ctx),
     );
     if let Some(cap) = caption {
-        let style = format!(
-            "margin-top: 8px; text-align: center; font-size: 13px; color: {}; line-height: 1.6;",
-            ctx.theme.color("text_tertiary")
+        let style = css(
+            ctx.theme,
+            "figure_caption",
+            &[
+                ("margin-top", "8px"),
+                ("text-align", "center"),
+                ("font-size", "13px"),
+                ("color", "{text_tertiary}"),
+                ("line-height", "1.6"),
+            ],
         );
         let inner = render_inlines(
             cap,
             ctx,
             &BodyCtx {
-                leaf: format!(
-                    "font-size: 13px; color: {};",
-                    ctx.theme.color("text_tertiary")
+                leaf: css(
+                    ctx.theme,
+                    "figure_caption_leaf",
+                    &[("font-size", "13px"), ("color", "{text_tertiary}")],
                 ),
                 para_margin: String::new(),
             },
@@ -813,10 +857,17 @@ fn render_code(lang: Option<&str>, code: &str, ctx: &Ctx) -> String {
     inner.push_str(&section("padding: 2px 0; min-width: 0;", &body));
 
     section(
-        &format!(
-            "margin: 20px 0; background: {}; border: 1px solid {}; border-radius: 8px; padding: 12px 14px; overflow-x: auto;",
-            ctx.theme.color("code_bg"),
-            ctx.theme.color("code_border")
+        &css(
+            ctx.theme,
+            "code",
+            &[
+                ("margin", "20px 0"),
+                ("background", "{code_bg}"),
+                ("border", "1px solid {code_border}"),
+                ("border-radius", "8px"),
+                ("padding", "12px 14px"),
+                ("overflow-x", "auto"),
+            ],
         ),
         &inner,
     )
@@ -824,24 +875,39 @@ fn render_code(lang: Option<&str>, code: &str, ctx: &Ctx) -> String {
 
 fn render_quote(blocks: &[Block], ctx: &Ctx) -> String {
     let scope = BodyCtx {
-        leaf: format!(
-            "font-size: 14px; color: {}; line-height: 1.7;",
-            ctx.theme.color("quote_text")
+        leaf: css(
+            ctx.theme,
+            "quote_leaf",
+            &[
+                ("font-size", "14px"),
+                ("color", "{quote_text}"),
+                ("line-height", "1.7"),
+            ],
         ),
         para_margin: "margin: 0 0 8px;".into(),
     };
     let inner = render_blocks(blocks, ctx, &scope);
     section(
-        &format!(
-            "margin: 20px 0; padding: 12px 16px; background: {}; border-left: 3px solid {}; border-radius: 0 8px 8px 0;",
-            ctx.theme.color("quote_bg"),
-            ctx.theme.color("border_strong")
+        &css(
+            ctx.theme,
+            "quote",
+            &[
+                ("margin", "20px 0"),
+                ("padding", "12px 16px"),
+                ("background", "{quote_bg}"),
+                ("border-left", "3px solid {border_strong}"),
+                ("border-radius", "0 8px 8px 0"),
+            ],
         ),
         &inner,
     )
 }
 
 fn render_card(kind: CardKind, blocks: &[Block], ctx: &Ctx) -> String {
+    // The role is the theme's handle on this card type. It used to be computed
+    // and then discarded (`let _ = role;`), so every `[block.card_note]` entry
+    // an AI-generated theme wrote was silently dropped - the single biggest
+    // reason "AI layout" looked like it did nothing. See roles.rs.
     let role = kind.role();
     let border_key = match kind {
         CardKind::Note => "note_border",
@@ -861,36 +927,58 @@ fn render_card(kind: CardKind, blocks: &[Block], ctx: &Ctx) -> String {
         CardKind::Comment => "comment_bg",
         CardKind::Keypoint => "keypoint_bg",
     };
-    let border_css = match kind {
-        CardKind::Comment => format!("border: 1px dashed {};", ctx.theme.color("border_strong")),
-        _ => format!("border-left: 4px solid {};", ctx.theme.color(border_key)),
-    };
-    let mut html = section(
-        &format!(
-            "margin: 20px 0; padding: 12px 16px; background: {}; {} border-radius: 0 8px 8px 0;",
-            ctx.theme.color(bg_key),
-            border_css
+    let (border_prop, border_val) = match kind {
+        CardKind::Comment => (
+            "border",
+            format!("1px dashed {}", ctx.theme.color("border_strong")),
         ),
+        _ => (
+            "border-left",
+            format!("4px solid {}", ctx.theme.color(border_key)),
+        ),
+    };
+    let container = css_owned(
+        ctx.theme,
+        role,
+        vec![
+            ("margin".into(), "20px 0".into()),
+            ("padding".into(), "12px 16px".into()),
+            ("background".into(), ctx.theme.color(bg_key)),
+            (border_prop.into(), border_val),
+            ("border-radius".into(), "0 8px 8px 0".into()),
+        ],
+    );
+    let title = css_owned(
+        ctx.theme,
+        &format!("{}_title", role),
+        vec![
+            ("font-size".into(), "13px".into()),
+            ("font-weight".into(), "600".into()),
+            ("color".into(), ctx.theme.color(border_key)),
+            ("line-height".into(), "1.5".into()),
+            ("letter-spacing".into(), "0.5px".into()),
+        ],
+    );
+    let mut html = section(
+        &container,
         &section(
             "margin-bottom: 6px;",
-            &leaf(
-                &format!(
-                    "font-size: 13px; font-weight: 600; color: {}; line-height: 1.5; letter-spacing: 0.5px;",
-                    ctx.theme.color(border_key)
-                ),
-                &escape_text(&i18n::t(kind.i18n_key())),
-            ),
+            &leaf(&title, &escape_text(&i18n::t(kind.i18n_key()))),
         ),
     );
     let scope = BodyCtx {
-        leaf: format!(
-            "font-size: 14px; color: {}; line-height: 1.7;",
-            ctx.theme.color("text")
+        leaf: css_owned(
+            ctx.theme,
+            &format!("{}_leaf", role),
+            vec![
+                ("font-size".into(), "14px".into()),
+                ("color".into(), ctx.theme.color("text")),
+                ("line-height".into(), "1.7".into()),
+            ],
         ),
         para_margin: "margin: 0 0 8px;".into(),
     };
     html.push_str(&render_blocks(blocks, ctx, &scope));
-    let _ = role;
     html
 }
 
@@ -955,9 +1043,15 @@ fn render_list_item(
     }
 
     // Content: first paragraph inline with marker, further blocks below.
-    let base = format!(
-        "font-size: 15px; color: {}; line-height: 1.75; letter-spacing: 0.3px;",
-        ctx.theme.color("text")
+    let base = css(
+        ctx.theme,
+        "list_item_leaf",
+        &[
+            ("font-size", "15px"),
+            ("color", "{text}"),
+            ("line-height", "1.75"),
+            ("letter-spacing", "0.3px"),
+        ],
     );
     let mut first_done = false;
     for b in &item.blocks {
@@ -990,9 +1084,14 @@ fn render_list_item(
     }
 
     section(
-        &format!(
-            "margin: 6px 0; padding-left: {:.2}em; line-height: 1.75;",
-            indent
+        &css_owned(
+            ctx.theme,
+            "list_item",
+            vec![
+                ("margin".into(), "6px 0".into()),
+                ("padding-left".into(), format!("{:.2}em", indent)),
+                ("line-height".into(), "1.75".into()),
+            ],
         ),
         &inner,
     )
@@ -1035,29 +1134,35 @@ fn render_table(
     };
 
     let cell_base = |i: usize, head: bool| -> String {
-        let mut s = format!(
-            "min-width: {}; border: 1px solid {}; padding: 8px 10px; text-align: {}; font-size: 14px; line-height: 1.6;",
-            minw(i),
-            ctx.theme.color("table_border"),
-            align_of(i)
-        );
+        let mut decls: Vec<(String, String)> = vec![
+            ("min-width".into(), minw(i)),
+            (
+                "border".into(),
+                format!("1px solid {}", ctx.theme.color("table_border")),
+            ),
+            ("padding".into(), "8px 10px".into()),
+            ("text-align".into(), align_of(i).to_string()),
+            ("font-size".into(), "14px".into()),
+            ("line-height".into(), "1.6".into()),
+            ("color".into(), ctx.theme.color("text")),
+        ];
         if head {
-            s.push_str(&format!(
-                " background: {}; font-weight: 600; color: {};",
-                ctx.theme.color("table_head_bg"),
-                ctx.theme.color("text")
-            ));
-        } else {
-            s.push_str(&format!(" color: {};", ctx.theme.color("text")));
+            decls.push(("background".into(), ctx.theme.color("table_head_bg")));
+            decls.push(("font-weight".into(), "600".into()));
         }
-        s
+        let role = if head { "table_head" } else { "table_cell" };
+        css_owned(ctx.theme, role, decls)
     };
     // Leaf runs inside cells carry only typography, not the cell layout.
     let cell_leaf = |head: bool| -> String {
         if head {
-            format!("font-weight: 600; color: {};", ctx.theme.color("text"))
+            css(
+                ctx.theme,
+                "table_head_leaf",
+                &[("font-weight", "600"), ("color", "{text}")],
+            )
         } else {
-            format!("color: {};", ctx.theme.color("text"))
+            css(ctx.theme, "table_cell_leaf", &[("color", "{text}")])
         }
     };
 
@@ -1114,7 +1219,11 @@ fn render_table(
     }
 
     section(
-        "margin: 20px 0; overflow-x: auto;",
+        &css(
+            ctx.theme,
+            "table",
+            &[("margin", "20px 0"), ("overflow-x", "auto")],
+        ),
         &format!(
             "<table style=\"width: 100%; border-collapse: collapse;\">{}{}</table>",
             thead, tbody
@@ -1124,9 +1233,15 @@ fn render_table(
 
 fn render_rule(ctx: &Ctx) -> String {
     section(
-        &format!(
-            "margin: 28px 0; border-top: 1px solid {}; line-height: 1px; font-size: 0;",
-            ctx.theme.color("border")
+        &css(
+            ctx.theme,
+            "rule",
+            &[
+                ("margin", "28px 0"),
+                ("border-top", "1px solid {border}"),
+                ("line-height", "1px"),
+                ("font-size", "0"),
+            ],
         ),
         "",
     )
@@ -1135,6 +1250,15 @@ fn render_rule(ctx: &Ctx) -> String {
 fn render_toc(ctx: &Ctx) -> String {
     let mut items = String::new();
     let mut seq = 0;
+    let item_leaf = css(
+        ctx.theme,
+        "toc_item_leaf",
+        &[
+            ("font-size", "14px"),
+            ("color", "{text}"),
+            ("line-height", "1.7"),
+        ],
+    );
     for (level, text) in &ctx.toc_items {
         seq += 1;
         if seq > 25 {
@@ -1142,30 +1266,45 @@ fn render_toc(ctx: &Ctx) -> String {
         }
         let indent = if *level >= 3 { "1.4em" } else { "0em" };
         items.push_str(&section(
-            &format!("margin: 4px 0; padding-left: {}; line-height: 1.7;", indent),
-            &leaf(
-                &format!(
-                    "font-size: 14px; color: {}; line-height: 1.7;",
-                    ctx.theme.color("text")
-                ),
-                &escape_text(&format!("{}. {}", seq, text)),
+            &css_owned(
+                ctx.theme,
+                "toc_item",
+                vec![
+                    ("margin".into(), "4px 0".into()),
+                    ("padding-left".into(), indent.to_string()),
+                    ("line-height".into(), "1.7".into()),
+                ],
             ),
+            &leaf(&item_leaf, &escape_text(&format!("{}. {}", seq, text))),
         ));
     }
     section(
-        &format!(
-            "margin: 20px 0; padding: 14px 18px; border: 1px solid {}; border-radius: 8px; background: {};",
-            ctx.theme.color("border"),
-            ctx.theme.color("toc_bg")
+        &css(
+            ctx.theme,
+            "toc",
+            &[
+                ("margin", "20px 0"),
+                ("padding", "14px 18px"),
+                ("border", "1px solid {border}"),
+                ("border-radius", "8px"),
+                ("background", "{toc_bg}"),
+            ],
         ),
         &format!(
             "{}{}",
             section(
                 "margin-bottom: 8px;",
                 &leaf(
-                    &format!(
-                        "font-size: 13px; font-weight: 600; color: {}; letter-spacing: 2px; line-height: 1.5;",
-                        ctx.theme.color("text_tertiary")
+                    &css(
+                        ctx.theme,
+                        "toc_title",
+                        &[
+                            ("font-size", "13px"),
+                            ("font-weight", "600"),
+                            ("color", "{text_tertiary}"),
+                            ("letter-spacing", "2px"),
+                            ("line-height", "1.5"),
+                        ],
                     ),
                     &escape_text(&i18n::t("toc.title")),
                 ),
@@ -1177,14 +1316,27 @@ fn render_toc(ctx: &Ctx) -> String {
 
 fn render_formula(latex: &str, ctx: &Ctx) -> String {
     section(
-        &format!(
-            "margin: 16px 0; padding: 12px 14px; background: {}; border-radius: 8px; text-align: center;",
-            ctx.theme.color("code_bg")
+        &css(
+            ctx.theme,
+            "formula",
+            &[
+                ("margin", "16px 0"),
+                ("padding", "12px 14px"),
+                ("background", "{code_bg}"),
+                ("border-radius", "8px"),
+                ("text-align", "center"),
+            ],
         ),
         &leaf(
-            &format!(
-                "color: {}; line-height: 1.6; letter-spacing: 0.5px; font-size: 15px;",
-                ctx.theme.color("text")
+            &css(
+                ctx.theme,
+                "formula_leaf",
+                &[
+                    ("color", "{text}"),
+                    ("line-height", "1.6"),
+                    ("letter-spacing", "0.5px"),
+                    ("font-size", "15px"),
+                ],
             ),
             &escape_text(latex),
         ),

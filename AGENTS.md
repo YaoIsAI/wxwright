@@ -39,13 +39,15 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ## 3. 常用命令 / Commands
 
 ```bash
-cargo test --workspace                       # 全量测试（当前 95 个，必须全绿才能交付）
+cargo test --workspace                       # 全量测试（当前 128 通过 + 4 条 live ignored，必须全绿才能交付）
 cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
                                              # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
 cargo run -p wxwright-cli -- convert a.md --out a.html
 cargo run -p wxwright-cli -- validate a.md --strict   # 退出码 0/1/2
 cargo run -p wxwright-cli -- platforms       # 平台注册表（非 TTY 自动 JSON）
+cargo run -p wxwright-cli -- convert a.md --platform xhs   # 非微信平台的制品（文案/Markdown）
+cargo run -p wxwright-cli -- doctor --strict # CI/SCP 前置门禁（有问题退出码 1）
 cargo run --release -p icongen               # 重生成图标
 python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端）验收 UI
 ```
@@ -76,6 +78,13 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 9. **MCP 工具面**（7 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
    改工具清单必须同步 agent card + README，否则 CI 红。
 10. **修改 logo/图标**需三处同步：master.svg、index.html symbol、icongen 重跑。
+11. **主题角色以 `wxwright-core/src/roles.rs` 为唯一事实源**。渲染器、AI 主题提示词
+    （`ai::theme_schema()`）与 `validate_generated_theme` 三方都从 `ROLES` 取。
+    **新增/改名的 role 必须三处同时成立**，`tests/theme_roles_test.rs` 会给每个 key
+    写入一条独特声明并断言它出现在渲染结果里——「提示词教一套、渲染器认另一套」
+    会直接测试失败（这条铁律来自 card_* 角色被静默丢弃的事故）。
+12. **剪贴板/草稿的图片门禁只有一处实现**：`ImageOutcome::paste_hostile()`。
+    CLI copy、GUI copy、GUI 推草稿三条路径都必须用它，不许各写一份过滤条件。
 
 ## 5. 统一 AI 生成运行时 / jobs.rs（新功能一律走这里）
 
@@ -127,6 +136,9 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 26 | **demo 存根 UI 没绑事件** | 素材存根卡的插入/工坊/删除按钮点击静默无反应，验收时被当 bug 报 | demo 回退的每个按钮要么绑真实 demo 行为、要么统一回 demo_mode toast，不留死按钮 |
 | 27 | **CI 工具链钉在 1.96（dtolnay/rust-toolchain@1.96）而本地已可 rustup update** | 新 clippy（如 1.98）会引入新 lint，CI 与本地版本漂移导致「本地绿 CI 红」 | 升级步骤：本地 rustup update 后跑 `cargo clippy --workspace --all-targets -- -D warnings` 清零，再把两个 workflow 的 @1.96 升到新版本。1.98 已知待修：clippy::question_mark（theme 百分比解析 else-return）、clippy::unneeded_wildcard_pattern |
 | 28 | **C 盘被 target 吃满（os error 112）两次复发** | cargo build/test 中途磁盘写失败，构建报 icongen/rustc exit 101 等莫名错误 | 报错先 `df -h /c` 查盘；`rm -rf target/debug/incremental`（3-11G）或整个 target/debug 速救；大型构建前预留 >10G |
+| 29 | **`cargo run ... > file` 且构建失败时把目标文件写空** | 生成物（如 `gui/ui/demo-agent-card.md`）被截断成 0 字节，且 stderr 被 `2>/dev/null` 吞掉，看上去像「命令成功但没输出」 | 先输出到临时文件并判空再覆盖：`cargo run ... > /tmp/x 2>/tmp/x.err; [ -s /tmp/x ] && cp /tmp/x dest || cat /tmp/x.err` |
+| 30 | **C 盘满到 `rm -rf` 之后可用空间反而更少** | 其他进程（系统更新/索引/备份）在同时吃盘，跟 C 盘抢空间没有胜算 | 直接换盘：`CARGO_TARGET_DIR=E:/wxwright-build cargo build --release`（E 盘 134G 可用），零风险且不影响 dist 同步 |
+| 31 | **主题 role 声明了但渲染器不读** | AI 生成主题「合规却无效」，用户感知为「AI 排版没用」（card_* 事故：`let _ = row;` 式的 `let _ = role;`） | 见铁律 11；`roles.rs` + `theme_roles_test.rs` 双重锁定 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
@@ -135,7 +147,10 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎。
-- 测试 113（110 常规 + 3 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 测试 132（128 常规 + 4 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
+  小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
+  该行为的唯一来源。
 - 发布绑定接口（social.rs）：X/LinkedIn 一键登录实装（PKCE/code flow + 本地回环监听 8761/8762 +
   keyring 存储，BYO 无云服务）；Facebook/Instagram 仅凭据接口（登录流受审核墙/图床前置所限，
   可行性见 docs/social-publish-oauth-feasibility.md）；配置引导帮助中心 = 顶栏问号（HELP_CONTENT

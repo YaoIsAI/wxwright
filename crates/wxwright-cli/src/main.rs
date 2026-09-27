@@ -48,14 +48,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Markdown -> WeChat MP dialect HTML (self-contained; local images inlined).
+    /// Markdown -> the target platform's artifact (WeChat MP dialect HTML by
+    /// default; caption text or Markdown for the other platforms).
     Convert {
         /// Input markdown file, or "-" for stdin.
         input: String,
         /// Theme id (minimal|techblue|magazine) or path to a theme TOML.
         #[arg(long)]
         theme: Option<String>,
-        /// Output HTML file, or "-" for stdout.
+        /// Target platform id (see `wxwright platforms`). Default: wechat.
+        #[arg(long)]
+        platform: Option<String>,
+        /// Output file, or "-" for stdout.
         #[arg(long, default_value = "-")]
         out: String,
     },
@@ -106,8 +110,12 @@ enum Commands {
         #[command(subcommand)]
         cmd: ThemeCmd,
     },
-    /// Environment health check.
-    Doctor,
+    /// Environment health check. Exit 0 healthy / 1 problems (CI/SCP gate).
+    Doctor {
+        /// Treat warnings as failures too (strict CI gate mode).
+        #[arg(long)]
+        strict: bool,
+    },
     /// List supported social platforms and their capabilities (PRD §16).
     Platforms,
     /// MCP server operations.
@@ -264,8 +272,9 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
         Commands::Convert {
             input,
             theme,
+            platform,
             out: out_path,
-        } => cmd_convert(input, theme.as_deref(), out_path, out),
+        } => cmd_convert(input, theme.as_deref(), platform.as_deref(), out_path, out),
         Commands::Validate {
             input,
             strict,
@@ -286,7 +295,7 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
         Commands::Draft { cmd } => cmd_draft(cmd, out),
         Commands::Publish { draft_id, yes } => cmd_publish(draft_id, *yes, out),
         Commands::Theme { cmd } => cmd_theme(cmd, out),
-        Commands::Doctor => cmd_doctor(out),
+        Commands::Doctor { strict } => cmd_doctor(out, *strict),
         Commands::Platforms => cmd_platforms(out),
         Commands::Mcp { cmd } => cmd_mcp(cmd, out),
         Commands::AgentCard { md, json } => cmd_agent_card(*md, *json, out),
@@ -388,11 +397,70 @@ fn print_violations_human(out: &Out, p: &PipelineOutput) {
 fn cmd_convert(
     input: &str,
     theme_name: Option<&str>,
+    platform: Option<&str>,
     out_path: &str,
     out: &Out,
 ) -> Result<i32, String> {
     let (raw, base_dir) = read_stdin_if_dash(input)?;
-    let md = strip_frontmatter(&raw);
+    let (front, md) = wxwright_core::util::strip_frontmatter(&raw);
+    let platform_id = platform.unwrap_or("wechat");
+    let (spec, known) = wxwright_core::platform::resolve_platform(platform_id);
+    if !known {
+        out.warn(&format!(
+            "unknown platform {:?}; falling back to {} - run `wxwright platforms` for the id list",
+            platform_id, spec.id
+        ));
+    }
+
+    // One engine, many exits (PRD 3.1): platforms that do not paste styled
+    // HTML get the artifact they actually consume - a plain-text caption or
+    // the Markdown unchanged.
+    if spec.export_kind != wxwright_core::platform::ExportKind::RichTextDialect {
+        let doc = wxwright_core::parser::parse_markdown(&md);
+        let title = front
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("title"))
+            .map(|(_, v)| v.clone());
+        let (kind, text) = match spec.export_kind {
+            wxwright_core::platform::ExportKind::Markdown => ("markdown", md.clone()),
+            _ => (
+                "caption",
+                wxwright_core::platform::render_caption(&doc, title.as_deref()),
+            ),
+        };
+        if out.json_mode {
+            out.print_json(&serde_json::json!({
+                "ok": true,
+                "platform": spec.id,
+                "platform_known": known,
+                "export_kind": kind,
+                "text": text,
+            }));
+        } else {
+            out.ok(&format!(
+                "exported for {} ({} mode, {} chars)",
+                spec.name_en,
+                kind,
+                text.chars().count()
+            ));
+        }
+        if out_path == "-" {
+            if !out.json_mode {
+                std::io::stdout()
+                    .write_all(text.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                println!();
+            }
+        } else {
+            std::fs::write(out_path, &text)
+                .map_err(|e| format!("cannot write {}: {}", out_path, e))?;
+            if !out.json_mode {
+                out.ok(&format!("written to {}", out_path));
+            }
+        }
+        return Ok(0);
+    }
+
     let opts = build_options(theme_name, ImageMode::Inline, base_dir)?;
     let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
     let html = wxwright_core::wrap_document(&result.html, opts.theme.canvas());
@@ -577,12 +645,14 @@ fn cmd_copy(
         return Ok(1);
     }
 
-    // I-03: clipboard payload must be mmbiz or https images; local/base64
-    // images break on paste. Block and list them.
+    // I-03: clipboard payload must be mmbiz or https images; base64 payloads,
+    // plain-http hosts and images that failed to load all break on paste.
+    // Block and list them. The predicate lives in the engine so the GUI paths
+    // cannot drift away from it.
     let paste_hostile: Vec<_> = result
         .images
         .iter()
-        .filter(|i| (i.inlined && !i.mmbiz) || i.source.starts_with("data:"))
+        .filter(|i| i.paste_hostile())
         .map(|i| i.source.clone())
         .collect();
     if !paste_hostile.is_empty() && !dry_run {
@@ -999,7 +1069,7 @@ fn cmd_platforms(out: &Out) -> Result<i32, String> {
     Ok(0)
 }
 
-fn cmd_doctor(out: &Out) -> Result<i32, String> {
+fn cmd_doctor(out: &Out, strict: bool) -> Result<i32, String> {
     let mut checks: Vec<serde_json::Value> = Vec::new();
     let mut push = |name: &str, status: &str, detail: serde_json::Value| {
         checks.push(serde_json::json!({ "check": name, "status": status, "detail": detail }));
@@ -1081,9 +1151,47 @@ fn cmd_doctor(out: &Out) -> Result<i32, String> {
         serde_json::json!({ "node": node, "purpose": "official verify-article-structure-spec CI gate" }),
     );
 
-    let problems = checks.iter().any(|c| c["status"] == "err");
+    // State directory must be writable: a read-only %APPDATA% silently breaks
+    // theme saving and credential storage. This is the one check worth
+    // failing on, so `doctor` can act as a CI / SCP preflight gate.
+    let state_dir = wxwright_core::util::config_root();
+    let state_ok = std::fs::create_dir_all(&state_dir).is_ok();
+    push(
+        "state_dir",
+        if state_ok { "ok" } else { "err" },
+        serde_json::json!({
+            "path": state_dir.to_string_lossy(),
+            "writable": state_ok,
+            "purpose": "settings / credentials / user themes",
+        }),
+    );
+
+    // AI provider is a desktop-app concern - the CLI itself never calls an
+    // LLM - so a missing configuration is a warning, not a failure.
+    let settings = state_dir.join("settings.json");
+    let settings_exists = settings.exists();
+    push(
+        "ai_provider",
+        if settings_exists { "ok" } else { "warn" },
+        serde_json::json!({
+            "settings_file": settings.to_string_lossy(),
+            "configured": settings_exists,
+            "purpose": "desktop app AI assistant, theme and image generation",
+            "hint": "configure a provider in the app: Settings -> AI Providers",
+        }),
+    );
+
+    let errors = checks.iter().any(|c| c["status"] == "err");
+    let warnings = checks.iter().any(|c| c["status"] == "warn");
+    let failed = errors || (strict && warnings);
     if out.json_mode {
-        out.print_json(&serde_json::json!({ "ok": !problems, "checks": checks }));
+        out.print_json(&serde_json::json!({
+            "ok": !failed,
+            "errors": errors,
+            "warnings": warnings,
+            "strict": strict,
+            "checks": checks,
+        }));
     } else {
         for c in &checks {
             let status = c["status"].as_str().unwrap_or("");
@@ -1094,8 +1202,15 @@ fn cmd_doctor(out: &Out) -> Result<i32, String> {
                 _ => out.err(&line),
             }
         }
+        if failed {
+            out.err(if errors {
+                "doctor: problems found (exit 1)"
+            } else {
+                "doctor: warnings present and --strict is on (exit 1)"
+            });
+        }
     }
-    Ok(0)
+    Ok(if failed { 1 } else { 0 })
 }
 
 fn arboard_probe() -> bool {

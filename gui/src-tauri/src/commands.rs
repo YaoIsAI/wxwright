@@ -41,7 +41,7 @@ pub fn list_themes() -> Vec<ThemeInfo> {
     all
 }
 
-fn load_theme_or_default(id: &str) -> Theme {
+pub(crate) fn load_theme_or_default(id: &str) -> Theme {
     theme::load_theme(id)
         .unwrap_or_else(|_| theme::load_builtin_theme("minimal").expect("builtin minimal"))
 }
@@ -119,7 +119,7 @@ pub fn copy_rich(markdown: String, theme_id: String) -> CopyResult {
     let paste_hostile: Vec<String> = out
         .images
         .iter()
-        .filter(|i| (i.inlined && !i.mmbiz) || i.source.starts_with("data:"))
+        .filter(|i| i.paste_hostile())
         .map(|i| i.source.clone())
         .collect();
     if !paste_hostile.is_empty() {
@@ -161,16 +161,6 @@ pub fn export_html(markdown: String, theme_id: String, path: String) -> Result<S
     let doc = wrap_document(&out.html, opts.theme.canvas());
     std::fs::write(&path, doc).map_err(|e| format!("write failed: {}", e))?;
     Ok(path)
-}
-
-#[tauri::command]
-pub fn validate_md(
-    markdown: String,
-    theme_id: String,
-) -> Result<Vec<wxwright_core::validator::Violation>, String> {
-    let opts = ConvertOptions::new(load_theme_or_default(&theme_id));
-    let out = pipeline(&markdown, &opts).map_err(|e| e.to_string())?;
-    Ok(out.violations)
 }
 
 #[tauri::command]
@@ -376,34 +366,6 @@ pub async fn ai_test(id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn ai_generate_svg(description: String) -> Result<String, String> {
-    let d = description.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::ai::generate_svg_component(&d))
-        .await
-        .map_err(|e| format!("task join failed: {}", e))?
-}
-
-#[tauri::command]
-pub async fn ai_generate_theme(description: String) -> Result<serde_json::Value, String> {
-    let d = description.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::ai::generate_theme(&d))
-        .await
-        .map_err(|e| format!("task join failed: {}", e))?
-}
-
-#[tauri::command]
-pub async fn ai_complete(
-    system: String,
-    user: String,
-    max_tokens: Option<u32>,
-) -> Result<String, String> {
-    let mt = max_tokens.unwrap_or(4096);
-    tauri::async_runtime::spawn_blocking(move || crate::ai::complete(&system, &user, mt, 0.7))
-        .await
-        .map_err(|e| format!("task join failed: {}", e))?
-}
-
-#[tauri::command]
 pub fn list_assets() -> Vec<crate::articles::AssetMeta> {
     crate::articles::list_assets()
 }
@@ -490,7 +452,22 @@ pub async fn wx_push_draft(
         let creds = wxwright_mp::load_credentials()
             .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
         let client = wxwright_mp::MpClient::new(creds.clone());
-        let md = wxwright_core::util::strip_frontmatter(&markdown).1;
+        let (front, md) = wxwright_core::util::strip_frontmatter(&markdown);
+        // Pull the byline and summary out of the frontmatter instead of sending
+        // empty strings: the MP feed shows the digest under the title, and an
+        // empty author drops the byline entirely.
+        let fm = |keys: &[&str]| -> String {
+            front
+                .iter()
+                .find(|(k, _)| keys.iter().any(|want| k.eq_ignore_ascii_case(want)))
+                .map(|(_, v)| v.trim().to_string())
+                .unwrap_or_default()
+        };
+        let author = fm(&["author"]);
+        let digest: String = fm(&["digest", "summary", "description"])
+            .chars()
+            .take(120)
+            .collect();
         let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
         opts.image_mode = ImageMode::Upload;
         opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
@@ -506,6 +483,24 @@ pub async fn wx_push_draft(
                 "存在 {} 个阻断级违规，草稿未推送：{}",
                 blocks.len(),
                 list
+            ));
+        }
+        // I-03: the draft content must not carry base64 payloads, plain-http
+        // hosts or images that failed to upload - the MP editor renders all
+        // three as broken images. Previously only the CLI copy path enforced
+        // this, so the GUI could push a draft that was guaranteed to look
+        // broken to readers.
+        let paste_hostile: Vec<String> = result
+            .images
+            .iter()
+            .filter(|i| i.paste_hostile())
+            .map(|i| i.source.clone())
+            .collect();
+        if !paste_hostile.is_empty() {
+            return Err(format!(
+                "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或微信可拉取的 https 直链），草稿未推送：{}。请检查网络后重试。",
+                paste_hostile.len(),
+                paste_hostile.join("; ")
             ));
         }
         let thumb = match result.images.iter().find_map(|i| i.media_id.clone()) {
@@ -524,14 +519,31 @@ pub async fn wx_push_draft(
                         .0
                 }
                 None => {
-                    return Err("NO_COVER: 公众号草稿 API 需要封面图——选择一张图片作为封面，或在文章中插入至少一张图片".to_string())
+                    // surface WHY the inline images have no media_id (IP
+                    // whitelist is the classic one) instead of a dead end
+                    let warnings = result
+                        .images
+                        .iter()
+                        .filter_map(|i| i.warning.as_ref().cloned())
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    let hint = if warnings.contains("whitelist") || warnings.contains("40164") {
+                        "。检测到 IP 白名单拦截：请到公众号后台「设置与开发 → 基本配置 → IP 白名单」添加本机出口 IP 后重试"
+                    } else {
+                        ""
+                    };
+                    return Err(format!(
+                        "NO_COVER: 公众号草稿需要封面图——选择一张图片作为封面，或在文章中插入至少一张图片{}{}",
+                        if warnings.is_empty() { "".to_string() } else { format!("（图片上传详情：{}）", warnings) },
+                        hint
+                    ));
                 }
             },
         };
         let article = wxwright_mp::DraftArticle {
             title,
-            author: String::new(),
-            digest: String::new(),
+            author,
+            digest,
             content_html: result.html.clone(),
             content_source_url: String::new(),
             thumb_media_id: thumb,
@@ -586,51 +598,8 @@ pub async fn comfy_launch(launch_path: Option<String>) -> Result<serde_json::Val
 }
 
 #[tauri::command]
-pub async fn ai_image(prompt: String, width: u32, height: u32) -> Result<Vec<String>, String> {
-    let pr = prompt.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::ai::generate_image(&pr, width, height))
-        .await
-        .map_err(|e| format!("task join failed: {}", e))?
-}
-
-#[tauri::command]
 pub fn ai_save_image_model(model: String) -> Result<(), String> {
     crate::ai::set_image_model(&model)
-}
-
-#[tauri::command]
-pub async fn comfy_txt2img(
-    prompt: String,
-    negative: Option<String>,
-    width: u32,
-    height: u32,
-    steps: Option<u32>,
-) -> Result<Vec<String>, String> {
-    let neg = negative.unwrap_or_default();
-    let steps_n = steps.unwrap_or(20);
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::comfy::txt2img(&prompt, &neg, width, height, steps_n, None)
-    })
-    .await
-    .map_err(|e| format!("task join failed: {}", e))?
-}
-
-#[tauri::command]
-pub async fn comfy_img2img(
-    source_path: String,
-    prompt: String,
-    negative: Option<String>,
-    denoise: Option<f64>,
-    steps: Option<u32>,
-) -> Result<Vec<String>, String> {
-    let neg = negative.unwrap_or_default();
-    let dn = denoise.unwrap_or(0.5);
-    let steps_n = steps.unwrap_or(20);
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::comfy::img2img(&source_path, &prompt, &neg, dn, steps_n, None)
-    })
-    .await
-    .map_err(|e| format!("task join failed: {}", e))?
 }
 
 #[tauri::command]

@@ -1,0 +1,151 @@
+//! Regression guard for the theme role contract (PRD 8).
+//!
+//! History: the AI theme prompt advertised `card_note` / `card_tip` / ... as
+//! valid `[block.*]` roles, but `render_card` computed the role and then
+//! discarded it (`let _ = role;`), and `base_leaf` hardcoded `paragraph_leaf`.
+//! AI-authored card styling was silently thrown away and nothing failed.
+//!
+//! This test walks the canonical role table (`wxwright_core::roles::ROLES`),
+//! gives each key a distinctive declaration, renders a document that exercises
+//! that block type, and asserts the declaration actually reaches the HTML.
+//! Any future "advertised but never consumed" role fails here.
+
+use wxwright_core::img::ImageMode;
+use wxwright_core::roles;
+use wxwright_core::theme::parse_theme;
+use wxwright_core::{convert_markdown, ConvertOptions};
+
+/// Exercises every block type the role table covers.
+const DOC: &str = r#"# 一级标题
+
+## 二级标题
+
+### 三级标题
+
+#### 四级标题
+
+##### 五级标题
+
+正文段落，用来触发 paragraph 与 paragraph_leaf。
+
+> 引用内容。
+
+> [!NOTE]
+> 提示卡片内容。
+
+> [!TIP]
+> 技巧卡片内容。
+
+> [!IMPORTANT]
+> 重要卡片内容。
+
+> [!WARNING]
+> 警告卡片内容。
+
+> [!CAUTION]
+> 严重警告卡片内容。
+
+> [!COMMENT]
+> 评论卡片内容。
+
+> [!KEYPOINT]
+> 重点卡片内容。
+
+[TOC]
+
+![示例图](https://example.com/pic.png)
+
+*图注文字*
+
+| 列A | 列B |
+|---|---|
+| 甲 | 乙 |
+
+```rust
+fn main() {}
+```
+
+- 列表项一
+- 列表项二
+
+$$E = mc^2$$
+
+---
+"#;
+
+const PROBE_PROP: &str = "word-spacing";
+const PROBE_VALUE: &str = "7.77px";
+
+/// Render DOC with a theme that overrides exactly one role key.
+fn render_with_override(key: &str) -> String {
+    let src = format!(
+        "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.{key}]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+    );
+    let theme =
+        parse_theme(&src).unwrap_or_else(|e| panic!("probe theme for {key} must parse: {e}"));
+    let mut opts = ConvertOptions::new(theme);
+    // Keep mode leaves http(s) image URLs alone, so the figure renders (and
+    // therefore emits its caption) without touching the network.
+    opts.image_mode = ImageMode::Keep;
+    convert_markdown(DOC, &opts)
+        .unwrap_or_else(|e| panic!("convert with {key} override failed: {e}"))
+        .html
+}
+
+#[test]
+fn every_advertised_role_is_actually_consumed_by_the_renderer() {
+    let mut ignored: Vec<String> = Vec::new();
+    for key in roles::all_keys() {
+        let html = render_with_override(&key);
+        if !html.contains(PROBE_VALUE) {
+            ignored.push(key);
+        }
+    }
+    assert!(
+        ignored.is_empty(),
+        "these theme roles are advertised (and may be written by an AI-generated theme) \
+         but the renderer never reads them, so the styling is silently dropped: {ignored:?}"
+    );
+}
+
+#[test]
+fn card_roles_are_applied_independently() {
+    // The exact shape of the original bug: card roles were computed then
+    // discarded, so a card-only theme produced byte-identical output.
+    let note = render_with_override("card_note");
+    let tip = render_with_override("card_tip");
+    assert_eq!(
+        note.matches(PROBE_VALUE).count(),
+        1,
+        "a card_note override must reach exactly the note card container"
+    );
+    assert_eq!(
+        tip.matches(PROBE_VALUE).count(),
+        1,
+        "a card_tip override must reach exactly the tip card container"
+    );
+    assert_ne!(
+        note, tip,
+        "card_note and card_tip must affect different cards, not the same one"
+    );
+}
+
+#[test]
+fn paragraph_leaf_still_controls_body_typography() {
+    // The other half of the original bug: base_leaf ignored its role argument.
+    let html = render_with_override("paragraph_leaf");
+    assert!(
+        html.contains(PROBE_VALUE),
+        "paragraph_leaf override must reach body text"
+    );
+}
+
+#[test]
+fn theme_can_never_smuggle_font_family_through_a_role() {
+    // R-3.1 is absolute: parse_theme rejects it outright.
+    let src = "[meta]\nid = \"bad\"\nname = \"bad\"\n\n[block.quote]\nfont-family = \"serif\"\n";
+    assert!(
+        parse_theme(src).is_err(),
+        "a theme must not be able to set font-family on any role"
+    );
+}

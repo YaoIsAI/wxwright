@@ -21,6 +21,13 @@
 
   /* single global listener dispatching events to running jobs by id */
   var handlers = new Map();
+  /* Events that arrived before their handler existed. The backend registers
+     the job, spawns the work and only then returns the id - so a job that
+     fails fast (no image model configured, no provider) can emit `done` or
+     `error` before `ai_job_start` resolves. Dropping those events left the
+     promise unsettled forever and the trigger button stuck on "Stop". */
+  var orphan = [];
+  var ORPHAN_CAP = 64;
   var listening = false;
   function ensureListener() {
     if (listening || !window.__TAURI__) return;
@@ -28,8 +35,22 @@
     window.__TAURI__.event.listen("ai-job", function (e) {
       var p = e.payload || {};
       var h = handlers.get(p.id);
-      if (h) h(p);
+      if (h) {
+        h(p);
+        return;
+      }
+      if (orphan.length < ORPHAN_CAP) orphan.push(p);
     });
+  }
+
+  /* Register a handler, then replay anything that raced ahead of it. */
+  function registerHandler(id, fn) {
+    handlers.set(id, fn);
+    if (!orphan.length) return;
+    var mine = orphan.filter(function (p) { return p.id === id; });
+    if (!mine.length) return;
+    orphan = orphan.filter(function (p) { return p.id !== id; });
+    mine.forEach(function (p) { fn(p); });
   }
 
   var SPIN = '<svg class="btn-busy-spin" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="42 20" stroke-linecap="round"/></svg>';
@@ -71,12 +92,11 @@
           if (savedHtml != null) btn.innerHTML = savedHtml;
         }
       }
-      handlers.set(-1, null);
       setBusyUI(true);
       invoke("ai_job_start", { kind: kind, params: params || {} })
         .then(function (jobId) {
           id = jobId;
-          handlers.set(id, function (p) {
+          registerHandler(id, function (p) {
             var data = p.data || {};
             if (p.ev === "status" || p.ev === "think" || p.ev === "delta") {
               if (opts.onProgress) opts.onProgress(p.ev, data); // optional, no UI by default

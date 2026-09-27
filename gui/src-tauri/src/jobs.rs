@@ -40,6 +40,27 @@ fn emit<R: tauri::Runtime>(app: &AppHandle<R>, id: u64, kind: &str, ev: &str, da
     );
 }
 
+/// Removes a job from the registry when its worker ends - including when the
+/// worker unwinds. Previously the removal was the last statement of the
+/// closure, so a panicking job leaked its `Arc<Job>` for the lifetime of the
+/// process and `ai_job_stop` kept answering `true` for a job that was gone.
+struct JobGuard(u64);
+
+impl Drop for JobGuard {
+    fn drop(&mut self) {
+        match registry().lock() {
+            Ok(mut m) => {
+                m.remove(&self.0);
+            }
+            // A poisoned mutex must not panic again inside Drop (that would
+            // abort the process); recover the guard and finish the cleanup.
+            Err(poisoned) => {
+                poisoned.into_inner().remove(&self.0);
+            }
+        }
+    }
+}
+
 /// Register a job, spawn its work on the blocking pool, return its id.
 pub fn spawn(
     kind: &str,
@@ -58,12 +79,23 @@ pub fn spawn(
         .insert(id, job.clone());
     let kind_owned = job.kind.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        work(job.clone(), app.clone());
-        registry()
-            .lock()
-            .expect("job registry poisoned")
-            .remove(&id);
-        let _ = kind_owned;
+        let _guard = JobGuard(id);
+        let panic_app = app.clone();
+        let panic_kind = kind_owned.clone();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            work(job, app);
+        }));
+        if outcome.is_err() {
+            // Without this the frontend would never see a terminal event and
+            // the trigger button would sit on "Stop" forever.
+            emit(
+                &panic_app,
+                id,
+                &panic_kind,
+                "error",
+                Value::String("生成任务异常终止（内部错误）".into()),
+            );
+        }
     });
     id
 }
@@ -299,7 +331,7 @@ fn spec(kind: &str) -> TaskSpec {
                 let base = format!(
                     "请设计一个微信公众号排版主题。风格要求：{}\n\n{}",
                     p["description"].as_str().unwrap_or(""),
-                    crate::ai::THEME_SCHEMA
+                    crate::ai::theme_schema()
                 );
                 if attempt == 0 {
                     base
@@ -718,5 +750,32 @@ mod tests {
             ids.push(id);
         }
         assert_eq!(ids.len(), 3, "three distinct themes generated");
+    }
+
+    /// Diagnose the draft-push image upload chain: runs the exact pipeline
+    /// wx_push_draft uses (Upload mode + MP transport) and prints per-image
+    /// outcomes. `cargo test -p wxwright-gui diagnostic_push_chain_upload -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live: uploads a real image to the MP material library (needs bound MP credentials)"]
+    fn diagnostic_push_chain_upload() {
+        let creds = wxwright_mp::load_credentials().expect("MP credentials bound");
+        let client = wxwright_mp::MpClient::new(creds.clone());
+        let md_path = std::path::Path::new("C:/Users/yao/Documents/wxwright/articles/20260927-100000-opensource.md");
+        let raw = std::fs::read_to_string(md_path).unwrap();
+        let md = wxwright_core::util::strip_frontmatter(&raw).1;
+        let mut opts = wxwright_core::ConvertOptions::new(
+            crate::commands::load_theme_or_default("magazine"),
+        );
+        opts.image_mode = wxwright_core::img::ImageMode::Upload;
+        opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
+        let result = wxwright_core::pipeline(&md, &opts).expect("pipeline ok");
+        println!("images found: {}", result.images.len());
+        for img in &result.images {
+            println!(
+                "source: {} | media_id: {:?} | mmbiz: {} | inlined: {} | warning: {:?}",
+                img.source, img.media_id, img.mmbiz, img.inlined, img.warning
+            );
+        }
+        println!("blocking violations: {}", result.blocking_violations().len());
     }
 }

@@ -27,6 +27,11 @@ If this machine has no wxwright yet, install it before anything else:
 - Doctor:   `wxwright doctor`                         (environment check)
 - JSON out: append `--json` to any command for a stable machine-readable schema; non-TTY defaults to JSON.
 - stdin:    use `-` as input path.
+- Platforms: `wxwright platforms` lists the ids (wechat / xhs / zhihu / meta /
+  instagram / x / linkedin). `wxwright convert --platform xhs` and the MCP
+  `wxwright_export` tool return the artifact each platform actually consumes:
+  WeChat = dialect rich text, Xiaohongshu and the western feeds = plain-text
+  caption, Zhihu = Markdown.
 
 ## Full pipeline (one command)
 
@@ -50,11 +55,15 @@ Read it, fix the source, retry. Do not ship while `blocking_violations` is non-e
 
 Start `wxwright mcp serve` (stdio) or `wxwright mcp install --target claude`.
 Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
-wxwright_upload_images, wxwright_draft_create, wxwright_draft_list.
+wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
+wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
 
 ## Publishing (optional, needs credentials)
 
 - `wxwright draft create --file article.md --title "..."` creates a 草稿箱 (Drafts) entry.
-- `wxwright publish <draft_id> --yes` performs 群发 (mass send); requires explicit --yes, never run it unprompted.
+- `wxwright draft update|list` manages existing drafts.
+- 群发 (mass send) is intentionally NOT part of the agent surface: it is
+  irreversible and reaches real subscribers, so a human must trigger it from
+  the desktop app. Do not look for a way to automate it.
 
