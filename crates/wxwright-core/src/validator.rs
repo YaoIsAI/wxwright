@@ -13,6 +13,12 @@ use crate::walker::{self, Stack};
 
 pub const MAX_VIOLATIONS: usize = 500;
 
+/// Blocking findings get their own, much higher ceiling. The warn budget must
+/// never be able to hide a block: a report truncated at 500 entries made
+/// `validate` answer `compliant: true` (exit 0) for an article that contained
+/// a `<script>`, because the blocking finding was simply never recorded.
+pub const MAX_BLOCK_VIOLATIONS: usize = 4000;
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Violation {
     pub rule_id: String,
@@ -39,15 +45,24 @@ struct VState {
 
 impl VState {
     fn add(&mut self, rule_id: &str, message: String, node: &str) {
-        if self.violations.len() >= MAX_VIOLATIONS {
+        let info = crate::rules::rule_info(rule_id);
+        let is_block = info.map(|i| i.is_block()).unwrap_or(false);
+        // Warns are dropped once the budget is spent; blocks are not, so a
+        // noisy document can never mask the finding that actually blocks it.
+        let cap = if is_block {
+            MAX_BLOCK_VIOLATIONS
+        } else {
+            MAX_VIOLATIONS
+        };
+        if self.violations.len() >= cap {
             return;
         }
-        let info = crate::rules::rule_info(rule_id);
         self.violations.push(Violation {
             rule_id: rule_id.to_string(),
-            severity: match info {
-                Some(i) if i.is_block() => "block".to_string(),
-                _ => "warn".to_string(),
+            severity: if is_block {
+                "block".to_string()
+            } else {
+                "warn".to_string()
             },
             message,
             node: truncate(node, 120),
@@ -486,4 +501,55 @@ pub fn validate_html(html: &str) -> Vec<Violation> {
 /// True when there are no block-level violations.
 pub fn is_compliant(html: &str) -> bool {
     validate_html(html).iter().all(|v| !v.is_block())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 600 warnings, then a blocking payload. Regression: the flat 500-entry
+    /// cap dropped the HYGIENE block, so `validate` answered
+    /// `compliant: true` / exit 0 for an article containing `<script>`.
+    #[test]
+    fn the_warn_cap_cannot_hide_a_blocking_violation() {
+        let mut html = String::new();
+        for _ in 0..(MAX_VIOLATIONS + 100) {
+            html.push_str("<section style=\"position: absolute\">x</section>");
+        }
+        html.push_str("<script>alert(1)</script>");
+
+        let v = validate_html(&html);
+        assert!(
+            v.iter().any(|x| x.rule_id == "HYGIENE" && x.is_block()),
+            "the blocking HYGIENE finding must survive the warn cap (got {} findings)",
+            v.len()
+        );
+        assert!(
+            !is_compliant(&html),
+            "a <script> payload is never compliant"
+        );
+    }
+
+    /// The cap still bounds the warn list, so a pathological document cannot
+    /// grow the report without limit.
+    #[test]
+    fn warns_are_still_capped() {
+        let mut html = String::new();
+        for _ in 0..(MAX_VIOLATIONS * 3) {
+            html.push_str("<section style=\"position: absolute\">x</section>");
+        }
+        let v = validate_html(&html);
+        assert!(
+            v.iter().filter(|x| !x.is_block()).count() <= MAX_VIOLATIONS,
+            "warn count must stay bounded"
+        );
+    }
+
+    /// A clean document stays clean - the severity split must not invent
+    /// findings.
+    #[test]
+    fn compliant_html_reports_nothing_blocking() {
+        let html = "<section style=\"line-height: 1.6;\"><span leaf=\"1\" style=\"color: #333333; line-height: 1.6;\">ok</span></section>";
+        assert!(is_compliant(html), "got: {:?}", validate_html(html));
+    }
 }

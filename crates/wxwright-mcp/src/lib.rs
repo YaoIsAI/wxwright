@@ -297,10 +297,14 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                         "violations": blocking,
                     }));
                 }
+                // The one predicate (AGENTS.md iron law 12): a hand-rolled
+                // `inlined && !mmbiz` here silently let plain-http URLs and
+                // images that failed to load through, while the CLI blocked
+                // them - same input, two different answers.
                 let local_images: Vec<_> = out
                     .images
                     .iter()
-                    .filter(|i| i.inlined && !i.mmbiz)
+                    .filter(|i| i.paste_hostile())
                     .map(|i| i.source.clone())
                     .collect();
                 if !local_images.is_empty() && !dry {
@@ -345,6 +349,37 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 opts.image_mode = wxwright_core::img::ImageMode::Upload;
                 opts.transport = Some(client.clone());
                 let out = pipeline(&md, &opts).map_err(|e| e.to_string())?;
+                // This handler used to push straight to the drafts box with no
+                // checks at all - no blocking-violation gate and no image gate,
+                // so an agent could create a draft that the MP editor renders
+                // with broken images and rule violations. Both gates now match
+                // the GUI push path.
+                let blocking = out.blocking_violations();
+                if !blocking.is_empty() {
+                    let list = blocking
+                        .iter()
+                        .map(|v| format!("{} {}", v.rule_id, v.message))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(format!(
+                        "{} blocking violations; fix the markdown first: {}",
+                        blocking.len(),
+                        list
+                    ));
+                }
+                let hostile: Vec<String> = out
+                    .images
+                    .iter()
+                    .filter(|i| i.paste_hostile())
+                    .map(|i| i.source.clone())
+                    .collect();
+                if !hostile.is_empty() {
+                    return Err(format!(
+                        "{} image(s) would render broken in the MP editor (mmbiz or https required); draft not created: {}",
+                        hostile.len(),
+                        hostile.join("; ")
+                    ));
+                }
                 let thumb = out.images.iter().find_map(|i| i.media_id.clone()).ok_or(
                     "no uploaded image available for thumb_media_id; include at least one image",
                 )?;

@@ -10,7 +10,67 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+> The entries below the second heading come from a multi-agent review round
+> (four independent reviewers: correctness, engineering governance,
+> architecture, plus a dedicated verifier whose job was to falsify the other
+> three). Three blocking defects were confirmed by hand and by black-box
+> reproduction; every fix ships with a test that fails without it.
+
 ### Fixed
+- **The chat "stop" button never worked.** `chat()` took the *previous* value
+  of `GEN_SEQ.fetch_add(1)` as its generation while `stop()` stored the
+  post-increment value, so the streaming loop's `STOP_GEN == my_gen` test was
+  unsatisfiable - clicking stop never broke a stream. Worse, the stale
+  `STOP_GEN` left behind then matched the *next* chat's generation and killed
+  it on its first chunk. A commit titled "real chat stop" had claimed this
+  earlier but only changed the disconnect path, not the comparison. The
+  generation arithmetic now lives in `next_generation()` /
+  `mark_stop_for_current()` (free functions over `&AtomicU64`) so it is
+  unit-testable; two tests cover both directions and both fail if the `+ 1`
+  is removed.
+- **Malformed hex colors panicked the validator.** `css_color_rgb` sliced
+  `#RRGGBB` by byte index, so a value of exactly six bytes containing a
+  multi-byte character (`#中ab` = 1 + 3 + 1 + 1) split inside that character:
+  `wxwright validate` died with exit code 101. A hex color is ASCII by
+  definition, so a non-ASCII value is now rejected up front.
+- **The 500-entry violation cap could hide a blocking finding.** `add()`
+  dropped everything past `MAX_VIOLATIONS` regardless of severity, so 500
+  warnings followed by a `<script>` produced `compliant: true` and exit 0 -
+  a non-compliant article reported as shippable. Warns are still capped at
+  500; blocking findings now have their own ceiling (4000) and can never be
+  truncated away. Affected `wxwright validate`, the MCP `wxwright_validate`
+  tool and the GUI badge alike.
+- **Two more image gates were missing.** The MCP `wxwright_copy` handler
+  hand-rolled `inlined && !mmbiz` instead of the shared predicate (so
+  plain-http URLs and failed loads slipped through while the CLI blocked
+  them), and `wxwright_draft_create` had **no gate at all** - an agent could
+  push a draft with base64 images and blocking violations. Both now use
+  `ImageOutcome::paste_hostile()`, and the new `tests/image_gate_test.rs`
+  scans the sources so a hand-rolled filter cannot reappear.
+- **`[block.h6]` was rejected by the theme validator.** `render_heading`
+  builds `format!("h{}", level)` for every level the parser can emit (1..=6),
+  but `roles.rs` only declared h1-h5, so `validate_generated_theme` refused a
+  key the renderer honoured. h6 is declared now, and the contract test grew
+  the reverse direction it was missing: it drives every heading level
+  end-to-end and asserts both that the override lands *and* that the key is
+  declared. `toc_title` was renamed `toc_heading` because it looked
+  indistinguishable from a `toc` + `_title` suffix expansion.
+- **`redact_secrets` missed two shapes.** The parameter-boundary set had no
+  `;` separator and key matching was case-sensitive, so `?a=1;secret=LEAK`
+  and `?SECRET=LEAK` passed through untouched. Both are covered now, with a
+  guard test that unrelated names (`errcode`, `mysecret`, `secret_sauce`)
+  are still left alone.
+
+### Changed
+- **Documentation caught up with the code** (the review's biggest single
+  finding: 10 of 12 spot-checked claims did not match reality).
+  `AGENTS.md` corrected the app.js line count (~2900 -> ~4100), a
+  non-existent `crates/wxwright-gui/` path, the MCP tool count (7 -> 8), the
+  platform count (6 -> 7, Instagram was missing) and the test counts;
+  iron law 12 now says five write paths, not three. `CHANGELOG.md` corrected
+  the role/key arithmetic (26 roles, 54 keys - verified by a new test rather
+  than by hand).
+
 - **The article sidebar never noticed externally created articles.** `refreshLibrary`
   ran only after in-app actions, so an article written by the MCP server or the
   CLI showed up in the GUI's library list only after a restart (and re-opening
@@ -45,7 +105,7 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   `css()` / `css_owned()`. The `paragraph` role was ignored the same way and is
   fixed too.
 - **The role contract can no longer drift.** New `wxwright_core::roles`
-  module holds the canonical table (25 roles, 39 expanded keys); the renderer,
+  module holds the canonical table (26 roles, 54 expanded keys); the renderer,
   the AI theme prompt (`theme_schema()` builds the advertised list from it) and
   `validate_generated_theme` (which now rejects any `[block.*]` key the
   renderer would never read, instead of accepting a theme that silently

@@ -9,6 +9,13 @@
 > 拟开源仓库：GitHub `wxwright`（命名已定稿，查重矩阵见 §11）
 > 本文档面向人类开发者与 AI Agent 双重读者：Agent 实现时请按 §3 架构分层与 §5.3 规则表逐条落地，验收以 §9 为准。
 
+> **实现状态提示（2026-09-28 复核）**：本文档同时承载「目标态」与「已交付」两类陈述。
+> 经多 Agent 交叉评审逐条核对，以下段落描述的是**目标态而非当前实现**，阅读时请以代码为准：
+> §3.3 的部分选型（rmcp）、§5.7-B 的并发与内存手段（rayon / bumpalo）、
+> §5.7-C 与 §9-7 的性能 CI 门禁（criterion / iai-callgrind）、
+> §12.2/§12.3 的发布签名与 macOS notarize。
+> 各条已在原处标注「**【未实现】**」。`AGENTS.md` 与 `CHANGELOG.md` 是当前实现的权威来源。
+
 ---
 
 ## 1. 产品概述
@@ -68,14 +75,14 @@
                     │  wxwright-core（纯 Rust，无 UI/无网络 IO 假设）│
                     │  ├ parser     pulldown-cmark → 内部 IR     │
                     │  ├ ir         语义块(标题/段落/图/表/代码/卡片)│
-                    │  ├ template   TOML 主题/组件 + minijinja 渲染│
+                    │  ├ template   TOML 主题/组件（零模板引擎）  │
                     │  ├ normalizer ★ 官方规范规则引擎（§5.3）      │
                     │  ├ validator  无浏览器合规校验（对齐官方 CLI） │
                     │  ├ clipboard  富文本载荷构造（text/html 制品） │
                     │  └ imgpipeline 图片资产抽象（本地/URL/mmbiz） │
                     ├──────────────────────────────────────────┤
                     │  适配器层                                 │
-                    │  wechat-mp（reqwest 封 API：token/素材/草稿/发布）│
+                    │  wechat-mp（ureq 封 API：token/素材/草稿/发布）│
                     │  sys-clipboard(arboard)  sys-image(image crate)│
                     └──────────────────────────────────────────┘
 ```
@@ -92,7 +99,7 @@ crate 划分（workspace）：`wxwright-core` / `wxwright-cli` / `wxwright-mcp` 
 |---|---|---|
 | GUI | Tauri 2.x（Win/macOS/Linux） | 一份 WebView 壳 + 共享 core；比 Electron 轻；移动端后期可评估复用（Tauri 2 已有移动实验线）或直接 FFI+原生壳 |
 | CLI | clap 4 + 子命令 | 面向脚本/管道的稳定接口 |
-| MCP | rmcp（官方 Rust SDK） | 标准本地 MCP server，`stdio` 与 `sse` 两种 transport |
+| MCP | **手写 JSON-RPC**（未采用 rmcp） | 依赖面最小化；仅 `stdio` transport；per-request `catch_unwind` 保证单请求 panic 不断连接。协议覆盖为最小集（无 pagination/cancelled/completions） |
 | Markdown | pulldown-cmark | 纯 Rust、GFM 扩展全 |
 | 模板 | TOML 主题包（零模板引擎） | 主题即数据：色板 + `[block.<role>]` 内联样式字典，渲染期直接展开；第三方零代码扩展，热路径无引擎开销 |
 | HTML 处理 | lol_html（流式单遍重写）+ 自研 walker 规则引擎 | 规范化按规则改写 DOM；流式解析无需整树，契合 P-2 预算（scraper/tl 全树方案已弃用） |
@@ -316,15 +323,17 @@ Agent 提交 Markdown（CLI stdin / MCP 参数）
 | P-7 | CLI 二进制体积（单平台） | ≤8MB | ≤15MB | CI size gate |
 
 **B. 工程手段**
-- 编译：`opt-level=3` `lto="fat"` `codegen-units=1` `panic="abort"` `strip=true`；feature 最小集（CLI 不链接 GUI 相关代码）；
+- 编译：`opt-level=3` `lto="fat"` `codegen-units=1` `panic="unwind"` `strip=true`；feature 最小集（CLI 不链接 GUI 相关代码）。
+  **注：panic 实为 `unwind` 而非 `abort`**——MCP 的 per-request `catch_unwind` 依赖它，见 `Cargo.toml` 中的说明。
 - 解析/规范化：pulldown-cmark 流式 + 单遍 DOM visitor；规则位掩码快速预筛再精解析；**零 regex**（样式属性手写状态机解析）；
 - 增量：IR block 内容哈希 + memoize，文件监听仅重算脏块（P-5）；
-- 并发：rayon 数据并行（批量图片）、tokio（上传/HTTP IO）；剪贴板与 HTTP 零拷贝字节传递；
-- 内存：bumpalo arena 承载 IR 与 HTML 字符串，避免逐节点堆分配；
+- 并发：**【未实现】** 实际为 CLI 用 `std::thread` + 阻塞 ureq、GUI 用 tokio `spawn_blocking` + 阻塞 ureq。原计划的 rayon 数据并行不存在。
+- 内存：**【未实现】** 未引入 bumpalo；IR 与 HTML 使用常规 `String`/`Vec` 分配。
 - 网络：分片续传 + mmbiz 探测结果缓存（进程内缓存目录，按内容哈希）+ 限速退避。
 
 **C. 门禁与文化**
 - criterion + iai-callgrind 基准全表进 CI，**回归 >5% 阻断 PR**；
+  **【未实现】**：仓库无 criterion/iai 依赖，`.github/workflows/ci.yml` 无任何 bench job。P-2/P-7 为本地手工实测（见 `docs/performance.md`），其余 SLO 无门禁。
 - SLO 同步维护在 `docs/performance.md`，README 公布分平台实测数字（附 CI 机器配置）——性能是全球开源的信任状；
 - 无"感觉优化"：任何性能改动 PR 必须附 bench diff。
 
@@ -419,7 +428,7 @@ wxwright — 让任何 AI Agent 一键把文章发进微信公众号（Rust · C
 - 模板：Issue 含"违规样例 HTML 复现单"专版；PR 含"新增/修改规则的规范出处链接"硬要求；
 - CHANGELOG（Keep a Changelog）、语义化版本、`cargo release` 流程、crates.io 发布（core 可单独复用是给 Agent 开发者生态的钩子）；
 - 文档站：mdbook 或 VitePress（主题开发指南、Agent 集成指南、规范解读）；
-- releases 提供三平台预编译二进制 + 签名（macOS notarize）；
+- releases 提供三平台预编译二进制；**【签名与 macOS notarize 未实现】**，`release.yml` 目前只生成 `SHA256SUMS`。
 - `docs/agent-integration.md`：专供 Agent 的机器友好集成手册（工具合同、退出码、JSON schema），与本文 §6/§7 同步。
 
 ### 12.3 分发形态矩阵（免安装为默认，安装包为可选）
@@ -429,7 +438,7 @@ wxwright — 让任何 AI Agent 一键把文章发进微信公众号（Rust · C
 | macOS | Universal 二进制（x86_64+arm64） | `brew install wxwright`；curl 一行脚本 | **必须 Developer ID 签名 + notarize**，否则 Gatekeeper 拦截（苹果分发要求，与形态无关） |
 | Linux | 静态链接 ELF（musl 目标，零 glibc 依赖） | deb/rpm/AUR/Nixpkgs 由社区打包 | releases 附 sha256 校验和 |
 
-- 所有 releases 同时提供：裸二进制 + 校验和 + 签名（minisign/sigstore）——**下载即用是产品人格的一部分**，与"装完即用、退出无痕"的极简架构承诺一致；
+- 所有 releases 同时提供：裸二进制 + 校验和（**【签名 minisign/sigstore 未实现】**）——**下载即用是产品人格的一部分**，与"装完即用、退出无痕"的极简架构承诺一致；
 - 更新检查不做静默常驻：仅 `wxwright doctor` / 显式 `--check-update` 触发一次性请求（零常驻原则 §3.2）。
 
 ## 13. 风险登记册

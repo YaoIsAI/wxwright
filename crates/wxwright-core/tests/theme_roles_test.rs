@@ -26,6 +26,8 @@ const DOC: &str = r#"# 一级标题
 
 ##### 五级标题
 
+###### 六级标题
+
 正文段落，用来触发 paragraph 与 paragraph_leaf。
 
 > 引用内容。
@@ -148,4 +150,44 @@ fn theme_can_never_smuggle_font_family_through_a_role() {
         parse_theme(src).is_err(),
         "a theme must not be able to set font-family on any role"
     );
+}
+
+/// The reverse direction of the contract.
+///
+/// The loop above proves "everything declared is consumed". It cannot see a
+/// role the renderer honours but the table forgot - which is exactly how h6
+/// slipped through: `render_heading` builds `format!("h{}", level)` for
+/// levels 1..=6 while `roles.rs` stopped at h5, so the theme validator
+/// rejected a key the renderer supported.
+///
+/// This test drives every heading level the parser can emit and asserts the
+/// override lands, so a missing declaration fails loudly.
+#[test]
+fn every_heading_level_is_themeable_end_to_end() {
+    let mut md = String::new();
+    for level in 1..=6u8 {
+        md.push_str(&"#".repeat(level as usize));
+        md.push_str(&format!(" 第{level}级\n\n"));
+    }
+    for level in 1..=6u8 {
+        let id = format!("h{level}");
+        let theme = parse_theme(&format!(
+            "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.{id}]\nword-spacing = \"7.77px\"\n"
+        ))
+        .unwrap_or_else(|e| panic!("probe theme for {id} must parse: {e}"));
+        let mut opts = ConvertOptions::new(theme);
+        opts.image_mode = ImageMode::Keep;
+        let html = convert_markdown(&md, &opts)
+            .unwrap_or_else(|e| panic!("convert for {id} failed: {e}"))
+            .html;
+        assert!(
+            html.contains(PROBE_VALUE),
+            "[block.{id}] is honoured by the renderer but does not reach the output"
+        );
+        assert!(
+            roles::is_known_key(&id),
+            "{id} is honoured by the renderer but is not declared in roles.rs, \
+             so validate_generated_theme would reject a working theme"
+        );
+    }
 }

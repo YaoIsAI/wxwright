@@ -48,7 +48,9 @@ pub fn config_root() -> std::path::PathBuf {
 /// (PRD 5.7-B keeps the engine regex-free).
 ///
 /// A key only counts at a parameter boundary (start of string, or after
-/// `?`/`&`/whitespace/quote) so that `errcode=` is never mistaken for `code=`.
+/// `?`/`&`/`;`/whitespace/quote) so that `errcode=` is never mistaken for
+/// `code=`. Matching is ASCII-case-insensitive: `?SECRET=` leaks just as well
+/// as `?secret=`.
 pub fn redact_secrets(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut prev = '?';
@@ -58,17 +60,25 @@ pub fn redact_secrets(s: &str) -> String {
             Some(c) => c,
             None => break,
         };
-        let at_boundary = matches!(prev, '?' | '&' | ' ' | '\t' | '\n' | '\r' | '"' | '\'');
+        // `;` is a legal parameter separator (and shows up in cookie-shaped
+        // strings), so it has to count as a boundary too.
+        let at_boundary = matches!(
+            prev,
+            '?' | '&' | ';' | ' ' | '\t' | '\n' | '\r' | '"' | '\''
+        );
         if at_boundary {
-            if let Some(key) = SECRET_KEYS
-                .iter()
-                .find(|k| rest.starts_with(**k) && rest[k.len()..].starts_with('='))
-            {
-                out.push_str(key);
+            if let Some(n) = match_secret_key(rest) {
+                out.push_str(&rest[..n]); // keep the caller's own casing
                 out.push_str("=***");
-                let mut tail = &rest[key.len() + 1..];
+                let mut tail = &rest[n + 1..];
                 while let Some(c) = tail.chars().next() {
-                    if c == '&' || c.is_whitespace() || c == '"' || c == '\'' || c == ')' {
+                    if c == '&'
+                        || c == ';'
+                        || c.is_whitespace()
+                        || c == '"'
+                        || c == '\''
+                        || c == ')'
+                    {
                         break;
                     }
                     tail = &tail[c.len_utf8()..];
@@ -83,6 +93,20 @@ pub fn redact_secrets(s: &str) -> String {
         rest = &rest[ch.len_utf8()..];
     }
     out
+}
+
+/// Length of a credential parameter name at the head of `rest`, when it is
+/// immediately followed by `=`. Case-insensitive; returns `None` otherwise.
+fn match_secret_key(rest: &str) -> Option<usize> {
+    let bytes = rest.as_bytes();
+    SECRET_KEYS.iter().find_map(|k| {
+        let n = k.len();
+        if bytes.len() > n && bytes[..n].eq_ignore_ascii_case(k.as_bytes()) && bytes[n] == b'=' {
+            Some(n)
+        } else {
+            None
+        }
+    })
 }
 
 /// Write a file that holds credentials with owner-only permissions on Unix
@@ -227,5 +251,42 @@ mod tests {
         let red = super::redact_secrets(mixed);
         assert!(!red.contains("密钥值"), "got: {red}");
         assert!(red.contains("上传失败"), "got: {red}");
+    }
+
+    #[test]
+    fn redact_covers_semicolon_separators_and_uppercase_keys() {
+        // Both gaps were found by an independent verifier after the first fix
+        // shipped: the boundary set only had `&`/`?` and matching was
+        // case-sensitive, so these two shapes leaked in full.
+        let semi = "?a=1;secret=LEAK;b=2";
+        let red = super::redact_secrets(semi);
+        assert!(
+            !red.contains("LEAK"),
+            "semicolon separator must redact: {red}"
+        );
+        assert!(red.contains("?a=1"), "unrelated params survive: {red}");
+
+        for key in ["SECRET", "Secret", "ACCESS_TOKEN", "Client_Secret"] {
+            let s = format!("?{key}=LEAKVALUE&ok=1");
+            let red = super::redact_secrets(&s);
+            assert!(
+                !red.contains("LEAKVALUE"),
+                "{key} must be redacted case-insensitively, got: {red}"
+            );
+        }
+    }
+
+    #[test]
+    fn redact_still_ignores_substrings_of_other_names() {
+        // Case-insensitive matching must not start eating unrelated names that
+        // merely end with a secret key.
+        for s in [
+            "errcode=40001",
+            "?errcode=40001&errmsg=bad",
+            "?mysecret=not-a-credential",
+            "secret_sauce=tasty",
+        ] {
+            assert_eq!(super::redact_secrets(s), s, "must not touch: {s}");
+        }
     }
 }

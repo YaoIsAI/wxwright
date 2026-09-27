@@ -1296,7 +1296,7 @@ fn render_toc(ctx: &Ctx) -> String {
                 &leaf(
                     &css(
                         ctx.theme,
-                        "toc_title",
+                        "toc_heading",
                         &[
                             ("font-size", "13px"),
                             ("font-weight", "600"),

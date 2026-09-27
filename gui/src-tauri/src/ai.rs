@@ -199,8 +199,26 @@ fn now_ms() -> u64 {
 static GEN_SEQ: AtomicU64 = AtomicU64::new(1);
 static STOP_GEN: AtomicU64 = AtomicU64::new(0);
 
+/// The generation a new chat run owns.
+///
+/// `fetch_add` returns the *previous* value, so the owned generation is the
+/// incremented one. The original code used the returned value directly while
+/// `stop()` stored the post-increment value, which made the loop's
+/// `STOP_GEN == my_gen` test unsatisfiable - the stop button never broke a
+/// stream, and a stale `STOP_GEN` then killed the *next* chat on its first
+/// chunk. Kept as a free function over `&AtomicU64` so the invariant is
+/// unit-testable without the global statics.
+fn next_generation(seq: &AtomicU64) -> u64 {
+    seq.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// Mark the currently running generation as stopped.
+fn mark_stop_for_current(seq: &AtomicU64, stop: &AtomicU64) {
+    stop.store(seq.load(Ordering::Relaxed), Ordering::Relaxed);
+}
+
 pub fn stop() {
-    STOP_GEN.store(GEN_SEQ.load(Ordering::Relaxed), Ordering::Relaxed);
+    mark_stop_for_current(&GEN_SEQ, &STOP_GEN);
 }
 
 fn agent() -> ureq::Agent {
@@ -338,7 +356,7 @@ pub fn test_provider(id: &str) -> Result<String, String> {
 /// `ai-error` {message}. Providers that ignore `stream: true` fall back to
 /// a single chunk.
 pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Result<(), String> {
-    let my_gen = GEN_SEQ.fetch_add(1, Ordering::Relaxed);
+    let my_gen = next_generation(&GEN_SEQ);
     let (p, key) = active_provider()?;
     let body = serde_json::json!({
         "model": p.model,
@@ -1043,6 +1061,52 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression for the stop button never working.
+    ///
+    /// `chat()` owns the generation returned by `fetch_add + 1`, while
+    /// `stop()` stores `GEN_SEQ.load()`. When chat used the raw
+    /// `fetch_add` result the two could never be equal, so the streaming
+    /// loop's `STOP_GEN == my_gen` check was unsatisfiable - and the stale
+    /// value left behind by a stop click then killed the *next* chat on its
+    /// first chunk. Local atomics keep this deterministic (no shared statics,
+    /// no test-order coupling).
+    #[test]
+    fn stop_marks_the_running_generation_and_never_the_next_one() {
+        let seq = AtomicU64::new(1);
+        let stop = AtomicU64::new(0);
+
+        let chat1 = next_generation(&seq);
+        mark_stop_for_current(&seq, &stop);
+        assert_eq!(
+            stop.load(Ordering::Relaxed),
+            chat1,
+            "stop must target the chat that is currently running"
+        );
+
+        let chat2 = next_generation(&seq);
+        assert_ne!(
+            stop.load(Ordering::Relaxed),
+            chat2,
+            "a stop clicked during chat #1 must not kill chat #2"
+        );
+    }
+
+    /// The inverse direction: a stop clicked while idle must not arm itself
+    /// for whatever runs next.
+    #[test]
+    fn idle_stop_does_not_poison_the_following_chat() {
+        let seq = AtomicU64::new(1);
+        let stop = AtomicU64::new(0);
+        // Nothing running yet: the user clicks stop anyway.
+        mark_stop_for_current(&seq, &stop);
+        let chat = next_generation(&seq);
+        assert_ne!(
+            stop.load(Ordering::Relaxed),
+            chat,
+            "an idle stop must not be interpreted as stopping the next chat"
+        );
+    }
 
     /// Live smoke for the cloud image engine - generates the README banner.
     /// `cargo test -p wxwright-gui banner_generation_smoke -- --ignored --nocapture`

@@ -131,6 +131,14 @@ pub fn css_color_luminance(color: &str) -> Option<f64> {
 pub fn css_color_rgb(color: &str) -> Option<(f64, f64, f64)> {
     let c = color.trim().to_ascii_lowercase();
     if let Some(hex) = c.strip_prefix('#') {
+        // A hex color is ASCII by definition. Without this guard the 6-char
+        // branch below slices by byte index and panics on a non-char boundary
+        // for a malformed value of exactly six bytes (`#中ab` is 6 bytes with
+        // the split landing inside the 3-byte character), which took down
+        // `wxwright validate` with exit code 101.
+        if !hex.is_ascii() {
+            return None;
+        }
         let (r, g, b) = match hex.len() {
             3 => {
                 let v: Vec<u32> = hex.chars().filter_map(|ch| ch.to_digit(16)).collect();
@@ -199,5 +207,23 @@ mod tests {
         assert!((r - 21.0).abs() < 0.1);
         let r2 = contrast_ratio("#ffffff", "#ffffff").unwrap();
         assert!((r2 - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn malformed_hex_colors_return_none_instead_of_panicking() {
+        // Regression: the 6-byte branch used to slice by byte index, so a value
+        // of exactly six bytes containing a multi-byte character split inside
+        // that character and panicked. `#中ab` = 1 + 3 + 1 + 1 = 6 bytes.
+        assert_eq!(css_color_rgb("#中ab"), None);
+        assert_eq!("#中ab".len(), 6, "the probe must stay in the 6-byte branch");
+        // Other malformed shapes must also be rejected, not panic.
+        assert_eq!(css_color_rgb("#"), None);
+        assert_eq!(css_color_rgb("#中"), None);
+        assert_eq!(css_color_rgb("#中文"), None);
+        assert_eq!(css_color_rgb("#zzzzzz"), None);
+        assert_eq!(css_color_rgb("#1234567"), None);
+        // Valid values keep working, and the uppercase form is normalised.
+        assert_eq!(css_color_rgb("#FFFFFF"), css_color_rgb("#ffffff"));
+        assert!(css_color_rgb("#123456").is_some());
     }
 }

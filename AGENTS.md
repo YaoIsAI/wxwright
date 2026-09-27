@@ -15,7 +15,8 @@ wxwright 是**面向社交媒体创作的桌面客户端 + Rust 引擎**：一�
   - 预览形态：微信=方言长文滚动 / 小红书=笔记壳（图组+文案）/ 知乎=中性排版文章。
   - 规则表：微信 R-1~R-4（官方规范）；小红书 XHS-1..5；知乎宽松。
   - 导出物：微信=方言富文本复制/推草稿；小红书=纯文本文案+图组；知乎=Markdown。
-- 当前平台注册表：微信公众号 / 小红书 / 知乎 / Meta / X / LinkedIn（`wxwright-core/src/platform.rs`，描述符是数据不是行为）。
+- 当前平台注册表：**7 个**——微信公众号 / 小红书 / 知乎 / Facebook(Meta) / Instagram / X / LinkedIn
+  （`wxwright-core/src/platform.rs`；`PlatformSpec` 含 `export_kind` 行为字段，描述符是数据不是行为）。
 - 作者品牌：**AI瑶 · 公众号「码聋」· github.com/YaoIsAI**（不得改动/移除）。
 
 ## 2. 仓库结构 / Layout
@@ -24,12 +25,12 @@ wxwright 是**面向社交媒体创作的桌面客户端 + Rust 引擎**：一�
 crates/wxwright-core/    引擎：parser(IR) / render(方言) / normalizer / validator(R-规则) /
                          theme(TOML) / platform(平台注册表+出口适配) / img / clipboard / htmlutil
 crates/wxwright-cli/     CLI：convert / validate / fix / copy / draft / publish / platforms / doctor / agent-card / mcp
-crates/wxwright-mcp/     MCP stdio server（7 工具，手写 JSON-RPC，per-request catch_unwind）
+crates/wxwright-mcp/     MCP stdio server（8 工具，手写 JSON-RPC，per-request catch_unwind）
 crates/wxwright-mp/      公众号 API（凭据 keyring / 草稿 / freepublish / mmbiz 上传）
-crates/wxwright-gui/     Tauri 2 桌面客户端（gui/src-tauri 后端 + gui/ui 前端）
+gui/src-tauri/           Tauri 2 桌面客户端后端（Rust；不是 crates/ 下的成员）
 gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生成运行时) · social.rs(海外平台 BYO 一键登录/凭据) · comfy.rs(ComfyUI) ·
                          articles.rs(文章库 frontmatter) · extract.rs(PDF/DOCX/HTML 文本提取) · commands.rs · lib.rs
-gui/ui/                  index.html · app.js(主逻辑,~2900行) · ai-jobs.js(生成任务桥) · pet.js(宠物墨仔) ·
+gui/ui/                  index.html · app.js(主逻辑,~4100行) · ai-jobs.js(生成任务桥) · pet.js(宠物墨仔) ·
                          brand-logos.js(17厂商+5平台官方矢量,内嵌 path/dataURI) · styles.css · qrcode.jpg
 tools/icongen/           图标生成（1024px 超采样→Lanczos3→8帧 ICO）
 dist/                    发布目录（两 exe；gitignore；**发版必须手动同步**）
@@ -39,7 +40,7 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ## 3. 常用命令 / Commands
 
 ```bash
-cargo test --workspace                       # 全量测试（当前 128 通过 + 4 条 live ignored，必须全绿才能交付）
+cargo test --workspace                       # 全量测试（当前 142 通过 + 5 条 live ignored，必须全绿才能交付）
 cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
                                              # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
@@ -76,7 +77,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
    必须 grep `<path` 验证）；Simple Icons 没有的（xAI/Zhipu/LinkedIn）取 Wikimedia 官方素材
    并在 CHANGELOG 注明来源。不要手绘品牌标。
 8. **SVG 组件插入必须作为文档末尾独立块**（光标插入会嵌进列表/代码块导致渲染失效）。
-9. **MCP 工具面**（7 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
+9. **MCP 工具面**（8 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
    改工具清单必须同步 agent card + README，否则 CI 红。
 10. **修改 logo/图标**需三处同步：master.svg、index.html symbol、icongen 重跑。
 11. **主题角色以 `wxwright-core/src/roles.rs` 为唯一事实源**。渲染器、AI 主题提示词
@@ -85,7 +86,9 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
     写入一条独特声明并断言它出现在渲染结果里——「提示词教一套、渲染器认另一套」
     会直接测试失败（这条铁律来自 card_* 角色被静默丢弃的事故）。
 12. **剪贴板/草稿的图片门禁只有一处实现**：`ImageOutcome::paste_hostile()`。
-    CLI copy、GUI copy、GUI 推草稿三条路径都必须用它，不许各写一份过滤条件。
+    共有**五个写出口**必须全部用它：CLI copy（`main.rs`）、MCP copy、MCP draft_create、
+    GUI copy、GUI 推草稿。`tests/image_gate_test.rs` 会扫描源码，
+    任何手写的 `inlined && !mmbiz` / `starts_with("data:")` 判断都会让测试红。
 
 ## 5. 统一 AI 生成运行时 / jobs.rs（新功能一律走这里）
 
@@ -142,6 +145,10 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 31 | **主题 role 声明了但渲染器不读** | AI 生成主题「合规却无效」，用户感知为「AI 排版没用」（card_* 事故：`let _ = row;` 式的 `let _ = role;`） | 见铁律 11；`roles.rs` + `theme_roles_test.rs` 双重锁定 |
 | 32 | **卡片容器在标题后闭合，正文被 append 成兄弟节点**（render_card 事故） | 所有 callout（[!WARNING]/[!IMPORTANT]/[!TIP]/[!NOTE]）底色只盖住标签行，正文落白底，卡片视觉=细条；用户感知为「卡片效果没有」 | 正文块必须渲染在容器 section 内部；验证卡片要看「正文是否在色底上」，不能只 grep 背景色出现与否 |
 | 33 | **dist 同步从 `C:/…/target/release` 拷贝**（CARGO_TARGET_DIR=E: 后 C 盘 target 是 0.10.0 时代旧 exe） | 新构建其实成功，但拷进 dist 的是旧 exe：Rust 修复丢失 + 前端嵌 v24——busy spinner（v26）、侧栏轮询（v27）连续两次「已交付」实际全没生效；测试还误判成「前端代码没跑」 | 一律 `cp E:/wxwright-build/release/*.exe dist/`（CARGO_TARGET_DIR 本身就是 target，**产物在 release/ 下，没有 /target 段**）；桌面端验收先 CDP 确认 `app.js?v=N` 是新版本 |
+| 34 | **原子代际判定写成「fetch_add 的返回值 vs load 的新值」**（AI 停止按钮事故：`chat()` 用旧值作 my_gen，`stop()` 存新值，判定式恒不成立；停止从未生效，且残留 STOP_GEN 让下一次对话首行即中断） | 用户点停止无反应，或「刚发就停」；有提交标题声称修了但没碰判定式 | 代际算术抽成 `next_generation(&AtomicU64)` / `mark_stop_for_current()` 纯函数，用局部原子做**双向**单测（停止必须命中当前、空闲停止不得污染下一次）；交付前把 bug 放回去确认测试会红 |
+| 35 | **契约测试只做前向断言**（`theme_roles_test` 只验「声明了的都被消费」，抓不到「渲染器支持但表里没声明」→ h6 漏网，`validate_generated_theme` 会拒绝一个合法 key） | 主题校验器拒绝一个实际生效的 role；同类问题在「动态拼 role」处（`format!("h{}", level)`）最容易发生 | 契约必须**双向**：前向用探针断言每个 key 生效；反向用端到端驱动枚举动态角色族（h1..=6）并断言「既生效又已声明」；再加算术自检测试锁住角色/key 数量 |
+| 36 | **列表上限截断不区分严重度**（`MAX_VIOLATIONS=500` 一视同仁丢弃 → 501 条 warn + 1 条 `<script>` 被判 compliant，退出码 0） | 「有阻断违规」被静默变成「没问题」，零失真承诺失效；MCP 的 validate 同样中招 | 阻断级给独立上限（`MAX_BLOCK_VIOLATIONS`），warn 可以被截断，**block 永不被隐藏**；回归测试构造「超额 warn + 1 个 block」断言 block 仍在 |
+| 37 | **同一判定在多条路径上各写一遍**（图片门禁 `inlined && !mmbiz` 曾在 CLI/GUI/MCP 各写一份，MCP 那份还漏 http 与读取失败；`wxwright_draft_create` 干脆一道门禁都没有） | 同一篇文章，四条路径给出四个不同答案 | 判定只留一处实现（`ImageOutcome::paste_hostile()`），全部写出口调用它；再加**源码扫描测试**（`tests/image_gate_test.rs`）让手写过滤无法复现 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
@@ -150,7 +157,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎。
-- 测试 132（128 常规 + 4 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 测试 147（142 常规 + 5 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源。

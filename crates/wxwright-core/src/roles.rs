@@ -65,6 +65,12 @@ pub const ROLES: &[RoleDef] = &[
         shape: RoleShape::BlockWithLeaf,
     },
     RoleDef {
+        id: "h6",
+        label_zh: "六级标题",
+        label_en: "Heading 6",
+        shape: RoleShape::BlockWithLeaf,
+    },
+    RoleDef {
         id: "paragraph",
         label_zh: "正文段落",
         label_en: "Body paragraph",
@@ -125,7 +131,7 @@ pub const ROLES: &[RoleDef] = &[
         shape: RoleShape::BlockWithLeaf,
     },
     RoleDef {
-        id: "toc_title",
+        id: "toc_heading",
         label_zh: "目录标题",
         label_en: "TOC heading",
         shape: RoleShape::Block,
@@ -250,6 +256,77 @@ mod tests {
         assert!(!is_known_key("card_hover"));
         assert!(!is_known_key("a"));
         assert!(!is_known_key("code_leaf"));
+    }
+
+    /// The renderer builds heading roles dynamically (`format!("h{}", level)`
+    /// for every level pulldown-cmark can produce, 1..=6). The table used to
+    /// stop at h5, so `validate_generated_theme` rejected `[block.h6]` even
+    /// though the renderer honoured it - a "declared" gap rather than a
+    /// "consumed" one, which the forward-only test could not see.
+    #[test]
+    fn every_heading_level_the_renderer_can_emit_is_declared() {
+        for level in 1..=6u8 {
+            let id = format!("h{level}");
+            assert!(is_known_key(&id), "{id} must be declared");
+            assert!(
+                is_known_key(&format!("{id}_leaf")),
+                "{id}_leaf must be declared"
+            );
+        }
+        // pulldown-cmark tops out at h6; there is no h7 to declare.
+        assert!(!is_known_key("h7"));
+    }
+
+    /// `all_keys()` must stay in step with `ROLES`: the expanded count is
+    /// derived from the shapes, so adding a role without a shape (or a shape
+    /// without a role) is caught here rather than discovered in a theme that
+    /// silently does nothing.
+    #[test]
+    fn key_count_is_derived_from_the_shapes() {
+        let expected: usize = ROLES
+            .iter()
+            .map(|r| match r.shape {
+                RoleShape::Block => 1,
+                RoleShape::BlockWithLeaf => 2,
+                RoleShape::CardWithTitle => 3,
+            })
+            .sum();
+        assert_eq!(
+            all_keys().len(),
+            expected,
+            "all_keys() disagrees with the ROLES shape arithmetic"
+        );
+        // Pinned so a role change is a deliberate edit, not an accident.
+        assert_eq!(ROLES.len(), 26, "role count changed - update the docs too");
+        assert_eq!(
+            all_keys().len(),
+            54,
+            "key count changed - update the docs too"
+        );
+    }
+
+    /// Every `BlockWithLeaf` / `CardWithTitle` role must expand its suffix
+    /// variants, and every `Block` role must not claim any.
+    #[test]
+    fn shapes_expand_consistently() {
+        for r in ROLES {
+            let has_leaf = is_known_key(&format!("{}_leaf", r.id));
+            let has_title = is_known_key(&format!("{}_title", r.id));
+            match r.shape {
+                RoleShape::Block => {
+                    assert!(!has_leaf, "{} is Block but declares _leaf", r.id);
+                    assert!(!has_title, "{} is Block but declares _title", r.id);
+                }
+                RoleShape::BlockWithLeaf => {
+                    assert!(has_leaf, "{} must declare _leaf", r.id);
+                    assert!(!has_title, "{} must not declare _title", r.id);
+                }
+                RoleShape::CardWithTitle => {
+                    assert!(has_leaf, "{} must declare _leaf", r.id);
+                    assert!(has_title, "{} must declare _title", r.id);
+                }
+            }
+        }
     }
 
     #[test]
