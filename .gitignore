@@ -34,3 +34,6 @@ agnes_ai.txt
 *.local.txt
 patch_*.py
 build_*.url
+# local AI assistant sessions (work logs, review reports) - never publish
+.workbuddy-ai/
+review/
