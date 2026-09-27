@@ -52,9 +52,10 @@ cargo run --release -p icongen               # 重生成图标
 python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端）验收 UI
 ```
 
-**交付流程**：`cargo build --release` → `taskkill //IM wxwright-gui.exe //F; sleep 2` →
-`cp target/release/*.exe dist/` → 重启 `dist/wxwright-gui.exe` → git commit。
-**用户启动的就是 `dist\wxwright-gui.exe`**，忘记同步 dist = 用户看不到任何修复。
+**交付流程**：`CARGO_TARGET_DIR=E:/wxwright-build cargo build --release` → `taskkill //IM wxwright-gui.exe //F; sleep 2` →
+`cp E:/wxwright-build/release/*.exe dist/`（**没有 /target 段**；C 盘 target 里是 0.10.0 时代旧 exe，见坑 33）→ 重启 `dist/wxwright-gui.exe` → git commit。
+**用户启动的就是 `dist\wxwright-gui.exe`**，忘记同步 dist = 用户看不到任何修复。桌面端验收前端时，用
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9333"` 启动 + CDP `Runtime.evaluate` 查 `script[src*=app.js]` 的 ?v= 版本，确认资产真的进 exe。
 
 ## 4. 架构铁律 / Hard invariants（违反即事故）
 
@@ -140,6 +141,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 30 | **C 盘满到 `rm -rf` 之后可用空间反而更少** | 其他进程（系统更新/索引/备份）在同时吃盘，跟 C 盘抢空间没有胜算 | 直接换盘：`CARGO_TARGET_DIR=E:/wxwright-build cargo build --release`（E 盘 134G 可用），零风险且不影响 dist 同步 |
 | 31 | **主题 role 声明了但渲染器不读** | AI 生成主题「合规却无效」，用户感知为「AI 排版没用」（card_* 事故：`let _ = row;` 式的 `let _ = role;`） | 见铁律 11；`roles.rs` + `theme_roles_test.rs` 双重锁定 |
 | 32 | **卡片容器在标题后闭合，正文被 append 成兄弟节点**（render_card 事故） | 所有 callout（[!WARNING]/[!IMPORTANT]/[!TIP]/[!NOTE]）底色只盖住标签行，正文落白底，卡片视觉=细条；用户感知为「卡片效果没有」 | 正文块必须渲染在容器 section 内部；验证卡片要看「正文是否在色底上」，不能只 grep 背景色出现与否 |
+| 33 | **dist 同步从 `C:/…/target/release` 拷贝**（CARGO_TARGET_DIR=E: 后 C 盘 target 是 0.10.0 时代旧 exe） | 新构建其实成功，但拷进 dist 的是旧 exe：Rust 修复丢失 + 前端嵌 v24——busy spinner（v26）、侧栏轮询（v27）连续两次「已交付」实际全没生效；测试还误判成「前端代码没跑」 | 一律 `cp E:/wxwright-build/release/*.exe dist/`（CARGO_TARGET_DIR 本身就是 target，**产物在 release/ 下，没有 /target 段**）；桌面端验收先 CDP 确认 `app.js?v=N` 是新版本 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
