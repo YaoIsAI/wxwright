@@ -156,6 +156,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 36 | **列表上限截断不区分严重度**（`MAX_VIOLATIONS=500` 一视同仁丢弃 → 501 条 warn + 1 条 `<script>` 被判 compliant，退出码 0） | 「有阻断违规」被静默变成「没问题」，零失真承诺失效；MCP 的 validate 同样中招 | 阻断级给独立上限（`MAX_BLOCK_VIOLATIONS`），warn 可以被截断，**block 永不被隐藏**；回归测试构造「超额 warn + 1 个 block」断言 block 仍在 |
 | 37 | **同一判定在多条路径上各写一遍**（图片门禁 `inlined && !mmbiz` 曾在 CLI/GUI/MCP 各写一份，MCP 那份还漏 http 与读取失败；`wxwright_draft_create` 干脆一道门禁都没有） | 同一篇文章，四条路径给出四个不同答案 | 判定只留一处实现（`ImageOutcome::paste_hostile()`），全部写出口调用它；再加**源码扫描测试**（`tests/image_gate_test.rs`）让手写过滤无法复现 |
 | 38 | **`ureq` 不读环境变量也不读 Windows 系统代理**（本机 Clash 在 127.0.0.1:7897，`curl` 走 `HTTPS_PROXY` 能通，应用内直连 Cloudflare 前置的境外端点全部 `os error 10060`） | 桌面端 AI 助手 / 云端生图 / X·LinkedIn 换 token **全部不可用**，但日志只显示「连接超时」，极易误判成「服务商挂了」或「密钥错了」 | 境外出口一律走 `gui/src-tauri/src/net.rs` 的 `with_env_proxy`（读 `HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY` + `NO_PROXY=*` 退出）。**本地（ComfyUI 127.0.0.1）与境内（微信 API）保持直连**——别开 ureq 的 `proxy-from-env` feature，它没有 NO_PROXY 支持且 `ALL_PROXY` 优先于 `HTTPS_PROXY`，会把回环请求也塞进代理 |
+| 39 | **`cargo test ... \| grep "test result"` 会把编译失败伪装成「没有测试」**（本次实测：E 盘增量目录被瞬时占用 → `os error 5 拒绝访问` → 编译中止 → grep 无输出 → 汇总统计显示为空，差点被当成通过） | 静默漏测；比报错更危险 | 跑测试时**先看退出码**，或用 `set -o pipefail`；拿汇总数时断言它非空（`[ -n "$TOTAL" ] \|\| exit 1`）。Windows 上若出现 `os error 5` 占用增量目录，加 `CARGO_INCREMENTAL=0` 重跑即可（多为 Defender 扫描新写的 .rmeta） |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

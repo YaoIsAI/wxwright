@@ -19,7 +19,20 @@ const SCAN_EXTENSIONS: &[&str] = &[
     "rs", "toml", "md", "js", "css", "html", "json", "svg", "yml", "yaml",
 ];
 
-const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist"];
+/// Directories that are never published, so they are outside the "product
+/// surface" this test guards (PRD 3.8-B). `.workbuddy-ai/` and `review/` are
+/// gitignored local artifacts - agent work logs and generated reports - so
+/// scanning them produced a failure that only ever reproduced on a developer
+/// machine (CI checks out from git and never sees them). A guard that is red
+/// locally and green in CI trains people to ignore it.
+const SKIP_DIRS: &[&str] = &[
+    "target",
+    ".git",
+    "node_modules",
+    "dist",
+    ".workbuddy-ai",
+    "review",
+];
 
 const SKIP_FILES: &[&str] = &["PRD.md"];
 
