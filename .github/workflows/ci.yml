@@ -22,8 +22,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config
       - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # The UI is ~4k lines of hand-written vanilla JS with no bundler, so
+      # nothing else would catch a syntax error before it ships.
+      - name: JS syntax gate
+        shell: bash
+        run: |
+          for f in gui/ui/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
 
   official-spec-gate:
     # Truth gate: the official puppeteer checker (PRD 9-1).
@@ -39,7 +48,7 @@ jobs:
           node-version: 20
       - name: Build golden HTML
         run: |
-          cargo build -p wxwright-cli
+          cargo build -p wxwright-cli --locked
           for t in minimal techblue magazine; do
             target/debug/wxwright convert examples/sample-article.md --theme $t --out "golden-$t.html"
           done
@@ -59,4 +68,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
-      - run: cargo build -p wxwright-gui
+      - run: cargo build -p wxwright-gui --locked

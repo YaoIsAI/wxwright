@@ -40,7 +40,7 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ## 3. 常用命令 / Commands
 
 ```bash
-cargo test --workspace                       # 全量测试（当前 142 通过 + 5 条 live ignored，必须全绿才能交付）
+cargo test --workspace                       # 全量测试（当前 148 通过 + 6 条 live ignored，必须全绿才能交付）
 cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
                                              # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
@@ -62,13 +62,19 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 
 1. **Tauri 命令阻塞主线程 = 卡死**。一切阻塞 IO/网络必须 `async fn` + `spawn_blocking`。
 2. **命令在 commands.rs 定义后必须注册进 lib.rs 的 generate_handler**，否则是死代码
-   （线索：模块内函数报 never-used 警告；用 diff 定义 vs 注册清单抓漏）。
+   （线索：模块内函数报 never-used 警告）。**已由 `tests/gui_governance_test.rs` 自动守卫**：
+   它 diff「带 `#[tauri::command]` 的函数」与「`generate_handler!` 里的清单」，双向断言。
+   临时把某条注册摘掉会让测试红（已做反证检验）。
 3. **no_emoji 测试**（`crates/wxwright-core/tests/no_emoji_test.rs`，PRD 3.8-B）：产品文件
    （代码/HTML/CSS/JS/AGENTS.md 等所有入库文本）禁止一切 emoji，连勾选框符号
    U+2611/U+2610 都拦（本文件第 7 节就是被它抓出来的）。文案用文字或内联 SVG。
 4. **`t()` 缺 key 必须返回 key 名**，绝不显示 undefined；新 UI 字符串必须同时补 zh+en 两个字典
    （gui/ui/app.js 的 I18N），静态 HTML 用 `data-i18n` / `data-i18n-placeholder` /
    `data-i18n-title` / `data-desc-i18n`（applyI18n 统一处理）。
+   **已由 `tests/gui_governance_test.rs` 自动守卫**：比对两个字典的 key 集合是否一致，
+   并检查 index.html 里每个 `data-i18n*` 引用的 key 在两个字典里都存在。
+   注意 I18N 的值可能是箭头函数 + 模板字符串（`key: (id) => \`...\``），守卫测试用
+   「先剥离字符串字面量再扫 `ident:`」的方式解析，不会把值里的冒号误当 key。
 5. **前端子资源有 cache-bust**：index.html 引用 `?v=N`。**每次改前端文件必须递增该文件的 v**
    （styles.css / app.js / ai-jobs.js / pet.js / brand-logos.js 各自独立）。
 6. **密钥隔离**：`agnes ai.txt`（明文 key）与 `dist/`、`settings.json` 被 .gitignore 排除；
@@ -158,7 +164,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎。
-- 测试 147（142 常规 + 5 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 测试 154（148 常规 + 6 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源。
@@ -173,8 +179,9 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 
 - [ ] `cargo test --workspace` 全绿；JS `node --check` 全过
 - [ ] 前端改动 → cache-bust v+1
-- [ ] 新 UI 字符串 → zh+en 双语 + data-i18n（四种属性机制）
-- [ ] 新 Tauri 命令 → lib.rs 注册 + async/spawn_blocking 检查
+- [ ] 新 UI 字符串 → zh+en 双语 + data-i18n（四种属性机制）——`gui_governance_test` 会自动查
+- [ ] 新 Tauri 命令 → lib.rs 注册 + async/spawn_blocking 检查（注册漏了 `gui_governance_test` 会红）
+- [ ] 改过 JS → `node --check` 每个 `gui/ui/*.js`（CI 已加此门禁）
 - [ ] 无 emoji 混入产品文件
 - [ ] release 构建同步 dist + 重启 GUI
 - [ ] CHANGELOG.md（Keep a Changelog 格式）+ 必要时 PRD §15 对照表

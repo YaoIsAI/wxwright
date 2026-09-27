@@ -81,6 +81,27 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   guard test that unrelated names (`errcode`, `mysecret`, `secret_sauce`)
   are still left alone.
 
+### Added
+- **Automated guards for the two iron laws that had none.** The review found
+  that iron law 2 (a `#[tauri::command]` must be registered in `lib.rs`) and
+  iron law 4 (every UI string needs both a zh-CN and an en entry) were enforced
+  only by discipline. Both are now locked by `tests/gui_governance_test.rs`:
+  - it diffs the functions carrying `#[tauri::command]` against the
+    `generate_handler!` list, in both directions, so an unregistered command
+    (pitfall 4: `extract_document_text` shipped dead) or a stale registration
+    fails the build;
+  - it compares the key sets of the two `I18N` dictionaries and checks that
+    every `data-i18n*` attribute in `index.html` resolves in both. The parser
+    strips JS string and template literals before scanning for `ident:`, so a
+    URL or a `${...}` interpolation inside a value is never mistaken for a key.
+  Both guards were proven by breaking the code on purpose (removing a
+  registration and deleting an `en` key) and confirming they go red.
+- **CI: JS syntax gate and `--locked`.** The UI is ~4k lines of hand-written
+  vanilla JS with no bundler, so `node --check` now runs over every
+  `gui/ui/*.js` on all three platforms. Cargo invocations in CI pass
+  `--locked` so a stale `Cargo.lock` fails loudly instead of silently
+  resolving new versions.
+
 ### Changed
 - **Documentation caught up with the code** (the review's biggest single
   finding: 10 of 12 spot-checked claims did not match reality).
