@@ -110,6 +110,7 @@ into a client with `wxwright mcp install --target claude|cursor|vscode|opencode`
 | heading `{.center}` (e.g. `## Title {.center}`) | centered heading |
 | image line + italic line right after | figure with caption |
 | `$$...$$` / `$...$` | formula cards (styled text in v1) |
+| ` ```html ` fence | rich-block channel: markup that passes the tag allowlist goes into the article verbatim (then normalized like everything else); anything else degrades to a plain code block. Allowed: section, div, p, span, strong, em, b, i, u, s, br, hr, table, thead, tbody, tfoot, tr, td, th, ul, ol, li, blockquote, h1-h6, figure, figcaption, center - no `img`, no `a`, no event handlers, no executable URL schemes. Inline `style` attributes are honoured. |
 
 Everything else is standard GFM: tables, task lists, fenced code (syntect
 server-side highlighting, inline colored spans), strikethrough, autolinks

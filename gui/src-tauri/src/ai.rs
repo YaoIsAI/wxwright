@@ -98,7 +98,13 @@ pub fn settings() -> serde_json::Value {
             })
         })
         .collect();
-    serde_json::json!({ "providers": providers, "active": s.active })
+    serde_json::json!({
+        "providers": providers,
+        "active": s.active,
+        // The ```html allowlist as one string, generated from the same table
+        // the gate enforces - the chat prompt teaches the channel from here.
+        "html_tags": wxwright_core::htmlutil::prompt_html_tags(),
+    })
 }
 
 fn effective_key(p: &Provider) -> Option<String> {

@@ -113,6 +113,14 @@ pub fn html_block_allowed(html: &str) -> bool {
     true
 }
 
+/// The allowlist as one comma-separated string, for AI prompts.
+///
+/// Generated from `HTML_BLOCK_TAGS` so the chat prompt and the gate cannot
+/// drift apart - the same pattern as `roles::prompt_role_list`.
+pub fn prompt_html_tags() -> String {
+    HTML_BLOCK_TAGS.join(", ")
+}
+
 pub fn escape_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
@@ -426,5 +434,21 @@ mod tests {
         ] {
             assert!(!html_block_allowed(bad), "{bad} must be rejected");
         }
+    }
+
+    /// The prompt must advertise exactly what the gate enforces: every
+    /// dialect tag present, and the two deliberate exclusions (`img`, `a`)
+    /// never leaked in. If someone adds a tag to `HTML_BLOCK_TAGS` and forgets
+    /// this test, the prompt still cannot drift - it is generated - so this
+    /// guards the generator's own contract instead.
+    #[test]
+    fn prompt_tags_match_the_gate() {
+        let tags = prompt_html_tags();
+        let listed: Vec<&str> = tags.split(", ").collect();
+        assert_eq!(listed.len(), HTML_BLOCK_TAGS.len());
+        for t in ["section", "table", "figcaption", "center", "hr"] {
+            assert!(listed.contains(&t), "missing {t}");
+        }
+        assert!(!listed.contains(&"img") && !listed.contains(&"a"));
     }
 }

@@ -114,6 +114,21 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   The allowlist is the dialect's own vocabulary plus a ban on event handlers and
   executable URL schemes; `img` and `a` are excluded on purpose (images must go
   through the material gate, links do not survive the MP editor).
+  The chat assistant teaches this channel in its system prompt, with the tag
+  list generated from the same `HTML_BLOCK_TAGS` table the gate enforces
+  (`prompt_html_tags()`, the same single-source pattern as the theme role
+  prompt) - the prompt and the gate cannot drift apart.
+- **Tool calling for the AI assistant** (DeepSeek-harness style loop). The chat
+  command hands the model a read-only slice of the MCP surface (validate /
+  convert / export / themes_list / draft_list), executes the tool calls it asks
+  for across up to six rounds, and streams the answer as before. The tool
+  schemas are built from `tools_list()` so the assistant's view of a tool
+  cannot drift from the MCP surface, and a test locks `ASSISTANT_TOOLS` to
+  read-only tools - an assistant that can push to the user's drafts box on its
+  own is not an assistant. Providers that reject a `tools` argument degrade to
+  a plain chat instead of failing the turn. The frontend surfaces each round
+  as one line of status inside the streaming bubble (no new panel), in both
+  languages.
 
 ### Changed
 - **The platform descriptor is data for behaviour too, not just for capability

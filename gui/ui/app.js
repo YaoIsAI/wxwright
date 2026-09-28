@@ -31,6 +31,7 @@ const I18N = {
     push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
     ai_tool_call: (n) => `已调用工具 ${n}`,
     ai_tool_note: (n) => `正在调用 ${n}…`,
+    ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，可以用 ```html 围栏直接写富样式块，内容会原样进入文章：只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。",
     push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
     push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
     push_draft_busy: "推送中…",
@@ -150,6 +151,7 @@ const I18N = {
     push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
     ai_tool_call: (n) => `Called tool ${n}`,
     ai_tool_note: (n) => `Calling ${n}…`,
+    ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), you may write a ```html fence and its markup goes into the article verbatim: only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block.",
     push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
     push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
     push_draft_busy: "Pushing…",
@@ -1142,6 +1144,9 @@ async function refreshProviderChip() {
 let aiStopped = false;
 let aiStartedAt = 0;
 let aiModelName = "";
+// The ```html allowlist, generated in core (htmlutil::prompt_html_tags) and
+// fetched with settings - the chat prompt teaches the channel from it.
+let aiHtmlTags = "";
 let msgPinned = true;
 
 function msgScrollPinned() {
@@ -1297,6 +1302,7 @@ async function aiSend(text) {
   try {
     const st = await invoke("ai_settings");
     aiModelName = st.providers.find((p) => p.id === st.active)?.model || "AI";
+    aiHtmlTags = st.html_tags || "";
   } catch (e) { aiModelName = "AI"; }
   const sendBtn = $("btn-ai-send");
   sendBtn.innerHTML = '<svg class="icon"><use href="#i-stop"/></svg>';
@@ -1378,8 +1384,13 @@ async function aiSend(text) {
     updateJumpChip();
   }
   try {
+    // The html-channel clause is appended only when the backend supplied the
+    // allowlist; an empty tag list means older backend, plain prompt.
+    const sys = aiHtmlTags
+      ? AI_SYSTEM() + "\n\n" + t("ai_html_channel", aiHtmlTags)
+      : AI_SYSTEM();
     await invoke("ai_chat", {
-      messages: [{ role: "system", content: AI_SYSTEM() }, ...aiHistory],
+      messages: [{ role: "system", content: sys }, ...aiHistory],
       temperature: 0.7,
       enableTools: true,
     });
