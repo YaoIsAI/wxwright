@@ -893,6 +893,14 @@ pub(crate) fn plan_illustration_slots(
     count: usize,
 ) -> Result<Vec<IllustrationSlot>, String> {
     let (p, key) = active_provider()?;
+    // Reasoning models spend the token budget on thinking before the JSON
+    // arrives, so the same ladder the generation tasks use applies here -
+    // a flat 2048 starved AntAngelMed into an empty answer.
+    let budget = if crate::jobs::is_reasoning_model(&p.model) {
+        8192
+    } else {
+        2048
+    };
     let body = serde_json::json!({
         "model": p.model,
         "messages": [
@@ -903,7 +911,7 @@ pub(crate) fn plan_illustration_slots(
             },
         ],
         "temperature": 0.4,
-        "max_tokens": 2048,
+        "max_tokens": budget,
     });
     let resp = call_completions_post(&p.base_url, &key, "/chat/completions", &body)?;
     let v: serde_json::Value = resp
@@ -915,8 +923,26 @@ pub(crate) fn plan_illustration_slots(
             err.get("message").and_then(|m| m.as_str()).unwrap_or("?")
         ));
     }
-    let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
-    let candidates = parse_slot_array(text)?;
+    let message = &v["choices"][0]["message"];
+    let text = message["content"].as_str().unwrap_or("").trim().to_string();
+    if text.is_empty() {
+        // A reasoning model can legitimately produce reasoning and no answer
+        // (budget exhaustion, provider quirk). Name the shape instead of
+        // failing later with "no JSON array".
+        let thought = message["reasoning_content"]
+            .as_str()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
+        return Err(if thought > 0 {
+            format!(
+                "模型只输出了思考过程（{} 字）没有给答案，请重试或换模型",
+                thought
+            )
+        } else {
+            "模型返回了空内容，请重试或换模型".into()
+        });
+    }
+    let candidates = parse_slot_array(&text)?;
     let mut out: Vec<IllustrationSlot> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for s in candidates {
@@ -940,13 +966,41 @@ pub(crate) fn plan_illustration_slots(
 fn parse_slot_array(text: &str) -> Result<Vec<IllustrationSlot>, String> {
     let t = text.trim();
     // Models wrap JSON in prose or fences; the array brackets are the contract.
-    let (start, end) = match (t.find('['), t.rfind(']')) {
-        (Some(a), Some(b)) if b > a => (a, b + 1),
-        _ => return Err("模型没有输出插图位 JSON 数组".into()),
+    // Some models answer with an object (`{"slots": [...]}`) instead of a bare
+    // array - unwrap the first array found inside before giving up.
+    let json_slice = match (t.find('['), t.rfind(']')) {
+        (Some(a), Some(b)) if b > a => &t[a..=b],
+        _ => {
+            // Object-shaped answer: find its first array value.
+            if let (Some(a), Some(b)) = (t.find('{'), t.rfind('}')) {
+                if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&t[a..=b]) {
+                    let found = obj.as_object().and_then(|o| {
+                        o.values()
+                            .find_map(|val| val.as_array().filter(|a| !a.is_empty()).cloned())
+                    });
+                    if let Some(arr) = found {
+                        return slots_from_json(&arr);
+                    }
+                }
+            }
+            return Err(format!(
+                "模型没有输出插图位 JSON 数组，原文：{}",
+                wxwright_core::util::truncate(t, 160)
+            ));
+        }
     };
-    let arr: serde_json::Value =
-        serde_json::from_str(&t[start..end]).map_err(|e| format!("插图位 JSON 解析失败: {}", e))?;
+    let arr: serde_json::Value = serde_json::from_str(json_slice).map_err(|e| {
+        format!(
+            "插图位 JSON 解析失败: {}，原文：{}",
+            e,
+            wxwright_core::util::truncate(t, 160)
+        )
+    })?;
     let list = arr.as_array().ok_or("插图位不是 JSON 数组")?;
+    slots_from_json(list)
+}
+
+fn slots_from_json(list: &[serde_json::Value]) -> Result<Vec<IllustrationSlot>, String> {
     Ok(list
         .iter()
         .filter_map(|it| {
