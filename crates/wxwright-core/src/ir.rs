@@ -160,6 +160,15 @@ pub enum Block {
     RawHtml {
         html: String,
     },
+    /// An ```html fence whose markup passed the allowlist: emitted verbatim,
+    /// then normalized by the pipeline like the rest of the document. This is
+    /// the AI's rich-block channel - the way a generated card, badge or grid
+    /// reaches the article without the dialect having to know about it.
+    ///
+    /// Distinct from `RawHtml`, which is always escaped.
+    HtmlFence {
+        html: String,
+    },
     /// Safety-checked inline SVG component (from the SVG kit or AI): passed
     /// through verbatim, then re-cleaned by the normalizer and re-checked by
     /// the validator. Never produced for arbitrary user HTML.
@@ -235,7 +244,11 @@ fn walk_blocks(blocks: &[Block], s: &mut Stats) {
                 s.chars += inline_chars(caption);
                 let _ = image;
             }
-            Block::Rule | Block::Toc | Block::RawHtml { .. } | Block::SvgEmbed { .. } => {}
+            Block::Rule
+            | Block::Toc
+            | Block::RawHtml { .. }
+            | Block::HtmlFence { .. }
+            | Block::SvgEmbed { .. } => {}
             Block::Chart { spec } => s.chars += spec.title.chars().count() + 8,
             Block::Formula { latex } => s.chars += latex.chars().count(),
         }

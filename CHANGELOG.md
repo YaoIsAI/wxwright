@@ -102,6 +102,19 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   `--locked` so a stale `Cargo.lock` fails loudly instead of silently
   resolving new versions.
 
+### Added
+- **```html fences: the AI's rich-block channel.** The request behind "let the AI
+  produce richer layouts than Markdown + a theme can express". A ```html fence
+  whose markup passes an allowlist is emitted verbatim and then normalized by
+  the pipeline like every other block, so the compliance fixes still apply and
+  the official-spec validation still runs on the result. A fence the allowlist
+  rejects degrades to a plain code block instead of reaching the renderer, and
+  Markdown-native HTML keeps its old behaviour (escaped) - the two paths are
+  distinct IR variants precisely so that loosening one cannot loosen the other.
+  The allowlist is the dialect's own vocabulary plus a ban on event handlers and
+  executable URL schemes; `img` and `a` are excluded on purpose (images must go
+  through the material gate, links do not survive the MP editor).
+
 ### Changed
 - **The platform descriptor is data for behaviour too, not just for capability
   flags.** `validate_platform_caption` opened with

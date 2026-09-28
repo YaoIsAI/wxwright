@@ -2,6 +2,117 @@
 //! Style parsing is a hand-written state machine, zero regex (PRD 5.7-B).
 
 /// Escape text for HTML body content.
+/// Tags an ```html block may use.
+///
+/// This is the dialect's vocabulary, not the web's. `a` is excluded because the
+/// MP editor does not keep links (Markdown links become footnotes instead), and
+/// `img` is excluded because images have to go through the material gate - a
+/// raw `<img src="https://...">` renders as a broken image in the MP editor.
+const HTML_BLOCK_TAGS: &[&str] = &[
+    "section",
+    "div",
+    "p",
+    "span",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "u",
+    "s",
+    "br",
+    "hr",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "td",
+    "th",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "figure",
+    "figcaption",
+    "center",
+];
+
+/// True when every tag in `html` is one the WeChat dialect can honour.
+///
+/// An allowlist, not a blocklist: the safe question is "is everything here
+/// known-good", because a blocklist is only as good as its author's
+/// imagination. Event handlers and executable URL schemes are rejected on top
+/// of the tag check, and the scan honours quoted attribute values so a `>`
+/// inside one cannot hide a forbidden attribute from it.
+pub fn html_block_allowed(html: &str) -> bool {
+    let bytes = html.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        // Find the end of the tag, honouring quoted attribute values.
+        let mut close = None;
+        let mut quote: Option<u8> = None;
+        let mut j = i + 1;
+        while j < bytes.len() {
+            let b = bytes[j];
+            if let Some(q) = quote {
+                if b == q {
+                    quote = None;
+                }
+            } else if b == b'"' || b == b'\'' {
+                quote = Some(b);
+            } else if b == b'>' {
+                close = Some(j);
+                break;
+            }
+            j += 1;
+        }
+        let close = match close {
+            Some(c) => c,
+            // An unterminated tag is not markup we can vet.
+            None => return false,
+        };
+        let inner = html[i + 1..close].trim();
+        let (closing, name_part) = match inner.strip_prefix('/') {
+            Some(r) => (true, r.trim()),
+            None => (false, inner),
+        };
+        // Comments, doctypes and CDATA carry no tag name.
+        let name: String = name_part
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        let name = name.to_ascii_lowercase();
+        if name.is_empty() || !HTML_BLOCK_TAGS.contains(&name.as_str()) {
+            return false;
+        }
+        if !closing {
+            let lower = name_part.to_ascii_lowercase();
+            // No event handlers: every `on*` attribute is an event handler.
+            for token in lower.split_whitespace().skip(1) {
+                let attr = token.split('=').next().unwrap_or("");
+                if attr.starts_with("on") {
+                    return false;
+                }
+            }
+            if lower.contains("javascript:") || lower.contains("vbscript:") {
+                return false;
+            }
+        }
+        i = close + 1;
+    }
+    true
+}
+
 pub fn escape_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
@@ -281,5 +392,39 @@ mod tests {
         // Valid values keep working, and the uppercase form is normalised.
         assert_eq!(css_color_rgb("#FFFFFF"), css_color_rgb("#ffffff"));
         assert!(css_color_rgb("#123456").is_some());
+    }
+
+    /// The allowlist is the whole security model for ```html fences, so both
+    /// directions matter: everything the dialect can honour passes, and every
+    /// way to execute script or smuggle an unsupported tag fails.
+    #[test]
+    fn html_fence_allowlist() {
+        // The dialect's vocabulary passes.
+        assert!(html_block_allowed(
+            "<section style=\"font-size: 30px\"><p>大字标题</p></section>"
+        ));
+        assert!(html_block_allowed(
+            "<div class=\"x\"><table><tr><td>1</td></tr></table></div>"
+        ));
+        assert!(html_block_allowed("<br/>"));
+        // Quoted attribute values containing '>' must not confuse the scan.
+        assert!(html_block_allowed("<span title=\"a>b\">x</span>"));
+
+        // Execution, unsupported tags and things the pipeline cannot honour.
+        for bad in [
+            "<script>alert(1)</script>",
+            "<section onclick=\"x()\">y</section>",
+            "<span onmouseover=\"x()\">y</span>",
+            "<div style=\"background:url(javascript:alert(1))\">y</div>",
+            "<a href=\"https://x\">link</a>",
+            "<img src=\"https://x/a.png\">",
+            "<style>p{}</style>",
+            "<iframe src=\"//x\"></iframe>",
+            "<wtf-tag>y</wtf-tag>",
+            // An unterminated tag cannot be vetted.
+            "<section style=\"x\"",
+        ] {
+            assert!(!html_block_allowed(bad), "{bad} must be rejected");
+        }
     }
 }

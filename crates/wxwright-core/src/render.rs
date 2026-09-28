@@ -198,6 +198,10 @@ fn render_block(b: &Block, ctx: &Ctx, scope: &BodyCtx) -> String {
                 &leaf(&base, &escape_text(html)),
             )
         }
+        // Verbatim on purpose: the fence already passed the allowlist, and the
+        // pipeline runs normalize_html over the whole document afterwards, so
+        // this block gets the same compliance fixes as renderer output.
+        Block::HtmlFence { html } => html.clone(),
         Block::SvgEmbed { html } => html.clone(),
         Block::Chart { spec } => render_chart(spec),
     }
@@ -1475,6 +1479,28 @@ mod tests {
         assert!(
             !css.contains("Comic Sans"),
             "font-family must be dropped at the merge: {css}"
+        );
+    }
+
+    /// The whole point of the ```html channel: AI-generated markup reaches the
+    /// output and the document is still compliant afterwards.
+    #[test]
+    fn html_fence_reaches_the_output_and_stays_compliant() {
+        let md = "正文前\n\n```html\n<section style=\"font-size: 30px\"><p>大字标题</p></section>\n```\n\n正文后\n";
+        let out = crate::pipeline(md, &opts()).expect("pipeline");
+
+        assert!(out.html.contains("大字标题"), "got: {}", out.html);
+        assert!(out.html.contains("<section"), "got: {}", out.html);
+        assert!(
+            out.html.contains("正文前") && out.html.contains("正文后"),
+            "the surrounding paragraphs must survive: {}",
+            out.html
+        );
+        assert_eq!(
+            out.blocking_violations().len(),
+            0,
+            "the fence must not introduce blocking violations: {:?}",
+            out.violations
         );
     }
 

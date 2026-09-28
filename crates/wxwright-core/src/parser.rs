@@ -377,6 +377,27 @@ impl ParserState {
                         return;
                     }
                 }
+                // ```html fences are the rich-block channel: the AI (or the
+                // author) writes a fragment of the dialect and it is emitted
+                // verbatim, then normalized by the pipeline like the rest of
+                // the document. An allowlist gate decides whether the markup
+                // is something the dialect can honour; a fence that is not
+                // degrades to a plain code block rather than injecting.
+                if lang
+                    .as_deref()
+                    .map(|l| l.eq_ignore_ascii_case("html"))
+                    .unwrap_or(false)
+                {
+                    if crate::htmlutil::html_block_allowed(&code) {
+                        self.push_block(Block::HtmlFence { html: code });
+                    } else {
+                        self.push_block(Block::Code {
+                            lang: Some("html".into()),
+                            code,
+                        });
+                    }
+                    return;
+                }
                 self.push_block(Block::Code { lang, code });
             }
             Frame::HtmlBuf(buf) => {
@@ -717,6 +738,23 @@ mod tests {
     fn toc_and_formula() {
         let blocks = parse_markdown("[TOC]\n\n$$E = mc^2$$\n");
         assert!(matches!(blocks[0], Block::Toc));
+
+        // ```html is the rich-block channel: allowed markup becomes a
+        // passthrough block, markup the dialect cannot honour degrades to a
+        // code block instead of reaching the renderer.
+        let good =
+            parse_markdown("```html\n<section style=\"color:#123456\"><p>x</p></section>\n```\n");
+        assert!(
+            matches!(good[0], Block::HtmlFence { .. }),
+            "got: {:?}",
+            good[0]
+        );
+        let bad = parse_markdown("```html\n<script>alert(1)</script>\n```\n");
+        assert!(
+            matches!(bad[0], Block::Code { .. }),
+            "a rejected fence must degrade to code, got: {:?}",
+            bad[0]
+        );
         assert!(matches!(blocks[1], Block::Formula { .. }));
     }
 

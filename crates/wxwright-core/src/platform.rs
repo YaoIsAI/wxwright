@@ -394,11 +394,11 @@ fn push_block(b: &Block, out: &mut String) {
         // A caption is plain text: markup must not leak into it.
         Block::RawHtml { html } => {
             out.push_str(&crate::htmlutil::strip_tags(html));
-            out.push_str(
-                "
-
-",
-            );
+            out.push_str("\n\n");
+        }
+        Block::HtmlFence { html } => {
+            out.push_str(&crate::htmlutil::strip_tags(html));
+            out.push_str("\n\n");
         }
         Block::SvgEmbed { .. } | Block::Chart { .. } => {
             out.push_str("[互动组件在公众号版本中]\n");
@@ -719,6 +719,7 @@ impl<'a> PlainRenderer<'a> {
             Block::Rule => self.out.push_str("<hr/>"),
             Block::Toc => {}
             Block::RawHtml { html } => self.out.push_str(&crate::htmlutil::escape_text(html)),
+            Block::HtmlFence { html } => self.out.push_str(&crate::htmlutil::escape_text(html)),
             Block::SvgEmbed { html } => self.out.push_str(html),
             Block::Chart { spec } => {
                 self.out.push_str(&crate::render::render_chart(spec));
