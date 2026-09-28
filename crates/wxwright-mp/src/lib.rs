@@ -315,7 +315,10 @@ impl MpClient {
     pub fn draft_list(&self, offset: u64, count: u64) -> Result<serde_json::Value> {
         let payload =
             serde_json::json!({ "offset": offset, "count": count.min(20), "no_content": 1 });
-        self.post_with_token_value("/cgi-bin/draft/batch", &payload)
+        // Official endpoint is batchget (/cgi-bin/draft/batch does not exist -
+        // WeChat answered 40066 "invalid url", so this tool had never worked
+        // against the live API).
+        self.post_with_token_value("/cgi-bin/draft/batchget", &payload)
     }
 
     pub fn draft_update(&self, media_id: &str, index: u64, article: &DraftArticle) -> Result<()> {
