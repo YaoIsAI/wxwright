@@ -24,6 +24,52 @@ pub enum ExportKind {
     Markdown,
 }
 
+/// Severity of a caption rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptionSeverity {
+    Warn,
+    Block,
+}
+
+/// Which text a violation points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptionNode {
+    Title,
+    Caption,
+    None,
+}
+
+/// What a caption rule measures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptionCheck {
+    /// The title is longer than this many characters.
+    TitleOver(usize),
+    /// The caption is longer than this many characters.
+    BodyOver(usize),
+    /// The caption carries fewer than this many `#` markers.
+    FewerHashtags(usize),
+    /// No images are attached.
+    NoImages,
+    /// More images are attached than the platform accepts.
+    TooManyImages(usize),
+}
+
+/// A caption rule a platform declares.
+///
+/// These live in the descriptor on purpose: `validate_platform_caption` used to
+/// open with `if platform != "xhs" { return vec![] }`, so the registry was data
+/// for its capability flags but a `match` elsewhere for its behaviour. Now a
+/// new platform declares its rules and the validator does not change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptionRule {
+    pub rule_id: &'static str,
+    pub severity: CaptionSeverity,
+    pub check: CaptionCheck,
+    /// `{}` is replaced with the measured value when the check produces one.
+    pub message: &'static str,
+    pub node: CaptionNode,
+}
+
 /// One social-media platform the engine can target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PlatformSpec {
@@ -44,15 +90,62 @@ pub struct PlatformSpec {
     /// in a `match id` elsewhere) is what makes "descriptor is data" true for
     /// behaviour as well as for the capability flags.
     pub export_kind: ExportKind,
+    /// Caption rules for this platform. Empty for platforms whose caption is
+    /// not constrained.
+    ///
+    /// Skipped in serialisation: `platforms --json` describes the platform to a
+    /// caller, it does not need the rule table dumped into the payload.
+    #[serde(skip)]
+    pub caption_rules: &'static [CaptionRule],
     /// Poster / size-studio presets: (label_zh, width, height).
     pub presets: &'static [(&'static str, u32, u32)],
     /// Honest capability note (surfaced in the GUI switcher tooltip).
     pub note: &'static str,
 }
 
+/// Xiaohongshu note limits.
+const XHS_RULES: &[CaptionRule] = &[
+    CaptionRule {
+        rule_id: "XHS-1",
+        severity: CaptionSeverity::Warn,
+        check: CaptionCheck::TitleOver(20),
+        message: "title is {} chars; the Xiaohongshu title field caps at 20",
+        node: CaptionNode::Title,
+    },
+    CaptionRule {
+        rule_id: "XHS-2",
+        severity: CaptionSeverity::Block,
+        check: CaptionCheck::BodyOver(1000),
+        message: "caption is {} chars; Xiaohongshu notes cap at 1000",
+        node: CaptionNode::Caption,
+    },
+    CaptionRule {
+        rule_id: "XHS-3",
+        severity: CaptionSeverity::Warn,
+        check: CaptionCheck::FewerHashtags(2),
+        message: "no #hashtag# found; Xiaohongshu relies on hashtags for reach",
+        node: CaptionNode::None,
+    },
+    CaptionRule {
+        rule_id: "XHS-4",
+        severity: CaptionSeverity::Warn,
+        check: CaptionCheck::NoImages,
+        message: "image note without images; export a cover/content image set",
+        node: CaptionNode::None,
+    },
+    CaptionRule {
+        rule_id: "XHS-5",
+        severity: CaptionSeverity::Warn,
+        check: CaptionCheck::TooManyImages(9),
+        message: "{} images; a Xiaohongshu note carries at most 9",
+        node: CaptionNode::None,
+    },
+];
+
 pub const WECHAT: PlatformSpec = PlatformSpec {
     id: "wechat",
     export_kind: ExportKind::RichTextDialect,
+    caption_rules: &[],
     name_zh: "微信公众号",
     name_en: "WeChat MP",
     rich_text: true,
@@ -73,6 +166,7 @@ pub const WECHAT: PlatformSpec = PlatformSpec {
 pub const XHS: PlatformSpec = PlatformSpec {
     id: "xhs",
     export_kind: ExportKind::Caption,
+    caption_rules: XHS_RULES,
     name_zh: "小红书",
     name_en: "Xiaohongshu",
     rich_text: false,
@@ -89,6 +183,7 @@ pub const XHS: PlatformSpec = PlatformSpec {
 pub const ZHIHU: PlatformSpec = PlatformSpec {
     id: "zhihu",
     export_kind: ExportKind::Markdown,
+    caption_rules: &[],
     name_zh: "知乎",
     name_en: "Zhihu",
     rich_text: true,
@@ -101,6 +196,7 @@ pub const ZHIHU: PlatformSpec = PlatformSpec {
 pub const META: PlatformSpec = PlatformSpec {
     id: "meta",
     export_kind: ExportKind::Caption,
+    caption_rules: &[],
     name_zh: "Facebook",
     name_en: "Facebook",
     rich_text: false,
@@ -117,6 +213,7 @@ pub const META: PlatformSpec = PlatformSpec {
 pub const INSTAGRAM: PlatformSpec = PlatformSpec {
     id: "instagram",
     export_kind: ExportKind::Caption,
+    caption_rules: &[],
     name_zh: "Instagram",
     name_en: "Instagram",
     rich_text: false,
@@ -133,6 +230,7 @@ pub const INSTAGRAM: PlatformSpec = PlatformSpec {
 pub const X: PlatformSpec = PlatformSpec {
     id: "x",
     export_kind: ExportKind::Caption,
+    caption_rules: &[],
     name_zh: "X (Twitter)",
     name_en: "X (Twitter)",
     rich_text: false,
@@ -148,6 +246,7 @@ pub const X: PlatformSpec = PlatformSpec {
 pub const LINKEDIN: PlatformSpec = PlatformSpec {
     id: "linkedin",
     export_kind: ExportKind::Caption,
+    caption_rules: &[],
     name_zh: "LinkedIn",
     name_en: "LinkedIn",
     rich_text: false,
@@ -335,55 +434,47 @@ pub fn validate_platform_caption(
     caption: &str,
     images: usize,
 ) -> Vec<crate::validator::Violation> {
-    if platform != "xhs" {
-        return Vec::new();
-    }
+    // The rules come from the descriptor, so this function does not know or
+    // care which platform it is looking at.
+    let spec = get_platform(platform);
     let mut v = Vec::new();
-    if title.chars().count() > 20 {
+    for rule in spec.caption_rules {
+        let (fired, measured): (bool, Option<usize>) = match rule.check {
+            CaptionCheck::TitleOver(n) => {
+                let c = title.chars().count();
+                (c > n, Some(c))
+            }
+            CaptionCheck::BodyOver(n) => {
+                let c = caption.chars().count();
+                (c > n, Some(c))
+            }
+            CaptionCheck::FewerHashtags(n) => {
+                let c = caption.matches('#').count();
+                (c < n, Some(c))
+            }
+            CaptionCheck::NoImages => (images == 0, None),
+            CaptionCheck::TooManyImages(n) => (images > n, Some(images)),
+        };
+        if !fired {
+            continue;
+        }
+        let message = match measured {
+            Some(m) => rule.message.replacen("{}", &m.to_string(), 1),
+            None => rule.message.to_string(),
+        };
+        let node = match rule.node {
+            CaptionNode::Title => truncate_node(title),
+            CaptionNode::Caption => truncate_node(caption),
+            CaptionNode::None => String::new(),
+        };
         v.push(crate::validator::Violation {
-            rule_id: "XHS-1".into(),
-            severity: "warn".into(),
-            message: format!(
-                "title is {} chars; the Xiaohongshu title field caps at 20",
-                title.chars().count()
-            ),
-            node: truncate_node(title),
-            fixable: false,
-        });
-    }
-    let body_chars = caption.chars().count();
-    if body_chars > 1000 {
-        v.push(crate::validator::Violation {
-            rule_id: "XHS-2".into(),
-            severity: "block".into(),
-            message: format!("caption is {body_chars} chars; Xiaohongshu notes cap at 1000"),
-            node: truncate_node(caption),
-            fixable: false,
-        });
-    }
-    if caption.matches('#').count() < 2 {
-        v.push(crate::validator::Violation {
-            rule_id: "XHS-3".into(),
-            severity: "warn".into(),
-            message: "no #hashtag# found; Xiaohongshu relies on hashtags for reach".into(),
-            node: String::new(),
-            fixable: false,
-        });
-    }
-    if images == 0 {
-        v.push(crate::validator::Violation {
-            rule_id: "XHS-4".into(),
-            severity: "warn".into(),
-            message: "image note without images; export a cover/content image set".into(),
-            node: String::new(),
-            fixable: false,
-        });
-    } else if images > 9 {
-        v.push(crate::validator::Violation {
-            rule_id: "XHS-5".into(),
-            severity: "warn".into(),
-            message: format!("{images} images; a Xiaohongshu note carries at most 9"),
-            node: String::new(),
+            rule_id: rule.rule_id.into(),
+            severity: match rule.severity {
+                CaptionSeverity::Block => "block".into(),
+                CaptionSeverity::Warn => "warn".into(),
+            },
+            message,
+            node,
             fixable: false,
         });
     }
@@ -695,6 +786,41 @@ mod tests {
             "Facebook is a caption feed, not image-note"
         );
         assert_eq!(meta.name_zh, "Facebook");
+    }
+
+    /// The validator must read the descriptor, not the platform id. This fails
+    /// the moment someone reintroduces an `if platform == "xhs"` branch.
+    #[test]
+    fn caption_rules_come_from_the_descriptor() {
+        let long_title = "标题".repeat(50);
+        let long_body = "正文".repeat(800);
+        for p in list_platforms() {
+            let v = validate_platform_caption(p.id, &long_title, &long_body, 0);
+            assert_eq!(
+                v.is_empty(),
+                p.caption_rules.is_empty(),
+                "{} declares {} rule(s) but the validator reported {} violation(s)",
+                p.id,
+                p.caption_rules.len(),
+                v.len()
+            );
+        }
+        // An unknown id falls back to WeChat, which declares no rules.
+        assert!(validate_platform_caption("not-a-platform", &long_title, &long_body, 0).is_empty());
+
+        // Rule ids are unique across the whole registry, so a violation can be
+        // traced back to exactly one declaration.
+        let mut seen = std::collections::BTreeSet::new();
+        for p in list_platforms() {
+            for r in p.caption_rules {
+                assert!(
+                    seen.insert(r.rule_id),
+                    "duplicate caption rule id {}",
+                    r.rule_id
+                );
+                assert!(!r.message.is_empty(), "{} has an empty message", r.rule_id);
+            }
+        }
     }
 
     #[test]

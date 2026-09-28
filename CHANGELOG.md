@@ -103,6 +103,20 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   resolving new versions.
 
 ### Changed
+- **The platform descriptor is data for behaviour too, not just for capability
+  flags.** `validate_platform_caption` opened with
+  `if platform != "xhs" { return vec![] }`, so the registry needed a `match`
+  somewhere else the moment a second platform gained caption limits. The rules
+  are now a `caption_rules` table on `PlatformSpec` with a small declarative
+  `CaptionCheck` vocabulary; the validator reads the descriptor and does not
+  know which platform it is looking at. A new test asserts that the number of
+  violations equals the number of declared rules per platform, so the id branch
+  cannot come back.
+- **`convert --platform` reports the platform's caption rules and exits 1 on a
+  blocking one.** The CLI silently handed back a caption that broke the
+  platform's limits while the MCP `wxwright_export` tool reported the same
+  violations - same engine, two answers. Both now surface them, and the exit
+  code follows the contract `validate` already used.
 - **Documentation caught up with the code** (the review's biggest single
   finding: 10 of 12 spot-checked claims did not match reality).
   `AGENTS.md` corrected the app.js line count (~2900 -> ~4100), a

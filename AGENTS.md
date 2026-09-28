@@ -47,7 +47,8 @@ cargo build --release                        # 发布构建（~7 分钟）
 cargo run -p wxwright-cli -- convert a.md --out a.html
 cargo run -p wxwright-cli -- validate a.md --strict   # 退出码 0/1/2
 cargo run -p wxwright-cli -- platforms       # 平台注册表（非 TTY 自动 JSON）
-cargo run -p wxwright-cli -- convert a.md --platform xhs   # 非微信平台的制品（文案/Markdown）
+cargo run -p wxwright-cli -- convert a.md --platform xhs   # 非微信平台的制品；会一并报该平台文案规则，
+                                             # 命中 block 级违规时退出码 1
 cargo run -p wxwright-cli -- doctor --strict # CI/SCP 前置门禁（有问题退出码 1）
 cargo run --release -p icongen               # 重生成图标
 python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端）验收 UI

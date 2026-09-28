@@ -428,6 +428,17 @@ fn cmd_convert(
                 wxwright_core::platform::render_caption(&doc, title.as_deref()),
             ),
         };
+        // The platform's own caption limits are part of the artifact: a
+        // Xiaohongshu note that breaks them is not usable, so report them here
+        // the same way the MCP export tool does instead of silently handing
+        // back text that will be rejected.
+        let violations = wxwright_core::platform::validate_platform_caption(
+            spec.id,
+            title.as_deref().unwrap_or(""),
+            &text,
+            0,
+        );
+        let blocking = violations.iter().filter(|v| v.is_block()).count();
         if out.json_mode {
             out.print_json(&serde_json::json!({
                 "ok": true,
@@ -435,6 +446,8 @@ fn cmd_convert(
                 "platform_known": known,
                 "export_kind": kind,
                 "text": text,
+                "violations": violations,
+                "blocking_count": blocking,
             }));
         } else {
             out.ok(&format!(
@@ -443,6 +456,7 @@ fn cmd_convert(
                 kind,
                 text.chars().count()
             ));
+            violation_report(out, &violations);
         }
         if out_path == "-" {
             if !out.json_mode {
@@ -458,7 +472,9 @@ fn cmd_convert(
                 out.ok(&format!("written to {}", out_path));
             }
         }
-        return Ok(0);
+        // A blocking caption rule means the artifact cannot be posted as-is,
+        // so the exit code has to say so - the same contract `validate` uses.
+        return Ok(if blocking > 0 { 1 } else { 0 });
     }
 
     let opts = build_options(theme_name, ImageMode::Inline, base_dir)?;
