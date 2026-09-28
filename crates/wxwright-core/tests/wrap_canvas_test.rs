@@ -4,6 +4,21 @@
 
 use wxwright_core::{pipeline, wrap_document, ConvertOptions};
 
+/// The canvas colour the wrapper actually painted on <body>.
+///
+/// Reading the declaration back out makes the assertion independent of
+/// whitespace and quoting. The previous check compared a whole literal string
+/// (`background: #FFFFFF;">\n<section`), so changing a space or an attribute
+/// order would have turned it into a test that can never fail.
+fn canvas_of(doc: &str) -> Option<String> {
+    let after = doc.split("<body style=\"").nth(1)?;
+    let style = after.split('"').next()?;
+    style.split(';').find_map(|decl| {
+        let (k, v) = decl.split_once(':')?;
+        (k.trim() == "background").then(|| v.trim().to_string())
+    })
+}
+
 fn opts_for(theme_id: &str) -> ConvertOptions {
     let src = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20,7 +35,7 @@ fn builtin_themes_keep_the_neutral_canvas() {
     let opts = opts_for("techblue");
     let out = pipeline("# 标题\n\n正文一段。", &opts).unwrap();
     let doc = wrap_document(&out.html, opts.theme.canvas());
-    assert!(doc.contains("background: #FFFFFF"));
+    assert_eq!(canvas_of(&doc).as_deref(), Some("#FFFFFF"));
 }
 
 #[test]
@@ -30,7 +45,7 @@ fn wrap_document_defaults_to_white_without_theme_canvas() {
     opts.theme.colors.remove("background");
     let out = pipeline("# 标题", &opts).unwrap();
     let doc = wrap_document(&out.html, opts.theme.canvas());
-    assert!(doc.contains("background: #FFFFFF"));
+    assert_eq!(canvas_of(&doc).as_deref(), Some("#FFFFFF"));
 }
 
 #[test]
@@ -45,6 +60,13 @@ fn dark_theme_export_is_self_consistent() {
         .insert("text".to_string(), "#e0e0e0".to_string());
     let out = pipeline("# 标题\n\n正文。", &opts).unwrap();
     let doc = wrap_document(&out.html, opts.theme.canvas());
-    assert!(doc.contains("background: #121212"));
-    assert!(!doc.contains("background: #FFFFFF;\">\n<section"));
+    // The wrapper must paint the theme's own canvas, and a dark theme must
+    // never end up on the hardcoded white one - that is what made body text
+    // invisible. Asserted on the parsed declaration, not on a literal string.
+    assert_eq!(canvas_of(&doc).as_deref(), Some("#121212"));
+    assert_ne!(
+        canvas_of(&doc).as_deref(),
+        Some("#FFFFFF"),
+        "a dark theme must not export on a white canvas"
+    );
 }

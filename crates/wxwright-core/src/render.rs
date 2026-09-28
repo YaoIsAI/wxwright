@@ -1400,3 +1400,97 @@ fn collect_toc(doc: &[Block]) -> Vec<(u8, String)> {
     walk(doc, &mut out);
     out
 }
+
+#[cfg(test)]
+mod tests {
+    //! render.rs is the largest file in the repo and had no unit tests of its
+    //! own - the integration suites cover the happy path, not these branches.
+
+    fn opts() -> crate::ConvertOptions {
+        crate::ConvertOptions::new(
+            crate::theme::load_theme("minimal").expect("built-in minimal theme"),
+        )
+    }
+
+    fn html(md: &str) -> String {
+        crate::pipeline(md, &opts())
+            .expect("pipeline must succeed")
+            .html
+    }
+
+    /// Ordered lists carry their start number (GFM records the first number).
+    /// The marker is emitted as `{n}.&nbsp;&nbsp;`, so it is assertable exactly.
+    #[test]
+    fn ordered_lists_keep_their_start_number() {
+        let out = html("3. 甲\n4. 乙\n");
+        assert!(out.contains("3.&nbsp;&nbsp;"), "the list must start at 3");
+        assert!(out.contains("4.&nbsp;&nbsp;"), "the second item must be 4");
+        assert!(
+            !out.contains("1.&nbsp;&nbsp;"),
+            "numbering must not restart at 1"
+        );
+
+        let plain = html("1. 甲\n2. 乙\n");
+        assert!(plain.contains("1.&nbsp;&nbsp;"));
+        assert!(!plain.contains("3.&nbsp;&nbsp;"));
+    }
+
+    /// `minw = (longest_cell_chars * 14).clamp(56, 220)` - the clamp is what
+    /// keeps a wide table inside the 677px canvas, so both ends matter.
+    #[test]
+    fn table_column_min_width_is_clamped() {
+        let narrow = html("| a |\n|---|\n| b |\n");
+        assert!(
+            narrow.contains("min-width: 56px"),
+            "a one-character column must floor at 56px"
+        );
+
+        let wide = html(&format!("| {} |\n|---|\n| x |\n", "甲".repeat(40)));
+        assert!(
+            wide.contains("min-width: 220px"),
+            "a 40-character column must cap at 220px"
+        );
+        assert!(
+            !wide.contains("min-width: 560px"),
+            "the cap must actually apply"
+        );
+    }
+
+    /// The table of contents stops at 25 entries; a long article must not
+    /// produce an unbounded list.
+    #[test]
+    fn toc_is_truncated_at_twenty_five_entries() {
+        let mut md = String::from("[TOC]\n\n");
+        for i in 1..=30 {
+            md.push_str(&format!("## 第 {} 节\n\n正文。\n\n", i));
+        }
+        let out = html(&md);
+        assert!(
+            out.contains("25. 第 25 节"),
+            "the 25th entry must be present"
+        );
+        assert!(!out.contains("26. 第 26 节"), "the 26th entry must be cut");
+        assert!(
+            !out.contains("30. 第 30 节"),
+            "nothing past the cap may appear"
+        );
+    }
+
+    /// Every heading level the parser can emit must render, including the
+    /// deepest one - h6 was missing from the role table for a while.
+    #[test]
+    fn all_six_heading_levels_render() {
+        let mut md = String::new();
+        for level in 1..=6u8 {
+            md.push_str(&"#".repeat(level as usize));
+            md.push_str(&format!(" 第{level}级\n\n"));
+        }
+        let out = html(&md);
+        for level in 1..=6u8 {
+            assert!(
+                out.contains(&format!("第{level}级")),
+                "h{level} must reach the output"
+            );
+        }
+    }
+}

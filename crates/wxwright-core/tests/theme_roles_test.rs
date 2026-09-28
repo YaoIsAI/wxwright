@@ -94,19 +94,50 @@ fn render_with_override(key: &str) -> String {
         .html
 }
 
+/// True when the probe at byte offset `i` sits inside a `style="..."` of the
+/// tag that most recently opened. A declaration that leaks into text content
+/// would still satisfy a bare `contains`, so the forward check alone was too
+/// weak to catch it.
+fn probe_is_in_a_style_attr(html: &str, i: usize) -> bool {
+    let before = &html[..i];
+    let open = match before.rfind('<') {
+        Some(o) => o,
+        None => return false,
+    };
+    // A '>' after the last '<' would mean the probe is outside any tag.
+    if before.rfind('>').is_some_and(|c| c > open) {
+        return false;
+    }
+    before[open..].contains("style=\"")
+}
+
 #[test]
 fn every_advertised_role_is_actually_consumed_by_the_renderer() {
     let mut ignored: Vec<String> = Vec::new();
+    let mut misplaced: Vec<String> = Vec::new();
     for key in roles::all_keys() {
         let html = render_with_override(&key);
-        if !html.contains(PROBE_VALUE) {
+        let hits: Vec<usize> = html.match_indices(PROBE_VALUE).map(|(i, _)| i).collect();
+        if hits.is_empty() {
             ignored.push(key);
+            continue;
+        }
+        // Every occurrence must be a real CSS declaration inside a tag, never
+        // loose text. This is what makes the check about *where* the value
+        // landed rather than merely that it exists.
+        if !hits.iter().all(|i| probe_is_in_a_style_attr(&html, *i)) {
+            misplaced.push(key);
         }
     }
     assert!(
         ignored.is_empty(),
         "these theme roles are advertised (and may be written by an AI-generated theme) \
          but the renderer never reads them, so the styling is silently dropped: {ignored:?}"
+    );
+    assert!(
+        misplaced.is_empty(),
+        "these theme roles reach the output but not as a style declaration on an element, \
+         so the value is rendered as visible text instead of being applied: {misplaced:?}"
     );
 }
 

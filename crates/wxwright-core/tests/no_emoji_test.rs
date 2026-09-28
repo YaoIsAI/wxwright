@@ -4,6 +4,21 @@
 
 use std::path::Path;
 
+/// Codepoints outside the big blocks that still carry Emoji_Presentation.
+///
+/// Listed individually rather than by range on purpose: the surrounding blocks
+/// are full of legitimate typography (U+2318 PLACE OF INTEREST SIGN, U+25AA
+/// BLACK SMALL SQUARE, the whole CJK-enclosed range), and banning those would
+/// make the guard reject correct files.
+const EMOJI_OUTLIERS: &[u32] = &[
+    0x231A, 0x231B, // watch, hourglass
+    0x23E9, 0x23EA, 0x23EB, 0x23EC, // fast-forward / rewind
+    0x23F0, 0x23F3, // alarm clock, hourglass with flowing sand
+    0x25B6, 0x25C0, // play / reverse button
+    0x25FB, 0x25FC, 0x25FD, 0x25FE, // medium squares
+    0x3297, 0x3299, // CJK "congratulations" / "secret"
+];
+
 fn is_emoji(c: char) -> bool {
     let cp = c as u32;
     (0x1F000..=0x1FAFF).contains(&cp)
@@ -13,10 +28,12 @@ fn is_emoji(c: char) -> bool {
         || cp == 0xFE0F
         || cp == 0x2764
         || (0x1F900..=0x1F9FF).contains(&cp)
+        || EMOJI_OUTLIERS.contains(&cp)
 }
 
 const SCAN_EXTENSIONS: &[&str] = &[
-    "rs", "toml", "md", "js", "css", "html", "json", "svg", "yml", "yaml",
+    "rs", "toml", "md", "js", "css", "html", "json", "svg", "yml", "yaml", "txt", "lock", "py",
+    "sh", "bat", "ps1", "mjs", "cjs", "ts", "tsx", "jsx",
 ];
 
 /// Directories that are never published, so they are outside the "product

@@ -144,6 +144,28 @@ pub struct MpClient {
     cache: Mutex<Option<TokenCache>>,
 }
 
+/// Build the `multipart/form-data` body WeChat's material endpoint expects.
+///
+/// Pulled out of `upload_material` so it can be asserted on directly: the test
+/// it replaces only checked that a hardcoded boundary string was alphanumeric,
+/// which says nothing about the body that is actually sent.
+fn multipart_body(boundary: &str, filename: &str, mime: &str, bytes: &[u8]) -> Vec<u8> {
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(
+        format!(
+            "Content-Disposition: form-data; name=\"media\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n",
+            // A quote in the name would close the header early.
+            filename.replace('"', ""),
+            mime
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
+    body
+}
+
 impl MpClient {
     pub fn new(creds: Credentials) -> Self {
         MpClient {
@@ -255,18 +277,7 @@ impl MpClient {
         );
         let boundary = "wxwright boundary 7d3a9c1f";
         let mime = mime_of_filename(filename);
-        let mut body: Vec<u8> = Vec::new();
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-        body.extend_from_slice(
-            format!(
-                "Content-Disposition: form-data; name=\"media\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n",
-                filename.replace('"', ""),
-                mime
-            )
-            .as_bytes(),
-        );
-        body.extend_from_slice(bytes);
-        body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
+        let body = multipart_body(boundary, filename, mime, bytes);
 
         self.agent
             .post(&url)
@@ -494,12 +505,40 @@ mod tests {
 
     #[test]
     fn multipart_body_shape() {
-        // The client builds multipart manually; verify via upload once with a
-        // mocked boundary? Kept simple: format sanity of boundary header.
+        // Replaces a test that only checked the boundary string was
+        // alphanumeric - it never looked at the body at all.
         let boundary = "wxwright boundary 7d3a9c1f";
-        assert!(boundary
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == ' '));
+        let payload: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF];
+        let body = multipart_body(boundary, "shot.png", "image/png", payload);
+        let text = String::from_utf8_lossy(&body);
+
+        // Opens with the boundary, closes with the terminator.
+        assert!(
+            text.starts_with(&format!("--{}\r\n", boundary)),
+            "must open with the boundary: {text:?}"
+        );
+        assert!(
+            text.ends_with(&format!("\r\n--{}--\r\n", boundary)),
+            "must close with the terminator: {text:?}"
+        );
+        // The part headers name the field WeChat expects and carry the MIME.
+        assert!(text.contains("name=\"media\""), "got: {text:?}");
+        assert!(text.contains("filename=\"shot.png\""), "got: {text:?}");
+        assert!(text.contains("Content-Type: image/png"), "got: {text:?}");
+        assert!(text.contains("\r\n\r\n"), "headers end with a blank line");
+        // The payload must survive byte-for-byte, including non-UTF-8 bytes.
+        let start = body
+            .windows(payload.len())
+            .position(|w| w == payload)
+            .expect("the payload bytes must appear verbatim in the body");
+        assert!(start > 0, "the payload must come after the headers");
+        // A quote in the file name must not be able to close the header early.
+        let evil = multipart_body(boundary, "a\"b.png", "image/png", payload);
+        let evil_text = String::from_utf8_lossy(&evil);
+        assert!(
+            !evil_text.contains("filename=\"a\"b.png\""),
+            "an embedded quote must be stripped: {evil_text:?}"
+        );
     }
 
     #[test]
