@@ -186,6 +186,18 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   languages.
 
 ### Changed
+- **Plain-text exports keep the content's meaning.** The caption renderer
+  linearised a callout card into bare text and kept raw `[x]` / `[ ]` task
+  markers, so an article written with the syntax the AI is taught delivered
+  "重点标题 重点卡正文。" and "[x]" on platforms that never see the card
+  styling. Callouts now become a labelled line (【笔记】/【划重点】/… from the
+  same i18n table the dialect chips use) and task items render checkmark
+  glyphs. The GUI demo fallbacks (plain-HTML zhihu body, caption text) were
+  aligned with the engine for the same reason - the demo showed literal
+  `*斜体*`, `~~删除线~~` and `[!NOTE]` where the engine delivers styled text.
+  The static demo preview also predated the card-container fix, so its three
+  cards showed a label chip with the body sitting outside the tinted card;
+  regenerated from the current engine.
 - **Bare HTML now joins the same allowlist channel.** Live testing with the
   chat assistant showed the model keeps writing bare HTML no matter what the
   prompt teaches (three rounds with an iron rule and an example in the system

@@ -1983,9 +1983,9 @@ function shellMedia(imgs, ratio, fallbackTitle, accent, caption) {
   if (imgs && imgs.length) {
     return `<img src="${imgs[0]}" alt="" style="width:100%;display:block;aspect-ratio:${ratio};object-fit:cover;" />`;
   }
-  return `<div style="width:100%;aspect-ratio:${ratio};background:linear-gradient(135deg,${accent},${accent}B3);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;box-sizing:border-box;">
+  return `<div style="width:100%;aspect-ratio:${ratio};background:linear-gradient(160deg,${accent} 0%,${accent}C4 52%,rgba(0,0,0,0.32) 100%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;box-sizing:border-box;text-shadow:0 1px 6px rgba(0,0,0,0.22);">
     <div style="font-size:20px;font-weight:700;line-height:1.4;">${escapeHtml(fallbackTitle || "")}</div>
-    <div style="font-size:12px;opacity:0.85;max-width:90%;">${escapeHtml((caption || "").slice(0, 60))}</div>
+    <div style="font-size:12px;opacity:0.9;max-width:90%;">${escapeHtml((caption || "").slice(0, 60))}</div>
   </div>`;
 }
 function shellDoc(css, body) {
@@ -2279,30 +2279,72 @@ function renderChannelShell(platform, model) {
   return noteShellHtml(model); // unknown caption platform: generic fallback
 }
 function demoCaptionFromMd(md) {
+  // Mirrors platform::render_caption: callouts become 【label】 lines, task
+  // items become checkmark glyphs, inline markers are stripped.
+  const LABELS = { NOTE: "笔记", TIP: "技巧", IMPORTANT: "重要", WARNING: "注意", CAUTION: "严重警告", COMMENT: "评论", KEYPOINT: "划重点" };
   return (md || "").split("\n")
     .filter((l) => !/^\s*(!\[|<|```|---|\|)/.test(l))
-    .map((l) => l.replace(/^#{1,6}\s*/, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*`>~_]/g, "").replace(/^(\s*)[-*]\s+/, "$1• ").trim())
+    .map((l) => {
+      let s = l.replace(/^#{1,6}\s*/, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*`>~_]/g, "");
+      const m = s.match(/^\s*!\s*\[?(\w+)\]?\s*(.*)$/) || s.match(/^\s*\[!(\w+)\]\s*(.*)$/);
+      if (m && LABELS[m[1].toUpperCase()]) {
+        s = "【" + LABELS[m[1].toUpperCase()] + "】" + (m[2] ? "\n" + m[2] : "");
+      }
+      s = s.replace(/\[x\]/g, "\u2713").replace(/\[ \]/g, "\u25A1");
+      s = s.replace(/^(\s*)[-*]\s+/, "$1• ").trim();
+      return s;
+    })
     .filter(Boolean)
     .join("\n\n");
 }
-/* demo-only minimal Markdown -> plain HTML so the Zhihu shell has a body */
+/* demo-only minimal Markdown -> plain HTML so the Zhihu shell has a body.
+   Kept in step with render_plain_html: inline em/strike/code render, callouts
+   become labelled tinted cards, task items get checkmark glyphs. */
+const DEMO_CALLOUT_STYLE = {
+  NOTE: ["#EFF4FE", "#2F6CEA", "笔记"], TIP: ["#ECFDF3", "#059669", "技巧"],
+  IMPORTANT: ["#F5F3FF", "#7C3AED", "重要"], WARNING: ["#FEF3E2", "#D97706", "注意"],
+  CAUTION: ["#FEF2F2", "#DC2626", "严重警告"], COMMENT: ["#FAFBFC", "#A8B3BD", "评论"],
+  KEYPOINT: ["#EFF4FE", "#2F6CEA", "划重点"],
+};
 function demoPlainHtmlFromMd(md) {
   const out = [];
   let inList = false;
+  let callout = null;
   const esc = (s) => escapeHtml(s)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+    .replace(/`([^`]+)`/g, '<code style="background:#F2F4F7;padding:1px 5px;border-radius:3px;">$1</code>')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  const closeCallout = () => { if (callout) { out.push("</div>"); callout = null; } };
   for (const raw of (md || "").split("\n")) {
     const l = raw.trim();
     if (/^(```|!\[|\||---)/.test(l)) continue;
+    const co = l.match(/^>\s*\[!(\w+)\]\s*(.*)$/);
+    if (co) {
+      closeList(); closeCallout();
+      const style = DEMO_CALLOUT_STYLE[co[1].toUpperCase()] || DEMO_CALLOUT_STYLE.NOTE;
+      callout = style;
+      out.push(`<div style="margin:20px 0;padding:12px 16px;background:${style[0]};border-left:4px solid ${style[1]};border-radius:0 8px 8px 0;">`
+        + `<div style="font-size:13px;font-weight:600;color:${style[1]};margin-bottom:6px;">${style[2]}${co[2] ? " · " + esc(co[2]) : ""}</div>`);
+      continue;
+    }
+    if (callout && /^>\s?/.test(l)) {
+      out.push(`<p style="margin:0 0 8px;font-size:14px;line-height:1.7;">${esc(l.replace(/^>\s?/, ""))}</p>`);
+      continue;
+    }
+    closeCallout();
     if (/^###\s/.test(l)) { closeList(); out.push(`<h3>${esc(l.slice(4))}</h3>`); }
     else if (/^##\s/.test(l)) { closeList(); out.push(`<h2>${esc(l.slice(3))}</h2>`); }
     else if (/^#\s/.test(l)) { closeList(); out.push(`<h1>${esc(l.slice(2))}</h1>`); }
+    else if (/^[-*]\s+\[x\]\s+/i.test(l)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${"\u2713"} ${esc(l.replace(/^[-*]\s+\[x\]\s+/i, ""))}</li>`); }
+    else if (/^[-*]\s+\[\s\]\s+/.test(l)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${"\u25A1"} ${esc(l.replace(/^[-*]\s+\[\s\]\s+/, ""))}</li>`); }
     else if (/^[-*]\s+/.test(l)) { if (!inList) { out.push("<ul>"); inList = true; } out.push(`<li>${esc(l.replace(/^[-*]\s+/, ""))}</li>`); }
     else if (/^>\s?/.test(l)) { closeList(); out.push(`<blockquote>${esc(l.replace(/^>\s?/, ""))}</blockquote>`); }
     else if (l) { closeList(); out.push(`<p>${esc(l)}</p>`); }
   }
+  closeCallout();
   closeList();
   return out.join("\n");
 }

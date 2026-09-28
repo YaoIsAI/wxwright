@@ -20,7 +20,7 @@ wxwright 是一个「桌面客户端 + Rust 引擎」的社媒写作工具：你
 
 ## 截图
 
-每个平台都有自己的像素级预览壳，按真实产品字号与配色 1:1 还原：
+每个平台都有自己的像素级预览壳，按真实产品字号与配色 1:1 还原。导出同样守住承诺：`wxwright convert --platform xhs` 产出平台文案（提示卡转为【标签】行、任务项转为对勾符号），`wxwright image fit --platform <id>` 把文章图集裁到该平台主形态，GUI 预览呈现的就是读者看到的壳。
 
 | 小红书笔记 | Instagram 帖子 |
 |:---:|:---:|
@@ -36,13 +36,13 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.10.0）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.0）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.10.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS | `wxwright_0.10.0_x64.dmg`（Apple silicon；未签名——首次打开请右键 → 打开） |
-| Linux | `wxwright_0.10.0_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.11.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS | `wxwright_0.11.0_x64.dmg`（Apple silicon；未签名——首次打开请右键 → 打开） |
+| Linux | `wxwright_0.11.0_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
 ## 30 秒上手
@@ -93,9 +93,9 @@ wxwright mcp serve                     # stdio MCP server
 
 ## 主题
 
-内置三套：`minimal` 素黑 / `techblue` 科技蓝 / `magazine` 杂志。主题即数据：TOML 色板 + 可选的角色样式覆盖，渲染期展开为内联样式。`wxwright theme new my-theme` 生成脚手架；`wxwright theme validate` 保证其产出合规后才可进仓库。全引擎禁用 `font-family`（官方规则 R-3.1）——主题无法夹带。
+内置三套：`minimal` 素黑 / `techblue` 科技蓝 / `magazine` 杂志。主题即数据：TOML 色板 + 角色样式覆盖，渲染期展开为内联样式。角色支持**内容变体**——`[block.quote.hero]` 让一句话金句区别于长引用，`[block.paragraph.lead]` 给全文首段独立的导语样式——引擎在渲染期按内容自动判定，AI 主题提示词教的也是同一张变体表。`wxwright theme new my-theme` 生成脚手架；`wxwright theme validate` 保证其产出合规后才可进仓库。全引擎禁用 `font-family`（官方规则 R-3.1）——主题无法夹带。
 
-GUI 里还有 **AI 主题生成**：一句话描述风格（例如「赛博朋克深空，纯黑底霓虹紫」），得到一套已通过官方规范校验的全新主题，CLI 与 GUI 共用。渲染器同样支持 GitHub alert 语法（`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` 提示卡）、`> [!COMMENT]` 留言卡、`> [!KEYPOINT] 文字` 划重点卡、`[TOC]` 目录卡、图注与 `chart` 图表块。
+GUI 里还有 **AI 主题生成**：一句话描述风格（例如「赛博朋克深空，纯黑底霓虹紫」），得到一套已通过官方规范校验的全新主题，CLI 与 GUI 共用。渲染器同样支持 GitHub alert 语法（`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` 提示卡）、`> [!COMMENT]` 留言卡、`> [!KEYPOINT] 文字` 划重点卡、`[TOC]` 目录卡、图注与 `chart` 图表块——通过标签白名单的 ```html 围栏或裸块级 HTML 原样渲染，AI 生成的卡片进文章就是卡片，不是源码。
 
 ## 桌面客户端
 
@@ -105,7 +105,8 @@ GUI 里还有 **AI 主题生成**：一句话描述风格（例如「赛博朋�
 
 - **三栏布局**：文章库（左）/ 编辑器（中）/ 手机框预览（右），Dark Mode 模拟、一键复制富文本、导出 HTML、拖拽载入 .md。
 - **文章库**：本地 Markdown 存储（`文档/wxwright/articles`，frontmatter 元数据）；切换自动保存、点击重新打开、删除、新建。
-- **AI 助手**：编辑器下方 Codex 式对话抽屉 - 流式输出，支持任意 OpenAI 兼容 Provider（OpenAI / DeepSeek / 通义 / Kimi / 智谱，或本地 Ollama / LM Studio）。API Key 存系统钥匙串。快捷指令：润色 / 续写 / 起标题 / 提纲；每条回复可一键插入 / 替换 / 复制。
+- **AI 助手**：编辑器下方 Codex 式对话抽屉 - 流式输出，支持任意 OpenAI 兼容 Provider（OpenAI / DeepSeek / 通义 / Kimi / 智谱，或本地 Ollama / LM Studio）。API Key 存系统钥匙串。快捷指令：润色 / 续写 / 起标题 / 提纲；每条回复可一键插入 / 替换 / 复制。助手可自主调用只读 MCP 工具（校验 / 转换 / 导出 / 主题清单 / 草稿清单），并通过白名单 HTML 通道输出富样式块。
+- **AI 配图（一键）**：工具栏火花按钮自动规划插图位（锚点校验）、用你的云端图像模型生成、按目标平台形态裁剪并插入到对应段落——文章回来就已配好图。
 - **Agent 接入面板**（机器人图标）：一键写入 Claude Desktop / Cursor / VS Code / OpenCode 的 MCP 配置、一键复制 Agent 卡片、CLI 速查表。同一引擎，同一合规约束。
 - **AI 主题生成**：描述风格，得到通过官方规范校验的全新主题，CLI 与 GUI 共用。
 - **海报工坊**：HTML -> PNG 本地光栅化（SVG foreignObject，完全离线），内置公众号标准封面尺寸；支持 AI 生成海报；一键导出插入文章。

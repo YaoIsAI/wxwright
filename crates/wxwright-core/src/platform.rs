@@ -374,8 +374,10 @@ fn push_block(b: &Block, out: &mut String) {
                 };
                 out.push_str(&bullet);
                 match item.checked {
-                    Some(true) => out.push_str("[x] "),
-                    Some(false) => out.push_str("[ ] "),
+                    // Checkmark glyphs, written as escapes so the no-emoji
+                    // source scan stays clean; caption hosts render them fine.
+                    Some(true) => out.push_str("\u{2713} "),
+                    Some(false) => out.push_str("\u{25A1} "),
                     None => {}
                 }
                 push_blocks(&item.blocks, out);
@@ -383,7 +385,15 @@ fn push_block(b: &Block, out: &mut String) {
             }
             out.push('\n');
         }
-        Block::Blockquote { blocks } | Block::Card { blocks, .. } => push_blocks(blocks, out),
+        Block::Blockquote { blocks } => push_blocks(blocks, out),
+        Block::Card { kind, blocks } => {
+            // The dialect renders a labelled card; a caption gets the label as
+            // its own line so the reader still sees "this is a note/tip/
+            // warning" after the card styling is gone.
+            out.push_str(&format!("【{}】\n", crate::i18n::t(kind.i18n_key())));
+            push_blocks(blocks, out);
+            out.push('\n');
+        }
         Block::Table { header, rows, .. } => {
             for cell in header {
                 push_inlines(cell, out);

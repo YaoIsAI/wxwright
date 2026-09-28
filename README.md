@@ -20,7 +20,7 @@ wxwright is a desktop app + Rust engine for social-media writing: you write (or 
 
 ## Screenshots
 
-Every platform gets its own pixel-level preview shell, styled after the real product:
+Every platform gets its own pixel-level preview shell, styled after the real product. Exports keep the same promise: `wxwright convert --platform xhs` produces the caption text (callouts become 【label】 lines, task items become checkmarks), `wxwright image fit --platform <id>` crops the article's images to the platform's primary cover shape, and the GUI preview shows the same shell the reader would get.
 
 | Xiaohongshu note | Instagram post |
 |:---:|:---:|
@@ -36,13 +36,13 @@ The AI assistant drafts with you — streaming, stoppable, and every reply offer
 
 ## Download
 
-Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.10.0):
+Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.11.0):
 
 | Platform | File |
 |---|---|
-| Windows | `wxwright_0.10.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS | `wxwright_0.10.0_x64.dmg` (Apple silicon; unsigned — right-click → Open on first launch) |
-| Linux | `wxwright_0.10.0_amd64.deb` or `.AppImage` |
+| Windows | `wxwright_0.11.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
+| macOS | `wxwright_0.11.0_x64.dmg` (Apple silicon; unsigned — right-click → Open on first launch) |
+| Linux | `wxwright_0.11.0_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
 ## 30-second start
@@ -95,9 +95,9 @@ With credentials (`wxwright login`), local images upload to the permanent materi
 
 ## Themes
 
-Three built-in themes (`minimal` 素黑 / `techblue` 科技蓝 / `magazine` 杂志). A theme is data: TOML color tokens + optional per-role style overrides, compiled to inline styles at render time. `wxwright theme new my-theme` scaffolds one; `wxwright theme validate` proves its output compliant before it ships. `font-family` is forbidden engine-wide (official rule R-3.1) — themes cannot smuggle it in.
+Three built-in themes (`minimal` 素黑 / `techblue` 科技蓝 / `magazine` 杂志). A theme is data: TOML color tokens + per-role style overrides, compiled to inline styles at render time. Roles declare **content variants** — `[block.quote.hero]` styles a one-line pull quote differently from a long citation, `[block.paragraph.lead]` gives the opening paragraph a standfirst look — the renderer classifies content at render time, and the AI theme prompt teaches the same variant table. `wxwright theme new my-theme` scaffolds one; `wxwright theme validate` proves its output compliant before it ships. `font-family` is forbidden engine-wide (official rule R-3.1) — themes cannot smuggle it in.
 
-The GUI adds an **AI theme generator**: describe a style ("deep-space cyberpunk, neon violet on pure black"), get a brand-new theme that already passes the official rules, saved for CLI + GUI. The renderer also speaks GitHub alerts (`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` → callout cards), `> [!COMMENT]` comment cards, `> [!KEYPOINT] text` key-point cards, `[TOC]` directory cards, figure captions and fenced `chart` blocks.
+The GUI adds an **AI theme generator**: describe a style ("deep-space cyberpunk, neon violet on pure black"), get a brand-new theme that already passes the official rules, saved for CLI + GUI. The renderer also speaks GitHub alerts (`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` → callout cards), `> [!COMMENT]` comment cards, `> [!KEYPOINT] text` key-point cards, `[TOC]` directory cards, figure captions and fenced `chart` blocks — and the ```html fence (or bare block-level HTML) that passes the tag allowlist renders verbatim, so AI-generated cards land in the article as cards, not source text.
 
 ## Desktop GUI
 
@@ -107,7 +107,8 @@ The GUI adds an **AI theme generator**: describe a style ("deep-space cyberpunk,
 
 - **Three-zone layout**: article library (left) / editor (center) / phone-frame preview (right), Dark Mode simulation, one-click rich copy, HTML export, `.md` drag-and-drop.
 - **Article library**: local Markdown store (`Documents/wxwright/articles`) with frontmatter metadata; auto-save on switch, click to reopen, delete, new article.
-- **AI assistant**: Codex-style drawer under the editor - streaming chat with any OpenAI-compatible provider (OpenAI / DeepSeek / Qwen / Kimi / GLM, or local Ollama / LM Studio). API keys live in the OS keychain. Quick prompts: polish / continue / titles / outline; every reply offers insert / replace / copy.
+- **AI assistant**: Codex-style drawer under the editor - streaming chat with any OpenAI-compatible provider (OpenAI / DeepSeek / Qwen / Kimi / GLM, or local Ollama / LM Studio). API keys live in the OS keychain. Quick prompts: polish / continue / titles / outline; every reply offers insert / replace / copy. The assistant can call the read-only MCP tools itself (validate / convert / export / themes list / drafts list) and writes rich blocks through the allowlisted HTML channel.
+- **AI illustrations (one click)**: the sparkle button in the toolbar plans illustration slots from the article (anchor-verified), generates the images with your cloud image model, fits them to the target platform's shape and inserts them where they belong - the article comes back illustrated.
 - **Agent integration panel** (robot icon): one-click MCP install into Claude Desktop / Cursor / VS Code / OpenCode, one-click copy of the agent card, CLI cheat sheet. Same engine, same compliance.
 - **AI theme generator**: describe a style, get a brand-new theme validated against the official rules and saved for CLI + GUI.
 - **Poster Studio**: HTML -> PNG locally (SVG foreignObject, offline) with all standard MP cover sizes; AI can generate the poster HTML; export-and-insert into the article.
