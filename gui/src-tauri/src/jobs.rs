@@ -33,6 +33,16 @@ fn registry() -> &'static Mutex<HashMap<u64, Arc<Job>>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Lock the job registry, recovering from poisoning instead of panicking.
+///
+/// Poisoning means some thread panicked while holding the lock; the map itself
+/// is still usable and `JobGuard::drop` already recovers. The two call sites
+/// used `.expect("job registry poisoned")` instead, so a single failed job
+/// could take the whole app down - the lock had two different policies.
+fn lock_registry() -> std::sync::MutexGuard<'static, HashMap<u64, Arc<Job>>> {
+    registry().lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn emit<R: tauri::Runtime>(app: &AppHandle<R>, id: u64, kind: &str, ev: &str, data: Value) {
     let _ = app.emit(
         "ai-job",
@@ -48,16 +58,9 @@ struct JobGuard(u64);
 
 impl Drop for JobGuard {
     fn drop(&mut self) {
-        match registry().lock() {
-            Ok(mut m) => {
-                m.remove(&self.0);
-            }
-            // A poisoned mutex must not panic again inside Drop (that would
-            // abort the process); recover the guard and finish the cleanup.
-            Err(poisoned) => {
-                poisoned.into_inner().remove(&self.0);
-            }
-        }
+        // Drop must never panic (that would abort the process); the shared
+        // helper recovers from poisoning for every caller.
+        lock_registry().remove(&self.0);
     }
 }
 
@@ -73,10 +76,7 @@ pub fn spawn(
         kind: kind.to_string(),
         cancel: AtomicBool::new(false),
     });
-    registry()
-        .lock()
-        .expect("job registry poisoned")
-        .insert(id, job.clone());
+    lock_registry().insert(id, job.clone());
     let kind_owned = job.kind.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = JobGuard(id);
@@ -103,7 +103,7 @@ pub fn spawn(
 /// Cooperative cancel: set the flag; streaming loops check it between
 /// chunks (dropping the HTTP reader closes the connection).
 pub fn stop(id: u64) -> bool {
-    match registry().lock().expect("job registry poisoned").get(&id) {
+    match lock_registry().get(&id) {
         Some(job) => {
             job.cancel.store(true, Ordering::Relaxed);
             true

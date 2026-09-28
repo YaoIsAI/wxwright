@@ -239,15 +239,27 @@ fn agent() -> ureq::Agent {
     .build()
 }
 
-fn completions_url(base: &str) -> String {
+/// The provider's API root: `base_url` with exactly one trailing `/v1`.
+///
+/// `base_url` is user-configured, and both `https://api.openai.com` and
+/// `https://api.openai.com/v1` are things people paste. Appending a path
+/// naively produced `/v1/v1/images/generations` for the second form.
+fn api_root(base: &str) -> String {
     let b = base.trim().trim_end_matches('/');
     if b.ends_with("/v1") {
-        format!("{}/chat/completions", b)
-    } else if b.ends_with("/chat/completions") {
         b.to_string()
     } else {
-        format!("{}/v1/chat/completions", b)
+        format!("{}/v1", b)
     }
+}
+
+fn completions_url(base: &str) -> String {
+    let b = base.trim().trim_end_matches('/');
+    // Some people paste the full endpoint; do not double it up.
+    if b.ends_with("/chat/completions") {
+        return b.to_string();
+    }
+    format!("{}/chat/completions", api_root(b))
 }
 
 pub(crate) fn active_provider() -> Result<(Provider, String), String> {
@@ -297,6 +309,10 @@ pub(crate) fn call_completions_post(
 ) -> Result<ureq::Response, String> {
     let url = if path == "/chat/completions" {
         completions_url(base_url)
+    } else if let Some(rest) = path.strip_prefix("/v1/") {
+        // Route every `/v1/...` path through the same normaliser so an image
+        // request cannot end up as `/v1/v1/images/generations`.
+        format!("{}/{}", api_root(base_url), rest)
     } else {
         format!(
             "{}/{}",
@@ -1127,6 +1143,34 @@ mod tests {
             stop.load(Ordering::Relaxed),
             chat,
             "an idle stop must not be interpreted as stopping the next chat"
+        );
+    }
+
+    /// `base_url` is user-configured and may or may not already end in `/v1`.
+    /// Appending a path naively produced `/v1/v1/images/generations`.
+    #[test]
+    fn api_urls_never_double_the_version_segment() {
+        for base in ["https://api.example.com", "https://api.example.com/v1"] {
+            assert_eq!(
+                completions_url(base),
+                "https://api.example.com/v1/chat/completions",
+                "completions for {base}"
+            );
+            assert_eq!(
+                format!("{}/images/generations", api_root(base)),
+                "https://api.example.com/v1/images/generations",
+                "images for {base}"
+            );
+        }
+        // Trailing slashes and whitespace are tolerated.
+        assert_eq!(
+            api_root("  https://api.example.com/v1/  "),
+            "https://api.example.com/v1"
+        );
+        // A pasted full endpoint is not doubled up.
+        assert_eq!(
+            completions_url("https://api.example.com/v1/chat/completions"),
+            "https://api.example.com/v1/chat/completions"
         );
     }
 

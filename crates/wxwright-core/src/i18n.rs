@@ -65,7 +65,7 @@ const CATALOG: &[Entry] = &[
 pub fn t(key: &str) -> String {
     let entry = CATALOG.iter().find(|(k, _, _)| *k == key);
     match entry {
-        Some((_, en, zh)) if get_lang() == Lang::ZhCn => zh.to_string(),
+        Some((_, _, zh)) if get_lang() == Lang::ZhCn => zh.to_string(),
         Some((_, en, _)) => en.to_string(),
         None => key.to_string(),
     }

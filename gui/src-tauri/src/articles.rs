@@ -2,7 +2,7 @@
 //! frontmatter metadata under Documents/wxwright/articles.
 
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ArticleMeta {
@@ -275,6 +275,26 @@ pub fn import_from_path(src: &PathBuf) -> Result<PathBuf, String> {
     import_from_bytes(&name, &bytes)
 }
 
+/// A free path for an asset inside `dir`.
+///
+/// `stamp` has one-second resolution, so importing two files that share a name
+/// inside the same second used to produce the same path and the second write
+/// silently replaced the first. Rather than trusting the clock, probe for a
+/// free name.
+fn unique_asset_path(dir: &Path, stamp: &str, stem: &str, ext: &str) -> Result<PathBuf, String> {
+    let first = dir.join(format!("{}-{}{}", stamp, stem, ext));
+    if !first.exists() {
+        return Ok(first);
+    }
+    for n in 1..=999u32 {
+        let candidate = dir.join(format!("{}-{}-{}{}", stamp, stem, n, ext));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("同名素材在同一秒内超过 999 个，请重命名后再导入".into())
+}
+
 pub fn import_from_bytes(filename: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     let dir = assets_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("create dir: {}", e))?;
@@ -283,8 +303,7 @@ pub fn import_from_bytes(filename: &str, bytes: &[u8]) -> Result<PathBuf, String
         Some((s, e)) => (s.to_string(), format!(".{}", e)),
         None => (clean.clone(), ".png".to_string()),
     };
-    let stamp = now_id();
-    let path = dir.join(format!("{}-{}{}", stamp, stem, ext));
+    let path = unique_asset_path(&dir, &now_id(), &stem, &ext)?;
     std::fs::write(&path, bytes).map_err(|e| format!("write failed: {}", e))?;
     Ok(path)
 }
@@ -359,13 +378,17 @@ fn unix_to_stamp(secs: u64) -> String {
 
 /// Serve an asset as a data URI (UI thumbnails / previews).
 /// Only files inside the managed assets dir are allowed.
-pub fn asset_data_uri(path: &str) -> Result<String, String> {
-    let dir = assets_dir();
-    let requested = PathBuf::from(path);
-    let canonical = requested
+/// Resolve a requested asset against the library root, rejecting anything
+/// that escapes it, and return the canonical path plus its MIME type.
+///
+/// Split out of `asset_data_uri` so the traversal guard can actually be
+/// tested: the previous test only asserted that the call did not return
+/// `Ok(String::new())`, which almost any behaviour satisfies.
+fn resolve_asset(base: &Path, requested: &str) -> Result<(PathBuf, &'static str), String> {
+    let canonical = PathBuf::from(requested)
         .canonicalize()
         .map_err(|_| "file not found".to_string())?;
-    let base = dir.canonicalize().unwrap_or(dir);
+    let base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
     if !canonical.starts_with(&base) {
         return Err("path outside assets library".into());
     }
@@ -382,6 +405,11 @@ pub fn asset_data_uri(path: &str) -> Result<String, String> {
         "bmp" => "image/bmp",
         _ => return Err("unsupported asset type".into()),
     };
+    Ok((canonical, mime))
+}
+
+pub fn asset_data_uri(path: &str) -> Result<String, String> {
+    let (canonical, mime) = resolve_asset(&assets_dir(), path)?;
     use base64::Engine as _;
     let bytes = std::fs::read(&canonical).map_err(|e| e.to_string())?;
     Ok(format!(
@@ -413,13 +441,72 @@ pub fn delete_asset(path: &str) -> Result<bool, String> {
 mod tests_assets2 {
     use super::*;
 
+    /// Replaces a test that could not fail: it asserted
+    /// `is_err() || result != Ok(String::new())`, which almost any behaviour
+    /// satisfies. This version checks the guard from both sides - a real file
+    /// inside the library is allowed, a real file outside it is not - and
+    /// covers the missing-file and bad-extension branches too.
     #[test]
-    fn asset_path_escape_blocked() {
-        // canonicalize on a missing file errors out - treated as blocked.
+    fn asset_traversal_is_blocked_and_legitimate_files_pass() {
+        let dir = std::env::temp_dir().join(format!("wxw-assets-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp assets dir");
+        let inside = dir.join("ok.png");
+        std::fs::write(&inside, b"x").expect("write inside");
+        let outside = std::env::temp_dir().join(format!("wxw-outside-{}.png", std::process::id()));
+        std::fs::write(&outside, b"x").expect("write outside");
+        let txt = dir.join("note.txt");
+        std::fs::write(&txt, b"x").expect("write txt");
+
+        // Allowed: a real image inside the library.
+        let (resolved, mime) =
+            resolve_asset(&dir, inside.to_str().unwrap()).expect("inside must resolve");
+        assert_eq!(mime, "image/png");
+        assert!(resolved.ends_with("ok.png"), "got: {resolved:?}");
+
+        // Blocked: a real file that lives outside the library.
+        let err = resolve_asset(&dir, outside.to_str().unwrap()).unwrap_err();
         assert!(
-            asset_data_uri("C:/Windows/notepad.exe").is_err()
-                || asset_data_uri("C:/Windows/notepad.exe") != Ok(String::new())
+            err.contains("outside"),
+            "traversal must be blocked, got: {err}"
         );
+
+        // Blocked: missing file.
+        let err = resolve_asset(&dir, dir.join("nope.png").to_str().unwrap()).unwrap_err();
+        assert!(err.contains("not found"), "got: {err}");
+
+        // Blocked: unsupported extension, even inside the library.
+        let err = resolve_asset(&dir, txt.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("unsupported"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&outside);
+    }
+
+    /// The stamp has one-second resolution, so two imports of the same name in
+    /// the same second used to overwrite each other.
+    #[test]
+    fn repeated_imports_do_not_overwrite_each_other() {
+        let dir = std::env::temp_dir().join(format!("wxw-uniq-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+
+        let a = unique_asset_path(&dir, "20260928-120000", "photo", ".png").unwrap();
+        std::fs::write(&a, b"a").unwrap();
+        let b = unique_asset_path(&dir, "20260928-120000", "photo", ".png").unwrap();
+        assert_ne!(a, b, "the same second must not reuse a path");
+        std::fs::write(&b, b"b").unwrap();
+        let c = unique_asset_path(&dir, "20260928-120000", "photo", ".png").unwrap();
+        assert_ne!(c, b);
+        assert_ne!(c, a);
+
+        // A free name is used as-is, without a suffix.
+        assert_eq!(
+            unique_asset_path(&dir, "20260928-130000", "other", ".png").unwrap(),
+            dir.join("20260928-130000-other.png")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

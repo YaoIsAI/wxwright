@@ -87,6 +87,26 @@ fn extract_docx(bytes: &[u8]) -> Result<String, String> {
     Ok(out)
 }
 
+/// Tags that end a block of text. They become a newline so paragraphs do not
+/// run together once the markup is stripped.
+const BLOCK_TAGS: &[&str] = &[
+    "br",
+    "p",
+    "div",
+    "li",
+    "tr",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "section",
+    "article",
+    "blockquote",
+    "table",
+];
+
 fn html_to_text(html: &str) -> String {
     let mut s = html.to_string();
     // drop script/style blocks entirely
@@ -114,24 +134,46 @@ fn html_to_text(html: &str) -> String {
     ] {
         s = s.replace(ent, ch);
     }
-    // block tags become line breaks
-    let lower = s.to_ascii_lowercase();
-    for tag in ["br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4"] {
-        let open = format!("<{}", tag);
-        if let Some(i) = lower.find(&open) {
-            s.insert(i + 1, '/');
-        }
-    }
-    // strip all tags
+    // Block-level tags become a newline; every other tag is dropped. Both jobs
+    // happen in ONE pass, because the previous version lowercased the string
+    // once, inserted a '/' into a *different* string (so every later offset was
+    // stale) and then stripped away the marker it had just inserted - block
+    // boundaries therefore never produced a line break and paragraphs silently
+    // ran together ("<p>A</p><p>B</p>" came out as "AB").
     let mut out = String::new();
+    let mut tag = String::new();
     let mut in_tag = false;
     for c in s.chars() {
         match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
+            '<' => {
+                if in_tag {
+                    // A '<' inside a tag that never closed means the earlier one
+                    // was literal text, e.g. "a < b". Put it back.
+                    out.push('<');
+                    out.push_str(&tag);
+                }
+                in_tag = true;
+                tag.clear();
+            }
+            '>' => {
+                in_tag = false;
+                let name = tag
+                    .trim_start_matches('/')
+                    .split(|ch: char| ch.is_whitespace() || ch == '/')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if BLOCK_TAGS.contains(&name.as_str()) && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            _ if in_tag => tag.push(c),
+            _ => out.push(c),
         }
+    }
+    if in_tag {
+        out.push('<');
+        out.push_str(&tag);
     }
     clean_whitespace(&out)
 }
@@ -166,6 +208,50 @@ mod tests {
         assert!(text.contains("你好"), "got: {}", text);
         assert!(text.contains("第二段"));
         assert!(!text.contains("x{y:1}"));
+    }
+
+    /// Regression: block tags never produced a line break, so paragraphs ran
+    /// together. The old code also inserted into a string whose offsets it had
+    /// already invalidated.
+    #[test]
+    fn block_tags_become_line_breaks() {
+        let text = html_to_text("<p>甲</p><p>乙</p><div>丙</div>");
+        let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(
+            lines,
+            vec!["甲", "乙", "丙"],
+            "each block must be its own line, got: {text:?}"
+        );
+        // <br> is a void element and must also break the line.
+        let br = html_to_text("上<br>下");
+        assert_eq!(br, "上\n下", "got: {br:?}");
+    }
+
+    /// A stray '<' is literal text, not the start of a tag - swallowing the
+    /// rest of the document would be worse than leaving it alone.
+    #[test]
+    fn a_lone_less_than_is_preserved() {
+        assert_eq!(html_to_text("1 < 2"), "1 < 2");
+        assert_eq!(html_to_text("a < b < c"), "a < b < c");
+        assert_eq!(html_to_text("末尾有个 <"), "末尾有个 <");
+    }
+
+    /// Attributes and uppercase tag names must still be recognised.
+    #[test]
+    fn tags_with_attributes_and_case_are_handled() {
+        let text = html_to_text("<P class=\"x\">甲</P><DIV id='y'>乙</DIV>");
+        assert_eq!(
+            text.lines().filter(|l| !l.trim().is_empty()).count(),
+            2,
+            "got: {text:?}"
+        );
+        // A longer tag name must not be mistaken for a block tag: <pre> is not
+        // <p>, and <td> is not <tr>.
+        let pre = html_to_text("<pre>a</pre><td>b</td>");
+        assert_eq!(
+            pre, "ab",
+            "inline-ish tags must not add breaks, got: {pre:?}"
+        );
     }
 
     #[test]

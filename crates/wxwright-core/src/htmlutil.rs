@@ -17,6 +17,67 @@ pub fn escape_text(s: &str) -> String {
 }
 
 /// Escape a value for use inside a double-quoted attribute.
+/// Drop markup and return just the words.
+///
+/// The caption exporters need this: a social caption must not carry markup,
+/// but it must not show `&lt;p&gt;` either - it wants the text. Tags become a
+/// space so words do not run together, and runs of whitespace collapse.
+///
+/// The content of `script` / `style` / `head` / `title` is dropped entirely:
+/// it is not text, and letting it through put `alert(1)` in the middle of a
+/// caption.
+pub fn strip_tags(s: &str) -> String {
+    const DROP_CONTENT: &[&str] = &["script", "style", "head", "title"];
+    let mut out = String::with_capacity(s.len());
+    let mut tag = String::new();
+    let mut in_tag = false;
+    let mut dropping: Option<String> = None;
+    for c in s.chars() {
+        match c {
+            '<' => {
+                if in_tag {
+                    // A '<' inside an unclosed tag means the earlier one was
+                    // literal text ("1 < 2"); keep it.
+                    out.push('<');
+                    out.push_str(&tag);
+                }
+                in_tag = true;
+                tag.clear();
+            }
+            '>' => {
+                if !in_tag {
+                    out.push('>');
+                    continue;
+                }
+                in_tag = false;
+                let closing = tag.starts_with('/');
+                let name = tag
+                    .trim_start_matches('/')
+                    .split(|ch: char| ch.is_whitespace() || ch == '/')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if closing {
+                    if dropping.as_deref() == Some(name.as_str()) {
+                        dropping = None;
+                    }
+                } else if dropping.is_none() && DROP_CONTENT.contains(&name.as_str()) {
+                    dropping = Some(name);
+                }
+                out.push(' ');
+            }
+            _ if in_tag => tag.push(c),
+            _ if dropping.is_some() => {}
+            _ => out.push(c),
+        }
+    }
+    if in_tag {
+        out.push('<');
+        out.push_str(&tag);
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn escape_attr(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {

@@ -1307,6 +1307,11 @@ fn cmd_logout(out: &Out) -> Result<i32, String> {
 }
 
 fn cmd_bench(iters: usize, out: &Out) -> Result<i32, String> {
+    // Zero samples would make the median index `samples[0]` panic and the p95
+    // computation divide by zero. Refuse rather than crash.
+    if iters == 0 {
+        return Err("--iters 必须大于 0（0 次采样没有中位数可算）".into());
+    }
     // ~10k-char sample document (PRD 5.7 P-2).
     let mut md = String::from("# 基准测试文章\n\n");
     let para = "这是一段用于性能基准测试的正文文字，包含**加粗**、*斜体*与`行内代码`，以及一个[链接](https://example.com/x)。\n\n";

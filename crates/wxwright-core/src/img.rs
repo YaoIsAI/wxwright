@@ -194,7 +194,10 @@ impl ImgPipeline {
             Some(base) => base.join(src),
             None => PathBuf::from(src),
         };
-        let path = PathBuf::from(dunce_normal(&path));
+        // Keep this a PathBuf. The old code round-tripped it through String to
+        // "avoid the \\?\ prefix", which never stripped the prefix and did
+        // substitute U+FFFD for a non-UTF-8 file name on Unix - making the file
+        // unopenable.
         match std::fs::read(&path) {
             Ok(bytes) => {
                 match dims_from_bytes(&bytes) {
@@ -246,11 +249,6 @@ impl ImgPipeline {
 fn upload_bytes(t: &dyn ImageTransport, bytes: Vec<u8>, name: &str) -> Result<(String, String)> {
     t.upload_material(bytes, name)
         .map_err(|e| Error::Upload(e.to_string()))
-}
-
-fn dunce_normal(p: &Path) -> String {
-    // Avoid the \\?\ prefix on Windows for friendlier error messages.
-    p.to_string_lossy().to_string()
 }
 
 fn ratio(h: u32, w: u32) -> String {

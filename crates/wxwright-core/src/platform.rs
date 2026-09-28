@@ -292,7 +292,15 @@ fn push_block(b: &Block, out: &mut String) {
         }
         Block::Rule => out.push_str("\n---\n\n"),
         Block::Toc => {}
-        Block::RawHtml { html } => out.push_str(html.trim()),
+        // A caption is plain text: markup must not leak into it.
+        Block::RawHtml { html } => {
+            out.push_str(&crate::htmlutil::strip_tags(html));
+            out.push_str(
+                "
+
+",
+            );
+        }
         Block::SvgEmbed { .. } | Block::Chart { .. } => {
             out.push_str("[互动组件在公众号版本中]\n");
         }
@@ -312,7 +320,7 @@ fn push_inline(i: &Inline, out: &mut String) {
         Inline::Math { latex, .. } => out.push_str(latex),
         Inline::Image(img) => out.push_str(&format!("[图片:{}]", img.alt)),
         Inline::Break => out.push('\n'),
-        Inline::RawHtml(h) => out.push_str(h),
+        Inline::RawHtml(h) => out.push_str(&crate::htmlutil::strip_tags(h)),
         Inline::Styled { children, .. } => push_inlines(children, out),
     }
 }
@@ -451,7 +459,8 @@ impl<'a> PlainRenderer<'a> {
                 self.out.push_str(&tag);
             }
             Inline::Break => self.out.push_str("<br/>"),
-            Inline::RawHtml(h) => self.out.push_str(h),
+            // Matches render.rs: raw HTML is escaped, never injected.
+            Inline::RawHtml(h) => self.out.push_str(&crate::htmlutil::escape_text(h)),
             Inline::Styled { kind, children } => match kind {
                 InlineKind::Strong => {
                     self.out.push_str("<strong>");
@@ -556,7 +565,7 @@ impl<'a> PlainRenderer<'a> {
             }
             Block::Rule => self.out.push_str("<hr/>"),
             Block::Toc => {}
-            Block::RawHtml { html } => self.out.push_str(html),
+            Block::RawHtml { html } => self.out.push_str(&crate::htmlutil::escape_text(html)),
             Block::SvgEmbed { html } => self.out.push_str(html),
             Block::Chart { spec } => {
                 self.out.push_str(&crate::render::render_chart(spec));
@@ -567,6 +576,51 @@ impl<'a> PlainRenderer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Raw HTML must never be injected verbatim. render.rs escapes it for the
+    /// WeChat dialect; the caption and plain-HTML exporters used to pass it
+    /// straight through, so a `<script>` in the source reached the exported
+    /// HTML as live markup and the caption as visible tag soup.
+    ///
+    /// Only the *block* case is covered here. Inline HTML that is not on the
+    /// allowlist is turned into `Inline::Text` by the parser (a deliberate v1
+    /// choice, see parser.rs), so `<b>x</b>` inside a paragraph reaches every
+    /// exporter as literal text - that is a separate decision, not this guard.
+    #[test]
+    fn raw_html_is_never_passed_through_verbatim() {
+        let md = "正文\n\n<script>alert(1)</script>\n\n结尾段落\n";
+
+        let doc = crate::parser::parse_markdown(md);
+        let html = render_plain_html(&doc, &[]);
+        assert!(
+            !html.contains("<script"),
+            "the plain-HTML exporter must not emit live markup: {html}"
+        );
+        assert!(
+            html.contains("&lt;script&gt;"),
+            "raw HTML should be escaped, not dropped: {html}"
+        );
+
+        let cap = render_caption(&doc, None);
+        assert!(
+            !cap.contains('<') && !cap.contains('>'),
+            "a caption is plain text and must not carry markup: {cap}"
+        );
+        // A script's body is not text and must not end up in a caption.
+        assert!(
+            !cap.contains("alert(1)"),
+            "script content must be dropped, got: {cap}"
+        );
+        // The surrounding paragraphs must still be there and separated.
+        assert!(
+            cap.contains("正文") && cap.contains("结尾段落"),
+            "got: {cap}"
+        );
+        assert!(
+            cap.contains("正文\n\n结尾段落"),
+            "the raw-HTML block must not glue the paragraphs together: {cap:?}"
+        );
+    }
 
     #[test]
     fn plain_renderer_emits_real_typography_with_resolved_images() {
