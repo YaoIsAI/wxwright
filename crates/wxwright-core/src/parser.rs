@@ -174,8 +174,14 @@ impl ParserState {
                 let t = h.trim().to_ascii_lowercase();
                 if t == "<br>" || t == "<br/>" || t == "<br />" {
                     self.push_inline(Inline::Break);
+                } else if crate::htmlutil::html_block_allowed(&h) {
+                    // The same allowlist as ```html fences and bare blocks:
+                    // compliant inline markup renders, so a model can drop a
+                    // styled span mid-sentence without it turning into
+                    // visible source code.
+                    self.push_inline(Inline::RawHtml(h.to_string()));
                 } else {
-                    // v1: non-allowlisted inline HTML is escaped as text.
+                    // Non-allowlisted inline HTML is escaped as text.
                     self.push_inline(Inline::Text(h.to_string()));
                 }
             }
@@ -411,6 +417,15 @@ impl ParserState {
                 let starts_ok = lower.starts_with("<section") || lower.starts_with("<svg");
                 if starts_ok && svg_embed_allowed(&lower) {
                     self.push_block(Block::SvgEmbed { html });
+                } else if crate::htmlutil::html_block_allowed(&html) {
+                    // Benign block-level markup joins the same allowlist
+                    // channel as ```html fences: models keep writing bare
+                    // HTML no matter what the prompt says (three live rounds
+                    // of evidence), and escaping compliant markup renders
+                    // source text where the author wanted a card. The gate,
+                    // the normalizer and the validator are identical for
+                    // both paths, so the trust boundary does not move.
+                    self.push_block(Block::HtmlFence { html });
                 } else {
                     self.push_block(Block::RawHtml { html });
                 }
@@ -529,16 +544,15 @@ impl ParserState {
 /// class/id stripping are the normalizer's job; this gate only rejects
 /// content we never want to embed.
 fn svg_embed_allowed(lower: &str) -> bool {
-    !(lower.contains("<script")
-        || lower.contains("<iframe")
-        || lower.contains("<style")
-        || lower.contains("<foreignobject")
-        || lower.contains("javascript:")
-        || lower.contains("onerror")
-        || lower.contains("onload")
-        || lower.contains("onclick=")
-        || lower.contains("src=\"http")
-        || lower.contains("href=\"http"))
+    // A real SVG component embeds an <svg> element, uses only the known
+    // vocabulary, carries no event handlers or executable schemes (shared
+    // scan with the html allowlist), and never points at the network - the
+    // kit's rule is data URIs only. This replaced a ten-pattern blocklist
+    // that let `<section onmouseover=...>` through.
+    lower.contains("<svg")
+        && crate::htmlutil::markup_allowed(lower, crate::htmlutil::SVG_EMBED_TAGS)
+        && !lower.contains("src=\"http")
+        && !lower.contains("href=\"http")
 }
 
 fn merge_inline(v: &mut Vec<Inline>, il: Inline) {

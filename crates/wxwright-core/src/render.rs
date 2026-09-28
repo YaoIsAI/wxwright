@@ -646,7 +646,16 @@ fn render_inline(il: &Inline, ctx: &Ctx, base: &str) -> String {
             }
         }
         Inline::Break => "<br/>".to_string(),
-        Inline::RawHtml(h) => escape_text(h),
+        Inline::RawHtml(h) => {
+            // One predicate everywhere: allowlisted markup renders (models
+            // embed cards mid-sentence, and Markdown authors write <b>),
+            // everything else escapes to visible source text.
+            if crate::htmlutil::html_block_allowed(h) {
+                h.clone()
+            } else {
+                escape_text(h)
+            }
+        }
         Inline::Image(img) => render_img_tag(img, ctx),
         Inline::Styled { kind, children } => match kind {
             InlineKind::Strong => {

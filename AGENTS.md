@@ -98,9 +98,10 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
     任何手写的 `inlined && !mmbiz` / `starts_with("data:")` 判断都会让测试红。
 
 13. **```html 围栏是 AI 的富样式通道，白名单是唯一的安全模型**：
-    `htmlutil::html_block_allowed`（allowlist，不是 blocklist——黑名单只防住作者想得到的那几种）。
+    `htmlutil::html_block_allowed` / `markup_allowed`（allowlist，不是 blocklist——黑名单只防住作者想得到的那几种）。
     放行的标签表就是方言词汇表；**`img` 和 `a` 被有意排除**（前者绕过素材门禁、后者 MP 不保留链接）。
-    通过白名单的块原样进渲染输出，再由管线统一 normalize；不通过的降级成代码块。
+    通过白名单的 HTML 原样进渲染输出（**三种入口同一判定**：```html 围栏、裸块级 HTML、行内片段——模型实测永远写裸 HTML，提示词教不会，引擎必须兜住），再由管线统一 normalize；不通过的转义/降级代码块。
+    **SvgEmbed 准入同用此扫描器 + SVG_EMBED_TAGS 词表**（旧版是 10 条黑名单，`onmouseover` 漏过，勿回退）。
     AI 主题/组件提示词若要教模型用 HTML，教的就是这张表。
 ## 5. 统一 AI 生成运行时 / jobs.rs（新功能一律走这里）
 

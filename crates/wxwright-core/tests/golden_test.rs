@@ -286,3 +286,68 @@ fn raw_html_block_is_escaped_not_passed_through() {
     assert!(!out.html.contains("<div"));
     assert!(out.html.contains("&lt;div"));
 }
+
+/// Bare block-level markup that PASSES the allowlist renders verbatim - the
+/// same channel ```html fences use. Models keep emitting bare HTML no matter
+/// what the prompt teaches (three live rounds); compliant markup must become
+/// a card, not a source-text exhibit. The security model is unchanged: the
+/// same gate, then normalize, then validate.
+#[test]
+fn benign_raw_html_block_joins_the_allowlist_channel() {
+    // No fence on purpose - this is what the assistant actually emits.
+    let md = "# T\n\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;padding:18px;\"><p>金句卡</p></section>\n\n正文。\n";
+    let out = convert_markdown(md, &ConvertOptions::new(load_theme("minimal").unwrap())).unwrap();
+    assert!(
+        out.html.contains("<section style=\"background:#EEF6FF"),
+        "allowlisted bare HTML must reach the output verbatim, got: {}",
+        out.html
+    );
+    assert!(
+        !out.html.contains("&lt;section"),
+        "allowlisted bare HTML must not be escaped"
+    );
+    // And the dangerous shape escapes: the on* attribute fails the shared
+    // scan, and the section wrapper no longer smuggles it through the SVG
+    // embed path (that admission is now an allowlist too).
+    let bad = convert_markdown(
+        "# T\n\n<section onmouseover=\"x()\">y</section>\n",
+        &ConvertOptions::new(load_theme("minimal").unwrap()),
+    )
+    .unwrap();
+    assert!(
+        bad.html.contains("&lt;section onmouseover"),
+        "event-handler markup must be escaped: {}",
+        bad.html
+    );
+}
+
+/// Inline raw HTML follows the same one-predicate rule: allowlisted fragments
+/// render (this is what "AI generates HTML and it is directly usable" needs
+/// for mid-sentence spans), anything else degrades to visible text.
+#[test]
+fn inline_html_is_allowed_by_the_same_gate() {
+    let theme = load_theme("minimal").unwrap();
+    let md = "行内<em>强调</em>与<span style=\"color:#C2402A\">红字</span>。\n";
+    let out = convert_markdown(md, &ConvertOptions::new(theme)).unwrap();
+    assert!(
+        out.html.contains("<span style=\"color:#C2402A\">"),
+        "allowlisted inline markup must render: {}",
+        out.html
+    );
+    assert!(
+        !out.html.contains("&lt;span"),
+        "must not be escaped: {}",
+        out.html
+    );
+
+    let bad = convert_markdown(
+        "行内<span onmouseover=\"x()\">红字</span>。\n",
+        &ConvertOptions::new(load_theme("minimal").unwrap()),
+    )
+    .unwrap();
+    assert!(
+        bad.html.contains("&lt;span onmouseover"),
+        "non-allowlisted inline markup must escape: {}",
+        bad.html
+    );
+}

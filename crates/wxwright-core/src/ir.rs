@@ -160,10 +160,12 @@ pub enum Block {
     RawHtml {
         html: String,
     },
-    /// An ```html fence whose markup passed the allowlist: emitted verbatim,
-    /// then normalized by the pipeline like the rest of the document. This is
-    /// the AI's rich-block channel - the way a generated card, badge or grid
-    /// reaches the article without the dialect having to know about it.
+    /// Markup that passed the allowlist: emitted verbatim, then normalized
+    /// by the pipeline like the rest of the document. This is the AI's
+    /// rich-block channel - the way a generated card, badge or grid reaches
+    /// the article without the dialect having to know about it. Fed by both
+    /// ```html fences and bare block-level HTML (models keep writing bare
+    /// markup; the gate is identical either way).
     ///
     /// Distinct from `RawHtml`, which is always escaped.
     HtmlFence {

@@ -51,6 +51,68 @@ const HTML_BLOCK_TAGS: &[&str] = &[
 /// of the tag check, and the scan honours quoted attribute values so a `>`
 /// inside one cannot hide a forbidden attribute from it.
 pub fn html_block_allowed(html: &str) -> bool {
+    markup_allowed(html, HTML_BLOCK_TAGS)
+}
+
+/// The SVG-kit vocabulary: the wrapper tags the dialect honours plus the SMIL
+/// animation set the SVG kit and the AI component generator are taught. An
+/// allowlist like every other admission path - the old blocklist of ten
+/// patterns let `<section onmouseover=...>` through because nobody had thought
+/// of that handler yet.
+pub const SVG_EMBED_TAGS: &[&str] = &[
+    // the dialect wrappers a component may sit in
+    "section",
+    "div",
+    "p",
+    "span",
+    "strong",
+    "em",
+    "b",
+    "i",
+    "br",
+    // the svg element itself and its drawing vocabulary
+    "svg",
+    "g",
+    "defs",
+    "rect",
+    "circle",
+    "ellipse",
+    "line",
+    "polyline",
+    "polygon",
+    "path",
+    "text",
+    "tspan",
+    "title",
+    "desc",
+    "use",
+    "symbol",
+    "marker",
+    "pattern",
+    "clippath",
+    "mask",
+    // paint servers and filters
+    "lineargradient",
+    "radialgradient",
+    "stop",
+    "filter",
+    "fegaussianblur",
+    "feoffset",
+    "feblend",
+    "fecolormatrix",
+    "fecomposite",
+    "feflood",
+    // SMIL animation (R-1.7: begin="touchstart; click")
+    "animate",
+    "animatetransform",
+    "animatemotion",
+    "set",
+];
+
+/// Quote-aware vetting of every tag: names must be in `tags`, opening tags
+/// may not carry event handlers, and executable URL schemes are banned
+/// everywhere. Unterminated tags cannot be vetted and fail closed.
+pub fn markup_allowed(html: &str, tags: &[&str]) -> bool {
     let bytes = html.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -92,7 +154,7 @@ pub fn html_block_allowed(html: &str) -> bool {
             .take_while(|c| c.is_ascii_alphanumeric())
             .collect();
         let name = name.to_ascii_lowercase();
-        if name.is_empty() || !HTML_BLOCK_TAGS.contains(&name.as_str()) {
+        if name.is_empty() || !tags.contains(&name.as_str()) {
             return false;
         }
         if !closing {

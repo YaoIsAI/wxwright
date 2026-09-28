@@ -17,6 +17,17 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 > reproduction; every fix ships with a test that fails without it.
 
 ### Fixed
+- **The SVG embed admission was a blocklist - and it let event handlers
+  through.** `svg_embed_allowed` rejected a hand-written list of ten patterns
+  (`onerror`, `onload`, `onclick=`...); `<section onmouseover="x()">` passed
+  because nobody had thought of that handler yet, and rendered verbatim into
+  the article with a live event attribute (the normalizer's hygiene pass
+  stripped common ones downstream, but the parser-level admission was the
+  wrong trust boundary - exactly the "a blocklist is only as good as its
+  author's imagination" failure iron law 13 warns about). Admission is now
+  the same quote-aware allowlist scanner the html channel uses, over an
+  explicit SVG vocabulary (drawing elements, paint servers, SMIL animation)
+  plus the dialect wrappers; anything outside it degrades to escaped text.
 - **The chat "stop" button never worked.** `chat()` took the *previous* value
   of `GEN_SEQ.fetch_add(1)` as its generation while `stop()` stored the
   post-increment value, so the streaming loop's `STOP_GEN == my_gen` test was
@@ -175,6 +186,16 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   languages.
 
 ### Changed
+- **Bare HTML now joins the same allowlist channel.** Live testing with the
+  chat assistant showed the model keeps writing bare HTML no matter what the
+  prompt teaches (three rounds with an iron rule and an example in the system
+  prompt), and block-level raw HTML used to escape into visible source text -
+  the "AI-generated HTML is directly usable" promise broke on model
+  behaviour, not on the engine. Admission is now one predicate everywhere:
+  markup that passes the tag allowlist renders verbatim (block level, inline
+  mid-sentence, and fences alike) and then runs the same normalize + validate
+  pipeline; markup that fails escapes, exactly as before. This also flushed
+  out a real pre-existing hole (below).
 - **The platform descriptor is data for behaviour too, not just for capability
   flags.** `validate_platform_caption` opened with
   `if platform != "xhs" { return vec![] }`, so the registry needed a `match`
