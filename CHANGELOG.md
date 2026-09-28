@@ -103,6 +103,50 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   resolving new versions.
 
 ### Added
+- **Theme system v2: role × variant styles (content-aware layouts).** A theme
+  could previously give each role exactly one look, so a one-line pull quote
+  wore the same box as a three-paragraph citation and the article's opening
+  paragraph looked like every other one - the ceiling the architecture review
+  named as the single blocker between "AI generates a theme" and "AI
+  generates any style". Roles now declare content variants
+  (`roles::RoleDef.variants`), keys live in the same block table as dotted
+  names (`[block.quote.hero]`, `[block.quote.hero_leaf]`), and the merge
+  order at the one override point (`apply_role_overrides`) is defaults <
+  base role < variant. The renderer classifies content at render time:
+  `quote.hero` fires on a single paragraph of at most 40 visible characters,
+  `paragraph.lead` on the document's first paragraph. The variant list is
+  generated into the AI theme prompt (`prompt_variant_list()`) and
+  `validate_generated_theme` accepts exactly the declared set - the same
+  bidirectional contract the roles table already had, with tests proving a
+  hero declaration reaches the short quote and never the long one, and that
+  variant properties win over base ones while inheriting the rest.
+- **Image fit: cross-platform crop matching (`wxwright image fit`).** The
+  engine could resolve images (dimensions, inline, upload) but processed zero
+  pixels, so a 16:9 landscape landed on Xiaohongshu's 3:4 cover as a broken
+  frame. `img::fit_to_profile` centre-crops (cover semantics) to a platform's
+  primary shape and clamps the width, never upscaling; PNG stays PNG so
+  transparency survives, everything else encodes JPEG q85, and an image that
+  already fits returns byte-for-byte untouched. The shape comes from
+  `PlatformSpec::image_profile()` - rich-text platforms get a width clamp
+  only, image-note platforms take their first preset (the same data the size
+  studio shows). GIF refuses to fit rather than silently dropping animation.
+  The CLI exposes it as `wxwright image fit <md> --platform <id> --out-dir D`
+  with a JSON manifest; remote/inline images are reported as skipped instead
+  of fetched (core never does network IO).
+- **`illustrate`: one job from article to illustrated article.** Text
+  generation and image generation were separate job kinds with nothing
+  joining them, so "one-click creation" stopped at the article. The new
+  jobs.rs kind asks the text model for illustration slots (anchor = verbatim
+  paragraph prefix, alt, prompt), keeps only slots whose anchor really
+  exists in the file, generates one image per slot via the cloud image
+  model, fits each to the article platform's profile, writes
+  `<article>-illust-N.jpg` next to the article and inserts the markdown
+  reference after the anchor paragraph. Cancellation propagates between
+  images; a paragraph that wraps across lines falls back to end-of-document
+  insertion rather than failing a job that already paid for the image. The
+  frontend is one toolbar button running the standard button-state machine -
+  progress lines in the status bar, the article reloads with its images when
+  the job lands.
 - **```html fences: the AI's rich-block channel.** The request behind "let the AI
   produce richer layouts than Markdown + a theme can express". A ```html fence
   whose markup passes an allowlist is emitted verbatim and then normalized by

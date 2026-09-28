@@ -31,6 +31,9 @@ const I18N = {
     push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
     ai_tool_call: (n) => `已调用工具 ${n}`,
     ai_tool_note: (n) => `正在调用 ${n}…`,
+    illustrate_title: "AI 配图：自动规划插图位并生成图片插入文章",
+    illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
+    illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
     ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，可以用 ```html 围栏直接写富样式块，内容会原样进入文章：只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。",
     push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
     push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
@@ -151,6 +154,9 @@ const I18N = {
     push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
     ai_tool_call: (n) => `Called tool ${n}`,
     ai_tool_note: (n) => `Calling ${n}…`,
+    illustrate_title: "AI illustrations: plan slots, generate images, insert them",
+    illustrate_need_save: "Save the article (with body text) before using AI illustrations",
+    illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
     ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), you may write a ```html fence and its markup goes into the article verbatim: only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block.",
     push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
     push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
@@ -3301,6 +3307,37 @@ function bindUI() {
   $("btn-new-article").addEventListener("click", newArticle);
   $("btn-import").addEventListener("click", importMdFiles);
   $("btn-save").addEventListener("click", () => persistCurrent(false));
+  $("btn-illustrate").addEventListener("click", async () => {
+    if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    const btn = $("btn-illustrate");
+    if (btn.classList.contains("btn-busy")) return; // AIJobs owns the state machine
+    if ($("editor").value.trim().length === 0) { toast(t("illustrate_need_save"), "err"); return; }
+    if (dirty) await persistCurrent(true);
+    if (!currentArticleId) { toast(t("illustrate_need_save"), "err"); return; }
+    try {
+      const job = await AIJobs.run(
+        "illustrate",
+        { id: currentArticleId, count: 2, platform: currentPlatform },
+        {
+          button: btn,
+          onProgress: (_ev, data) => {
+            const msg = typeof data === "string" ? data : "";
+            if (msg) $("status-text").textContent = msg;
+          },
+        }
+      );
+      if (job.stopped) { $("status-text").textContent = t("job_stopped"); return; }
+      // The file changed on disk; reload it into the editor + preview.
+      await openArticle(currentArticleId);
+      $("status-text").textContent = t("ready");
+      const n = job.result && job.result.inserted ? job.result.inserted.length : 0;
+      toast(t("illustrate_done", n), "ok");
+      window.Mozai && Mozai.celebrate();
+    } catch (e) {
+      toast(String(e), "err");
+      $("status-text").textContent = t("ready");
+    }
+  });
   $("btn-push-draft").addEventListener("click", async () => {
     if (!invoke) { toast(t("demo_mode"), "err"); return; }
     if (currentPlatform !== "wechat") { toast(t("push_draft_need_wechat"), "err"); return; }

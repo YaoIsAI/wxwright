@@ -534,6 +534,7 @@ fn run_job(app: AppHandle, job: Arc<Job>, kind: String, params: Value) {
         "poster" => run_chat_task(&app, &job, "poster", &params, |artifact, _w| {
             Ok(json!(artifact))
         }),
+        "illustrate" => run_illustrate(&app, &job, &params),
         "image" => crate::ai::generate_image(
             params["prompt"].as_str().unwrap_or(""),
             params["width"].as_u64().unwrap_or(1024) as u32,
@@ -593,12 +594,136 @@ fn run_comfy(job: &Arc<Job>, params: &Value) -> Result<Value, String> {
     Ok(json!({ "paths": paths }))
 }
 
+/// `illustrate`: the article-illustration pipeline - the piece that turns
+/// "write an article" into "get a finished article". The text model picks
+/// the slots, the cloud image model fills them, the platform profile shapes
+/// the pixels, and the markdown gets its references. params: { id, count?,
+/// platform? } where `id` is the article's library id.
+fn run_illustrate(app: &AppHandle, job: &Arc<Job>, params: &Value) -> Result<Value, String> {
+    let id = params["id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("缺少文章 id（请先保存文章）")?;
+    let count = params["count"].as_u64().unwrap_or(2).clamp(1, 3) as usize;
+    let platform = params["platform"].as_str().unwrap_or("wechat").to_string();
+    let profile = wxwright_core::platform::get_platform(&platform).image_profile();
+    // The generation canvas: the platform's cover shape when it has one.
+    let (gw, gh) = profile.cover_aspect.unwrap_or((1080, 720));
+
+    let path = crate::articles::library_dir().join(format!("{}.md", id));
+    let status = |msg: &str| emit(app, job.id, "illustrate", "status", json!(msg));
+
+    status("分析文章，规划插图位…");
+    let md = std::fs::read_to_string(&path)
+        .map_err(|e| format!("无法读取文章 {}: {}", path.display(), e))?;
+    if job.cancel.load(Ordering::Relaxed) {
+        return Err(CANCELLED.into());
+    }
+    // The planner sees the body only: frontmatter keys are metadata, and an
+    // anchor that matched them would insert an image above the first heading.
+    let (_fm, body) = wxwright_core::util::strip_frontmatter(&md);
+    let slots = crate::ai::plan_illustration_slots(&body, count)?;
+    if slots.is_empty() {
+        return Err("模型没有给出锚点可靠的插图位，请重试或手动配图".to_string());
+    }
+
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "article".into());
+    let mut work = md.clone();
+    let mut inserted: Vec<Value> = Vec::new();
+    for (i, slot) in slots.iter().enumerate() {
+        if job.cancel.load(Ordering::Relaxed) {
+            return Err(CANCELLED.into());
+        }
+        status(&format!("生成第 {}/{} 张插图…", i + 1, slots.len()));
+        let gen_paths = crate::ai::generate_image(&slot.prompt, gw, gh)?;
+        let raw = gen_paths.first().ok_or("生图返回为空")?.to_string();
+        let bytes = std::fs::read(&raw).map_err(|e| format!("无法读取生图结果: {}", e))?;
+        let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+        // Fit to the platform profile; an unfittable image (gif animation)
+        // passes through as-is rather than losing the illustration.
+        let fit = wxwright_core::img::fit_to_profile(&bytes, &profile).unwrap_or_else(|_| {
+            let (w, h) = wxwright_core::img::dims_from_bytes(&bytes).unwrap_or((0, 0));
+            wxwright_core::img::FitResult {
+                bytes,
+                width: w,
+                height: h,
+                cropped: false,
+                resized: false,
+            }
+        });
+        let fname = format!(
+            "{}-illust-{:02}.{}",
+            stem,
+            i + 1,
+            if is_png { "png" } else { "jpg" }
+        );
+        let dest = path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(&fname);
+        std::fs::write(&dest, &fit.bytes)
+            .map_err(|e| format!("无法写入插图 {}: {}", dest.display(), e))?;
+        // Absolute path with forward slashes: the GUI preview and the mmbiz
+        // uploader both resolve article images this way.
+        let ref_path = dest.display().to_string().replace('\\', "/");
+        let alt: String = slot
+            .alt
+            .chars()
+            .map(|c| if c == ']' || c == ')' { ' ' } else { c })
+            .collect();
+        let img_line = format!("![{}]({})", alt, ref_path);
+
+        // Insert after the anchor paragraph: the line whose text contains the
+        // anchor, extended to the end of that paragraph block. The planner
+        // already verified the anchor exists in the file; a paragraph that
+        // wraps across lines can still dodge the per-line match, so that case
+        // falls back to the end of the document instead of failing a job that
+        // has already paid for an image.
+        let lines: Vec<String> = work.lines().map(String::from).collect();
+        let anchor_line = lines.iter().position(|l| l.contains(&slot.anchor));
+        let mut out: Vec<String> = Vec::with_capacity(lines.len() + 3);
+        match anchor_line {
+            Some(l) => {
+                let mut e = l;
+                while e + 1 < lines.len() && !lines[e + 1].trim().is_empty() {
+                    e += 1;
+                }
+                out.extend_from_slice(&lines[..=e]);
+                out.push(String::new());
+                out.push(img_line);
+                out.push(String::new());
+                out.extend_from_slice(&lines[e + 1..]);
+            }
+            None => {
+                out.extend(lines);
+                out.push(String::new());
+                out.push(img_line);
+            }
+        }
+        work = out.join("\n") + "\n";
+        inserted.push(json!({
+            "alt": alt, "file": ref_path,
+            "width": fit.width, "height": fit.height,
+        }));
+        status(&format!("已插入 {}/{} 张插图", i + 1, slots.len()));
+    }
+
+    std::fs::write(&path, &work).map_err(|e| format!("无法写回文章: {}", e))?;
+    Ok(json!({ "inserted": inserted, "article": path.display().to_string() }))
+}
+
 /// Public entry used by the `ai_job_start` command.
 pub fn start_job(kind: &str, params: Value, app: AppHandle) -> Result<u64, String> {
-    if !matches!(kind, "theme" | "svg" | "poster" | "image" | "comfy") {
+    if !matches!(
+        kind,
+        "theme" | "svg" | "poster" | "image" | "comfy" | "illustrate"
+    ) {
         return Err(format!("未知任务类型: {}", kind));
     }
-    if matches!(kind, "theme" | "svg" | "poster") {
+    if matches!(kind, "theme" | "svg" | "poster" | "illustrate") {
         // fail fast when no provider is configured
         crate::ai::active_provider()?;
     }

@@ -869,6 +869,112 @@ pub fn generate_image(prompt: &str, w: u32, h: u32) -> Result<Vec<String>, Strin
     Ok(paths)
 }
 
+// ------------------------------------------------------------ illustrate ---
+
+/// One proposed illustration slot: where it goes (a verbatim prefix of an
+/// anchor paragraph), what the alt text says, and the image prompt.
+pub(crate) struct IllustrationSlot {
+    pub anchor: String,
+    pub alt: String,
+    pub prompt: String,
+}
+
+pub(crate) const ILLUSTRATE_SYSTEM: &str = "你是公众号文章配图编辑。从文章中挑选最适合插图的位置，输出一个 JSON 数组。每个元素包含三个字段：\
+\"anchor\"（锚点：文章中某一段落的原文开头，逐字复制 10 到 20 个连续字符，必须是文章里真实存在的文字）、\
+\"alt\"（图片中文简述，10 字以内）、\
+\"prompt\"（文生图英文提示词：描述主体/风格/构图/光线/色调，与文章气质一致，80 词以内，不要出现文字、logo 或水印要求）。\
+规则：不给标题、列表、代码块配图；各位置之间拉开距离；宁缺毋滥，没有合适位置就输出空数组。只输出 JSON 数组，不要任何解释或围栏。";
+
+/// Ask the text model for illustration slots, then keep only the ones whose
+/// anchor actually exists in the article - a model that hallucinates an
+/// anchor produces no image at all instead of an image in the wrong place.
+pub(crate) fn plan_illustration_slots(
+    md: &str,
+    count: usize,
+) -> Result<Vec<IllustrationSlot>, String> {
+    let (p, key) = active_provider()?;
+    let body = serde_json::json!({
+        "model": p.model,
+        "messages": [
+            { "role": "system", "content": ILLUSTRATE_SYSTEM },
+            {
+                "role": "user",
+                "content": format!("请最多给出 {} 个插图位。文章全文：\n\n{}", count, md),
+            },
+        ],
+        "temperature": 0.4,
+        "max_tokens": 2048,
+    });
+    let resp = call_completions_post(&p.base_url, &key, "/chat/completions", &body)?;
+    let v: serde_json::Value = resp
+        .into_json()
+        .map_err(|e| format!("响应解析失败: {}", e))?;
+    if let Some(err) = v.get("error") {
+        return Err(format!(
+            "服务端错误: {}",
+            err.get("message").and_then(|m| m.as_str()).unwrap_or("?")
+        ));
+    }
+    let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
+    let candidates = parse_slot_array(text)?;
+    let mut out: Vec<IllustrationSlot> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for s in candidates {
+        if out.len() >= count {
+            break;
+        }
+        if s.anchor.is_empty() || s.prompt.is_empty() {
+            continue;
+        }
+        if !md.contains(&s.anchor) {
+            continue;
+        }
+        if !seen.insert(s.anchor.clone()) {
+            continue;
+        }
+        out.push(s);
+    }
+    Ok(out)
+}
+
+fn parse_slot_array(text: &str) -> Result<Vec<IllustrationSlot>, String> {
+    let t = text.trim();
+    // Models wrap JSON in prose or fences; the array brackets are the contract.
+    let (start, end) = match (t.find('['), t.rfind(']')) {
+        (Some(a), Some(b)) if b > a => (a, b + 1),
+        _ => return Err("模型没有输出插图位 JSON 数组".into()),
+    };
+    let arr: serde_json::Value =
+        serde_json::from_str(&t[start..end]).map_err(|e| format!("插图位 JSON 解析失败: {}", e))?;
+    let list = arr.as_array().ok_or("插图位不是 JSON 数组")?;
+    Ok(list
+        .iter()
+        .filter_map(|it| {
+            let anchor = it
+                .get("anchor")
+                .and_then(|x| x.as_str())?
+                .trim()
+                .to_string();
+            let alt = it
+                .get("alt")
+                .and_then(|x| x.as_str())
+                .unwrap_or("插图")
+                .trim()
+                .to_string();
+            let prompt = it
+                .get("prompt")
+                .and_then(|x| x.as_str())?
+                .trim()
+                .to_string();
+            Some(IllustrationSlot {
+                anchor,
+                alt,
+                prompt,
+            })
+        })
+        .collect())
+}
+
 // ------------------------------------------------------- svg components ---
 
 pub(crate) const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组件专家。只输出一个可直接粘贴进公众号文章的 HTML 片段：一个 <section> 包裹的内联 <svg>，不要任何解释、不要 markdown 围栏。
@@ -977,17 +1083,24 @@ font-size = "15px"
 [block.*] 覆盖规则（严格遵守）：
 1. role 只能取：{ROLES}；
    可加 _leaf 后缀修饰行内文字；卡片类（card_*）还可加 _title 后缀修饰卡片标题标签；
-2. 禁止任何伪类与复杂选择器：没有 a:hover、没有 [block.a]、没有嵌套——写 [block.a:hover] 是非法 TOML，会直接被拒；
-3. 想要发光、渐变、悬浮效果，用安全属性近似：border + 鲜明 accent 色、background、letter-spacing、border-radius；
-4. 属性只允许：margin / padding / border / color / font-size / font-weight /
+2. 内容变体（可选，写法：在角色表下再建一层子表）：
+   {VARIANTS}
+   例：[block.quote.hero] 为短金句单独定样式（覆盖 [block.quote] 的对应属性，
+   未覆盖的属性自动继承基础角色），[block.quote.hero_leaf] 修饰金句文字。
+   变体由引擎按内容自动判定（短单段引用=hero、全文首段=lead），不需要文章配合；
+3. 禁止任何伪类与复杂选择器：没有 a:hover、没有 [block.a]、没有嵌套——写 [block.a:hover] 是非法 TOML，会直接被拒；
+4. 想要发光、渐变、悬浮效果，用安全属性近似：border + 鲜明 accent 色、background、letter-spacing、border-radius；
+5. 属性只允许：margin / padding / border / color / font-size / font-weight /
    letter-spacing / text-align / line-height / background / border-radius。"##;
 
-/// The theme schema with its role list generated from
+/// The theme schema with its role list and variant list generated from
 /// `wxwright_core::roles::ROLES`. Generating it means the prompt can never
-/// advertise a role the renderer does not consume - the drift that used to
-/// silently discard every AI-authored card style.
+/// advertise a role (or variant) the renderer does not consume - the drift
+/// that used to silently discard every AI-authored card style.
 pub(crate) fn theme_schema() -> String {
-    THEME_SCHEMA_TEMPLATE.replace("{ROLES}", &wxwright_core::roles::prompt_role_list())
+    THEME_SCHEMA_TEMPLATE
+        .replace("{ROLES}", &wxwright_core::roles::prompt_role_list())
+        .replace("{VARIANTS}", &wxwright_core::roles::prompt_variant_list())
 }
 
 const THEME_SAMPLE_DOC: &str = r#"# 标题一
@@ -1150,9 +1263,10 @@ pub(crate) fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, St
         .collect();
     if !unknown.is_empty() {
         return Err(format!(
-            "以下 [block.*] 角色不会被渲染器读取，请删除或改用受支持的角色: {}。受支持的角色：{}",
+            "以下 [block.*] 角色不会被渲染器读取，请删除或改用受支持的角色: {}。受支持的角色：{}；支持的内容变体：{}",
             unknown.join(", "),
-            wxwright_core::roles::prompt_role_list()
+            wxwright_core::roles::prompt_role_list(),
+            wxwright_core::roles::prompt_variant_list()
         ));
     }
 
