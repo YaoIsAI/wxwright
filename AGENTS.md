@@ -40,7 +40,7 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ## 3. 常用命令 / Commands
 
 ```bash
-cargo test --workspace                       # 全量测试（当前 148 通过 + 6 条 live ignored，必须全绿才能交付）
+cargo test --workspace                       # 全量测试（当前 163 通过 + 6 条 live ignored，必须全绿才能交付）
 cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
                                              # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
@@ -166,7 +166,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎。
-- 测试 154（148 常规 + 6 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 测试 169（163 常规 + 6 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源。
