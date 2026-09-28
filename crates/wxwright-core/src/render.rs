@@ -7,7 +7,7 @@
 //! - text containers carry line-height >= 1.5 (R-1.3);
 //! - no fixed pixel widths; width:100% / min-width only (R-1.4).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use crate::htmlutil::{build_style, escape_attr, escape_text};
@@ -29,6 +29,7 @@ pub fn render_document(doc: &[Block], theme: &Theme, img: &ImgPipeline) -> Rende
         img,
         links: RefCell::new(LinksState::default()),
         toc_items,
+        lead_seen: Cell::new(false),
     };
     let mut body = render_blocks(doc, &ctx, &BodyCtx::root());
     if theme.link_style() == LinkStyle::Footnote {
@@ -49,6 +50,10 @@ struct Ctx<'a> {
     img: &'a ImgPipeline,
     links: RefCell<LinksState>,
     toc_items: Vec<(u8, String)>,
+    /// Whether the lede slot (`paragraph.lead`) has been taken. The first
+    /// paragraph the document renders is the article's opening - everything
+    /// after it renders as a base paragraph.
+    lead_seen: Cell<bool>,
 }
 
 /// Styling context for a nesting scope (root / quote / card / list item).
@@ -72,27 +77,64 @@ impl BodyCtx {
 /// Compose a style string: token-expanded defaults, overlaid by the theme's
 /// role overrides.
 fn css(theme: &Theme, role: &str, defaults: &[(&str, &str)]) -> String {
+    css_variant(theme, role, None, defaults)
+}
+
+/// `css` with a content-variant layer: `blocks[role]` is overlaid by
+/// `blocks[over_key]` (e.g. "quote.hero" over "quote"), per property, in that
+/// order - the variant always wins over the base role.
+fn css_variant(
+    theme: &Theme,
+    role: &str,
+    over_key: Option<&str>,
+    defaults: &[(&str, &str)],
+) -> String {
     let decls: Vec<(String, String)> = defaults
         .iter()
         .map(|(p, v)| (p.to_string(), expand(v, theme)))
         .collect();
-    apply_role_overrides(theme, role, decls)
+    apply_role_overrides(theme, role, over_key, decls)
 }
 
 /// Same contract as `css`, for defaults computed at runtime (theme colours,
 /// per-column widths) that cannot live in a `&'static` slice. Values still go
 /// through token expansion, so `"{accent}"` works here too.
-fn css_owned(theme: &Theme, role: &str, mut decls: Vec<(String, String)>) -> String {
+fn css_owned(theme: &Theme, role: &str, decls: Vec<(String, String)>) -> String {
+    css_owned_variant(theme, role, None, decls)
+}
+
+/// `css_owned` with the content-variant layer (see `css_variant`).
+fn css_owned_variant(
+    theme: &Theme,
+    role: &str,
+    over_key: Option<&str>,
+    mut decls: Vec<(String, String)>,
+) -> String {
     for (_, v) in decls.iter_mut() {
         *v = expand(v, theme);
     }
-    apply_role_overrides(theme, role, decls)
+    apply_role_overrides(theme, role, over_key, decls)
 }
 
 /// Theme overrides win per property; `font-family` is dropped even if a theme
-/// asks for it (R-3.1 is absolute).
-fn apply_role_overrides(theme: &Theme, role: &str, mut decls: Vec<(String, String)>) -> String {
-    if let Some(over) = theme.blocks.get(role) {
+/// asks for it (R-3.1 is absolute). `over_key` (when given) is applied after
+/// the base role, so a content variant narrows the base style without having
+/// to repeat it.
+fn apply_role_overrides(
+    theme: &Theme,
+    role: &str,
+    over_key: Option<&str>,
+    mut decls: Vec<(String, String)>,
+) -> String {
+    apply_over(theme, role, &mut decls);
+    if let Some(k) = over_key {
+        apply_over(theme, k, &mut decls);
+    }
+    build_style(&decls)
+}
+
+fn apply_over(theme: &Theme, key: &str, decls: &mut Vec<(String, String)>) {
+    if let Some(over) = theme.blocks.get(key) {
         for (p, v) in over {
             if p.eq_ignore_ascii_case("font-family") {
                 continue;
@@ -104,7 +146,6 @@ fn apply_role_overrides(theme: &Theme, role: &str, mut decls: Vec<(String, Strin
             }
         }
     }
-    build_style(&decls)
 }
 
 fn expand(v: &str, theme: &Theme) -> String {
@@ -415,6 +456,17 @@ pub fn render_chart(spec: &ChartSpec) -> String {
 /// already resolved its own leaf style, so it wins; at the document root the
 /// style comes from the theme's `<role>_leaf` entry (PRD 8: the theme is the
 /// single place a role's typography is decided).
+/// Shared defaults for paragraph-run leaves; `base_leaf` and the lead
+/// paragraph both start from this table so the two cannot drift.
+fn paragraph_leaf_defaults() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("font-size", "15px"),
+        ("color", "{text}"),
+        ("line-height", "1.75"),
+        ("letter-spacing", "0.3px"),
+    ]
+}
+
 fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
     if !scope.leaf.is_empty() {
         return scope.leaf.clone();
@@ -422,12 +474,7 @@ fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
     css(
         ctx.theme,
         &format!("{}_leaf", role),
-        &[
-            ("font-size", "15px"),
-            ("color", "{text}"),
-            ("line-height", "1.75"),
-            ("letter-spacing", "0.3px"),
-        ],
+        paragraph_leaf_defaults(),
     )
 }
 
@@ -507,12 +554,37 @@ fn render_paragraph(inlines: &[Inline], ctx: &Ctx, scope: &BodyCtx) -> String {
     if inlines.is_empty() {
         return String::new();
     }
+    // `paragraph.lead` is the article's opening paragraph - the lede slot a
+    // theme can style like a standfirst (bigger type, secondary colour).
+    // The first paragraph rendered takes it; every later paragraph renders
+    // as the base role.
+    let lead = !ctx.lead_seen.replace(true);
+    let leaf_scope;
+    let scope = if lead {
+        leaf_scope = BodyCtx {
+            leaf: css_variant(
+                ctx.theme,
+                "paragraph_leaf",
+                Some("paragraph.lead_leaf"),
+                paragraph_leaf_defaults(),
+            ),
+            para_margin: scope.para_margin.clone(),
+        };
+        &leaf_scope
+    } else {
+        scope
+    };
     let inner = render_inlines(inlines, ctx, scope);
     // `scope.para_margin` arrives as a ready declaration ("margin: 0 0 16px;").
     // Split it back into a property/value pair so a theme can still override
     // `margin` through [block.paragraph] - otherwise the advertised
     // `paragraph` role would be the one key the renderer never read.
-    let style = css_owned(ctx.theme, "paragraph", vec![split_decl(&scope.para_margin)]);
+    let style = css_owned_variant(
+        ctx.theme,
+        "paragraph",
+        lead.then_some("paragraph.lead"),
+        vec![split_decl(&scope.para_margin)],
+    );
     section(&style, &inner)
 }
 
@@ -849,11 +921,39 @@ fn render_code(lang: Option<&str>, code: &str, ctx: &Ctx) -> String {
     )
 }
 
+/// `quote.hero` fires when the blockquote is a single short paragraph - the
+/// pull-quote shape. Anything with more structure (lists, cards, several
+/// paragraphs) or a long paragraph renders as the base quote.
+fn quote_variant(blocks: &[Block]) -> Option<&'static str> {
+    let inlines = match blocks {
+        [Block::Paragraph { inlines }] => inlines,
+        _ => return None,
+    };
+    let n = inlines_visible_len(inlines);
+    (n > 0 && n <= 40).then_some("hero")
+}
+
+/// Visible character count across inline runs (text, code, math), so length
+/// limits measure what the reader sees.
+fn inlines_visible_len(inlines: &[Inline]) -> usize {
+    inlines
+        .iter()
+        .map(|il| match il {
+            Inline::Text(t) | Inline::Code(t) | Inline::RawHtml(t) => t.chars().count(),
+            Inline::Math { latex, .. } => latex.chars().count(),
+            Inline::Styled { children, .. } => inlines_visible_len(children),
+            Inline::Break | Inline::Image(_) => 0,
+        })
+        .sum()
+}
+
 fn render_quote(blocks: &[Block], ctx: &Ctx) -> String {
+    let variant = quote_variant(blocks);
     let scope = BodyCtx {
-        leaf: css(
+        leaf: css_variant(
             ctx.theme,
             "quote_leaf",
+            variant.map(|v| format!("quote.{}_leaf", v)).as_deref(),
             &[
                 ("font-size", "14px"),
                 ("color", "{quote_text}"),
@@ -864,9 +964,10 @@ fn render_quote(blocks: &[Block], ctx: &Ctx) -> String {
     };
     let inner = render_blocks(blocks, ctx, &scope);
     section(
-        &css(
+        &css_variant(
             ctx.theme,
             "quote",
+            variant.map(|v| format!("quote.{}", v)).as_deref(),
             &[
                 ("margin", "20px 0"),
                 ("padding", "12px 16px"),
@@ -1442,6 +1543,7 @@ mod tests {
         let css = apply_role_overrides(
             &theme,
             "paragraph_leaf",
+            None,
             vec![
                 ("font-size".to_string(), "15px".to_string()),
                 ("color".to_string(), "#123456".to_string()),
@@ -1474,6 +1576,7 @@ mod tests {
         let css = apply_role_overrides(
             &theme,
             "paragraph_leaf",
+            None,
             vec![("font-size".to_string(), "15px".to_string())],
         );
         assert!(

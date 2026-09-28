@@ -176,16 +176,36 @@ pub fn parse_theme(toml_src: &str) -> Result<Theme> {
                 .ok_or_else(|| Error::Theme(format!("block.{} must be a table", role)))?;
             let mut decls = Vec::new();
             for (prop, val) in st {
-                let s = val.as_str().ok_or_else(|| {
-                    Error::Theme(format!("block.{}.{} must be a string", role, prop))
-                })?;
-                if prop.eq_ignore_ascii_case("font-family") || s.contains("font-family") {
-                    return Err(Error::Theme(format!(
-                        "block.{}.{}: font-family is forbidden (official rule R-3.1)",
-                        role, prop
-                    )));
+                match val.as_str() {
+                    Some(s) => {
+                        forbid_font_family(role, prop, s)?;
+                        decls.push((prop.clone(), s.to_string()));
+                    }
+                    // A sub-table under a role is a content variant
+                    // (`[block.quote.hero]`): stored as the dotted key
+                    // "quote.hero" and merged after the base style by the
+                    // renderer. This is the only place variants enter the
+                    // key space.
+                    None if val.is_table() => {
+                        let vt = val.as_table().unwrap();
+                        let key = format!("{}.{}", role, prop);
+                        let mut vdecls = Vec::new();
+                        for (p, v) in vt {
+                            let s = v.as_str().ok_or_else(|| {
+                                Error::Theme(format!("block.{}.{} must be a string", key, p))
+                            })?;
+                            forbid_font_family(&key, p, s)?;
+                            vdecls.push((p.clone(), s.to_string()));
+                        }
+                        blocks.insert(key, vdecls);
+                    }
+                    None => {
+                        return Err(Error::Theme(format!(
+                            "block.{}.{} must be a string or a variant table",
+                            role, prop
+                        )));
+                    }
                 }
-                decls.push((prop.clone(), s.to_string()));
             }
             blocks.insert(role.clone(), decls);
         }
@@ -206,6 +226,18 @@ fn validate_color(key: &str, val: &str) -> Result<()> {
         return Err(Error::Theme(format!(
             "colors.{}: expected hex or rgb() color, got {:?}",
             key, val
+        )));
+    }
+    Ok(())
+}
+
+/// R-3.1 is absolute: no font-family anywhere in a theme, base roles and
+/// variant tables alike.
+fn forbid_font_family(role: &str, prop: &str, val: &str) -> Result<()> {
+    if prop.eq_ignore_ascii_case("font-family") || val.contains("font-family") {
+        return Err(Error::Theme(format!(
+            "block.{}.{}: font-family is forbidden (official rule R-3.1)",
+            role, prop
         )));
     }
     Ok(())
@@ -334,5 +366,35 @@ name = "bad"
 font-family = "serif"
 "#;
         assert!(parse_theme(src).is_err());
+    }
+
+    /// A sub-table under a role becomes the dotted variant key; its props are
+    /// parsed like any base role and R-3.1 applies inside it too.
+    #[test]
+    fn variant_tables_become_dotted_keys() {
+        let src = r##"
+[meta]
+id = "v"
+name = "v"
+
+[block.quote]
+background = "#F7F8FA"
+
+[block.quote.hero]
+background = "none"
+font-size = "20px"
+"##;
+        let t = parse_theme(src).expect("variant theme parses");
+        assert_eq!(
+            t.blocks.get("quote").map(|d| d.len()),
+            Some(1),
+            "base props stay on the base key"
+        );
+        let hero = t.blocks.get("quote.hero").expect("variant key exists");
+        assert!(hero.iter().any(|(p, v)| p == "background" && v == "none"));
+        assert!(hero.iter().any(|(p, v)| p == "font-size" && v == "20px"));
+
+        let bad = src.replace("font-size = \"20px\"", "font-family = \"serif\"");
+        assert!(parse_theme(&bad).is_err(), "R-3.1 applies inside variants");
     }
 }

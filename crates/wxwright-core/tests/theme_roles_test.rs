@@ -222,3 +222,88 @@ fn every_heading_level_is_themeable_end_to_end() {
         );
     }
 }
+
+/// A variant must be *scoped*: the probe on `quote.hero` may reach the short
+/// standalone quote but must never reach a long one. A variant that fires
+/// everywhere is just a second base role with extra parsing.
+#[test]
+fn quote_hero_is_scoped_to_short_single_paragraph_quotes() {
+    let short = "> 一句金句。\n\n> 这是一条远远超过四十个字符限制的长引用，用来验证 hero 变体不会落在这里，因为内容分类器只把单段且足够短的引用判定为金句形态。\n\n[block 注入]\n\n> - 列表引用\n> - 也是结构化的\n";
+    let src = format!(
+        "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.quote.hero]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+    );
+    let theme = parse_theme(&src).expect("probe theme parses");
+    let mut opts = ConvertOptions::new(theme);
+    opts.image_mode = ImageMode::Keep;
+    let html = convert_markdown(short, &opts).expect("convert ok").html;
+    assert!(
+        html.contains(PROBE_VALUE),
+        "the short quote must take the hero variant"
+    );
+    // The probe must appear exactly once: on the hero quote only.
+    assert_eq!(
+        html.matches(PROBE_VALUE).count(),
+        1,
+        "the long quote and the list quote must not take the hero variant"
+    );
+}
+
+/// `paragraph.lead` styles the document's first paragraph only; the second
+/// must render as the base role. Reverse-scoped on purpose: this is the test
+/// that would fail if the Cell flag never flipped.
+#[test]
+fn paragraph_lead_is_scoped_to_the_first_paragraph() {
+    let md = "第一段，全文的导语位。\n\n第二段，普通正文。\n\n第三段，也是普通正文。\n";
+    let src = format!(
+        "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.paragraph.lead]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+    );
+    let theme = parse_theme(&src).expect("probe theme parses");
+    let mut opts = ConvertOptions::new(theme);
+    opts.image_mode = ImageMode::Keep;
+    let html = convert_markdown(md, &opts).expect("convert ok").html;
+    assert!(
+        html.contains(PROBE_VALUE),
+        "the first paragraph must take the lead variant"
+    );
+    assert_eq!(
+        html.matches(PROBE_VALUE).count(),
+        1,
+        "later paragraphs must not take the lead variant"
+    );
+}
+
+/// The merge order is defaults < base role < variant: a variant that only
+/// declares one property must keep the base role's other properties, and its
+/// own property must win over the base's.
+#[test]
+fn variant_overrides_base_per_property() {
+    let src = r##"
+[meta]
+id = "probe"
+name = "probe"
+
+[block.quote]
+margin = "20px 0"
+padding = "12px 16px"
+
+[block.quote.hero]
+padding = "4px 0"
+"##;
+    let theme = parse_theme(src).expect("theme parses");
+    let md = "> 金句。\n";
+    let mut opts = ConvertOptions::new(theme);
+    opts.image_mode = ImageMode::Keep;
+    let html = convert_markdown(md, &opts).expect("convert ok").html;
+    let sec = html
+        .split("<section")
+        .find(|s| s.contains("word-spacing") || s.contains("padding: 4px 0"))
+        .unwrap_or_else(|| panic!("hero section not found in: {html}"));
+    assert!(
+        sec.contains("padding: 4px 0"),
+        "the variant property must win over the base role: {sec}"
+    );
+    assert!(
+        sec.contains("margin: 20px 0"),
+        "properties the variant does not declare must come from the base role: {sec}"
+    );
+}
