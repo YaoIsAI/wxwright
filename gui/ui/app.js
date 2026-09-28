@@ -29,6 +29,8 @@ const I18N = {
     pub_login_ok: "登录成功，令牌已存入本机钥匙串", pub_unbound_ok: "已解绑",
     push_draft: "推草稿", push_draft_title: "推送到公众号草稿箱（需已绑定公众号 API）",
     push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
+    ai_tool_call: (n) => `已调用工具 ${n}`,
+    ai_tool_note: (n) => `正在调用 ${n}…`,
     push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
     push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
     push_draft_busy: "推送中…",
@@ -146,6 +148,8 @@ const I18N = {
     pub_login_ok: "Signed in; token stored in the OS keychain", pub_unbound_ok: "Unbound",
     push_draft: "Push draft", push_draft_title: "Push to the MP drafts box (requires the MP API binding)",
     push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
+    ai_tool_call: (n) => `Called tool ${n}`,
+    ai_tool_note: (n) => `Calling ${n}…`,
     push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
     push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
     push_draft_busy: "Pushing…",
@@ -1344,9 +1348,22 @@ async function aiSend(text) {
     el.querySelector(".ai-typing")?.remove();
     el.querySelector(".cursor")?.remove();
   };
+  const onTool = (ev) => {
+    const p = ev.payload || {};
+    const label = p.name ? t("ai_tool_call", p.name) : (p.note || "");
+    if (!label) return;
+    let note = el.querySelector(".ai-toolnote");
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "ai-toolnote";
+      el.querySelector(".bubble").appendChild(note);
+    }
+    note.textContent = label;
+  };
   const un1 = listen("ai-chunk", onChunk);
   const un2 = listen("ai-done", onDone);
   const un3 = listen("ai-error", onError);
+  const un4 = listen("ai-tool", onTool);
   function cleanup() {
     aiBusy = false;
     if (window.Mozai) Mozai.setBusy(false);
@@ -1357,12 +1374,14 @@ async function aiSend(text) {
     un1.then((f) => f());
     un2.then((f) => f());
     un3.then((f) => f());
+    un4.then((f) => f());
     updateJumpChip();
   }
   try {
     await invoke("ai_chat", {
       messages: [{ role: "system", content: AI_SYSTEM() }, ...aiHistory],
       temperature: 0.7,
+      enableTools: true,
     });
   } catch (e) {
     // errors surface via ai-error; keep partial text visible

@@ -642,9 +642,14 @@ pub async fn ai_chat(
     app: tauri::AppHandle,
     messages: serde_json::Value,
     temperature: Option<f64>,
+    // Tool calling on by default. Read-only tools only (see
+    // wxwright_mcp::ASSISTANT_TOOLS) - the assistant can check its own work,
+    // but it cannot push to the user's 公众号 or touch the clipboard.
+    enable_tools: Option<bool>,
 ) -> Result<(), String> {
     let temp = temperature.unwrap_or(0.7);
-    tauri::async_runtime::spawn_blocking(move || crate::ai::chat(app, messages, temp))
+    let tools = enable_tools.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || crate::ai::chat(app, messages, temp, tools))
         .await
         .map_err(|e| format!("task join failed: {}", e))?
 }

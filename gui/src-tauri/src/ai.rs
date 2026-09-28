@@ -356,31 +356,217 @@ pub fn test_provider(id: &str) -> Result<String, String> {
     })
 }
 
+/// A tool call the model asked for, accumulated from streamed fragments.
+///
+/// Providers stream a call in pieces: the first fragment carries `id` and the
+/// function name, later fragments append to `arguments`. `index` orders
+/// parallel calls, so the accumulator is keyed by it.
+#[derive(Default, Clone, Debug)]
+struct PendingCall {
+    id: String,
+    name: String,
+    args: String,
+}
+
+/// Merge one SSE `delta.tool_calls` fragment into the accumulator.
+fn accumulate_tool_calls(
+    delta: &serde_json::Value,
+    acc: &mut std::collections::BTreeMap<u64, PendingCall>,
+) {
+    let Some(list) = delta.get("tool_calls").and_then(|t| t.as_array()) else {
+        return;
+    };
+    for tc in list {
+        let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
+        let slot = acc.entry(idx).or_default();
+        if let Some(id) = tc.get("id").and_then(|x| x.as_str()) {
+            if !id.is_empty() {
+                slot.id = id.to_string();
+            }
+        }
+        if let Some(f) = tc.get("function") {
+            if let Some(n) = f.get("name").and_then(|x| x.as_str()) {
+                if !n.is_empty() {
+                    slot.name = n.to_string();
+                }
+            }
+            if let Some(a) = f.get("arguments").and_then(|x| x.as_str()) {
+                slot.args.push_str(a);
+            }
+        }
+    }
+}
+
+/// The assistant message that must precede tool results in the OpenAI schema.
+fn assistant_tool_message(text: &str, calls: &[PendingCall]) -> serde_json::Value {
+    serde_json::json!({
+        "role": "assistant",
+        "content": if text.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(text.to_string())
+        },
+        "tool_calls": calls
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "type": "function",
+                    "function": { "name": c.name, "arguments": c.args },
+                })
+            })
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn tool_message(id: &str, content: &str) -> serde_json::Value {
+    serde_json::json!({ "role": "tool", "tool_call_id": id, "content": content })
+}
+
+/// How many tool rounds one user turn may take. DeepSeek-harness style: a
+/// small, fixed budget. A model that cannot answer in six rounds is looping,
+/// and the only honest thing to do is stop and say so.
+const MAX_TOOL_ROUNDS: usize = 6;
+
+/// True when an error looks like "this provider does not accept a tools
+/// argument", which is the signal to retry the turn without tools.
+fn provider_rejects_tools(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("tool") || lower.contains("function")
+}
+
 /// Streaming chat: emits `ai-chunk` {text}, `ai-done` and on failure
 /// `ai-error` {message}. Providers that ignore `stream: true` fall back to
 /// a single chunk.
-pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Result<(), String> {
+pub fn chat(
+    app: AppHandle,
+    messages: serde_json::Value,
+    temperature: f64,
+    enable_tools: bool,
+) -> Result<(), String> {
     let my_gen = next_generation(&GEN_SEQ);
     let (p, key) = active_provider()?;
-    let body = serde_json::json!({
-        "model": p.model,
-        "messages": messages,
-        "temperature": temperature,
+
+    // Read-only tools only: see ASSISTANT_TOOLS for why the side-effectful ones
+    // are not here.
+    let mut tools = if enable_tools {
+        Some(wxwright_mcp::openai_tool_schemas(
+            wxwright_mcp::ASSISTANT_TOOLS,
+        )?)
+    } else {
+        None
+    };
+
+    let mut msgs: Vec<serde_json::Value> = messages.as_array().cloned().unwrap_or_default();
+    let mut usage: Option<serde_json::Value> = None;
+
+    for _round in 0..MAX_TOOL_ROUNDS {
+        let ctx = TurnCtx {
+            app: &app,
+            base_url: &p.base_url,
+            key: &key,
+            model: &p.model,
+            temperature,
+            my_gen,
+        };
+        let turn = match stream_turn(&ctx, &msgs, tools.as_deref()) {
+            Ok(t) => t,
+            Err(e) if tools.is_some() && provider_rejects_tools(&e) => {
+                // Some providers and models do not accept a tools argument at
+                // all. Degrade to a plain chat rather than leaving the user
+                // unable to talk to the assistant at all.
+                tools = None;
+                let _ = app.emit(
+                    "ai-tool",
+                    serde_json::json!({ "note": "provider rejected tools; continuing without" }),
+                );
+                stream_turn(&ctx, &msgs, None)?
+            }
+            Err(e) => return Err(e),
+        };
+        usage = turn.usage.clone().or(usage);
+
+        if turn.stopped {
+            let _ = app.emit(
+                "ai-done",
+                serde_json::json!({ "model": p.model, "stopped": true, "usage": usage }),
+            );
+            return Ok(());
+        }
+        if turn.tool_calls.is_empty() {
+            let _ = app.emit(
+                "ai-done",
+                serde_json::json!({ "model": p.model, "stopped": false, "usage": usage }),
+            );
+            return Ok(());
+        }
+
+        msgs.push(assistant_tool_message(&turn.text, &turn.tool_calls));
+        for c in &turn.tool_calls {
+            let _ = app.emit(
+                "ai-tool",
+                serde_json::json!({ "name": c.name, "arguments": c.args }),
+            );
+            let args =
+                serde_json::from_str::<serde_json::Value>(&c.args).unwrap_or(serde_json::json!({}));
+            let result = wxwright_mcp::call_tool_for_model(&c.name, &args);
+            msgs.push(tool_message(&c.id, &result));
+        }
+    }
+
+    let msg = format!("工具调用超过 {MAX_TOOL_ROUNDS} 轮仍未给出答案，已停止");
+    let _ = app.emit("ai-error", msg.clone());
+    Err(msg)
+}
+
+/// Everything one streamed turn needs. Bundled because the parameter list had
+/// grown to eight and clippy (rightly) complained.
+struct TurnCtx<'a> {
+    app: &'a AppHandle,
+    base_url: &'a str,
+    key: &'a str,
+    model: &'a str,
+    temperature: f64,
+    my_gen: u64,
+}
+
+/// What one streamed model turn produced.
+struct Turn {
+    text: String,
+    tool_calls: Vec<PendingCall>,
+    usage: Option<serde_json::Value>,
+    stopped: bool,
+}
+
+/// One streamed completion against `msgs`, emitting `ai-chunk` as text arrives.
+fn stream_turn(
+    ctx: &TurnCtx,
+    msgs: &[serde_json::Value],
+    tools: Option<&[serde_json::Value]>,
+) -> Result<Turn, String> {
+    let mut body = serde_json::json!({
+        "model": ctx.model,
+        "messages": msgs,
+        "temperature": ctx.temperature,
         "stream": true,
         "stream_options": { "include_usage": true },
     });
-    let resp = call_completions_post(&p.base_url, &key, "/chat/completions", &body)?;
+    if let Some(t) = tools {
+        body["tools"] = serde_json::json!(t);
+        body["tool_choice"] = serde_json::json!("auto");
+    }
+    let resp = call_completions_post(ctx.base_url, ctx.key, "/chat/completions", &body)?;
 
     let reader = std::io::BufReader::new(resp.into_reader());
     let mut lines: Vec<String> = Vec::new();
+    let mut text = String::new();
+    let mut calls: std::collections::BTreeMap<u64, PendingCall> = std::collections::BTreeMap::new();
     let mut saw_data = false;
     let mut stopped = false;
     let mut usage: Option<serde_json::Value> = None;
-    // Single pass: emit chunks as they arrive and check the stop flag
-    // between lines — breaking drops the reader, which closes the HTTP
-    // connection (stop is a real disconnect, not just a rendering stop).
+
     for line in reader.lines() {
-        if STOP_GEN.load(Ordering::Relaxed) == my_gen {
+        if STOP_GEN.load(Ordering::Relaxed) == ctx.my_gen {
             stopped = true;
             break;
         }
@@ -388,7 +574,7 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
             Ok(l) => l,
             Err(e) => {
                 let msg = format!("流中断: {}", e);
-                let _ = app.emit("ai-error", msg.clone());
+                let _ = ctx.app.emit("ai-error", msg.clone());
                 return Err(msg);
             }
         };
@@ -400,6 +586,9 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
         if data == "[DONE]" {
             break;
         }
+        // Any data line means the provider honoured stream:true, which is what
+        // the whole-body fallback below is testing for.
+        saw_data = true;
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
             if v.get("usage").and_then(|u| u.get("total_tokens")).is_some() {
                 usage = Some(v["usage"].clone());
@@ -407,36 +596,32 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
             }
             if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
                 if !delta.is_empty() {
-                    saw_data = true;
-                    if app.emit("ai-chunk", delta.to_string()).is_err() {
+                    text.push_str(delta);
+                    if ctx.app.emit("ai-chunk", delta.to_string()).is_err() {
                         break;
                     }
                 }
             }
+            accumulate_tool_calls(&v["choices"][0]["delta"], &mut calls);
             if let Some(err) = v.get("error") {
                 let msg = format!(
                     "服务端错误: {}",
                     err.get("message").and_then(|m| m.as_str()).unwrap_or("?")
                 );
-                let _ = app.emit("ai-error", msg.clone());
+                let _ = ctx.app.emit("ai-error", msg.clone());
                 return Err(msg);
             }
         }
     }
 
-    // No `data:` line was seen. That means either the provider ignored
-    // `stream: true` and answered with a whole JSON body, or the user stopped
-    // the run before the first chunk arrived. The second case used to fall
-    // into the JSON probe, fail to parse an empty body and surface
-    // "响应不是 SSE 流也不是 JSON: " - a stop click that landed early showed a
-    // confusing transport error instead of just stopping.
     if should_try_whole_body_json(saw_data, stopped) {
         let whole = lines.join("\n");
         match serde_json::from_str::<serde_json::Value>(&whole) {
             Ok(v) => {
                 if let Some(content) = v["choices"][0]["message"]["content"].as_str() {
                     if !content.is_empty() {
-                        let _ = app.emit("ai-chunk", content.to_string());
+                        text.push_str(content);
+                        let _ = ctx.app.emit("ai-chunk", content.to_string());
                     }
                 }
             }
@@ -445,17 +630,18 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
                     "响应不是 SSE 流也不是 JSON: {}",
                     wxwright_core::util::truncate(&whole, 200)
                 );
-                let _ = app.emit("ai-error", msg.clone());
+                let _ = ctx.app.emit("ai-error", msg.clone());
                 return Err(msg);
             }
         }
     }
 
-    let _ = app.emit(
-        "ai-done",
-        serde_json::json!({ "model": p.model, "stopped": stopped, "usage": usage }),
-    );
-    Ok(())
+    Ok(Turn {
+        text,
+        tool_calls: calls.into_values().filter(|c| !c.name.is_empty()).collect(),
+        usage,
+        stopped,
+    })
 }
 
 /// True when a finished stream should be probed for a whole-body JSON reply:
@@ -1153,6 +1339,226 @@ mod tests {
             completions_url("https://api.example.com/v1/chat/completions"),
             "https://api.example.com/v1/chat/completions"
         );
+    }
+
+    /// Tool-call fragments arrive one field at a time across several SSE
+    /// chunks. The accumulator must reassemble them without losing fields and
+    /// without letting a later empty fragment clobber an earlier name.
+    #[test]
+    fn tool_call_fragments_accumulate_across_chunks() {
+        let mut acc = std::collections::BTreeMap::new();
+        let feed = |d: serde_json::Value,
+                    acc: &mut std::collections::BTreeMap<u64, PendingCall>| {
+            accumulate_tool_calls(&d, acc);
+        };
+
+        // First fragment: id + name, arguments still empty.
+        feed(
+            serde_json::json!({ "tool_calls": [
+                { "index": 0, "id": "call_1", "type": "function",
+                  "function": { "name": "wxwright_validate", "arguments": "" } } ]
+            }),
+            &mut acc,
+        );
+        // Second: the arguments start arriving.
+        feed(
+            serde_json::json!({ "tool_calls": [
+                { "index": 0, "function": { "arguments": "{\"markdown\":" } } ]
+            }),
+            &mut acc,
+        );
+        // Third: the rest of the arguments.
+        feed(
+            serde_json::json!({ "tool_calls": [
+                { "index": 0, "function": { "arguments": " \"x\":1}" } } ]
+            }),
+            &mut acc,
+        );
+        // A parallel second call, and an empty fragment that must not clobber.
+        feed(
+            serde_json::json!({ "tool_calls": [
+                { "index": 1, "id": "call_2", "function": { "name": "wxwright_export", "arguments": "{}" } },
+                { "index": 0, "id": "", "function": { "name": "", "arguments": "" } } ]
+            }),
+            &mut acc,
+        );
+
+        let calls: Vec<PendingCall> = acc.into_values().collect();
+        assert_eq!(calls.len(), 2, "two parallel calls, ordered by index");
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "wxwright_validate");
+        assert_eq!(calls[0].args, "{\"markdown\": \"x\":1}");
+        assert_eq!(calls[1].name, "wxwright_export");
+    }
+
+    /// The assistant turn that precedes tool results, and the result message
+    /// itself, must match the OpenAI schema or the next request is rejected.
+    #[test]
+    fn tool_round_messages_match_the_openai_schema() {
+        let calls = vec![PendingCall {
+            id: "call_9".into(),
+            name: "wxwright_validate".into(),
+            args: "{}".into(),
+        }];
+        let assistant = assistant_tool_message("先检查一下", &calls);
+        assert_eq!(assistant["role"], "assistant");
+        assert_eq!(assistant["content"], "先检查一下");
+        assert_eq!(assistant["tool_calls"][0]["id"], "call_9");
+        assert_eq!(assistant["tool_calls"][0]["type"], "function");
+        assert_eq!(
+            assistant["tool_calls"][0]["function"]["name"],
+            "wxwright_validate"
+        );
+
+        // A turn with no text carries content:null, not an empty string.
+        let silent = assistant_tool_message("", &calls);
+        assert!(silent["content"].is_null(), "got: {silent}");
+
+        let result = tool_message("call_9", "{\"compliant\":true}");
+        assert_eq!(result["role"], "tool");
+        assert_eq!(result["tool_call_id"], "call_9");
+        assert_eq!(result["content"], "{\"compliant\":true}");
+    }
+
+    /// A provider that does not accept a tools argument must not leave the
+    /// user unable to chat: the loop degrades to a plain chat.
+    #[test]
+    fn tool_rejection_is_recognised_from_the_error_text() {
+        assert!(provider_rejects_tools(
+            "HTTP 400: \"tools\" is not supported by this model"
+        ));
+        assert!(provider_rejects_tools(
+            "HTTP 400: function calling is unavailable"
+        ));
+        assert!(!provider_rejects_tools("Connection Failed: os error 10060"));
+        assert!(!provider_rejects_tools("服务端错误: rate limited"));
+    }
+
+    /// Live smoke: does the configured provider accept a `tools` argument and
+    /// actually call one? Runs the loop by hand (no AppHandle needed) so the
+    /// answer is visible. Opt-in:
+    /// `cargo test -p wxwright-gui live_tool_loop_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live: calls the real AI provider (needs a configured key)"]
+    fn live_tool_loop_smoke() {
+        // WXW_SMOKE_PROVIDER=<id|名字> picks a specific provider without
+        // touching the user's active setting - useful when the active model
+        // does not support function calling.
+        let s = load_settings();
+        let want = std::env::var("WXW_SMOKE_PROVIDER").ok();
+        let mut chosen = None;
+        for cand in &s.providers {
+            let matches = match &want {
+                Some(w) => cand.id == *w || cand.name.contains(w),
+                None => s.active.as_deref() == Some(cand.id.as_str()),
+            };
+            if !matches {
+                continue;
+            }
+            if let Some(k) = effective_key(cand).filter(|k| !k.is_empty()) {
+                chosen = Some((cand.clone(), k));
+                break;
+            }
+        }
+        let (p, key) = match chosen {
+            Some(v) => v,
+            None => {
+                println!("skip: no provider with a key matched {want:?}");
+                return;
+            }
+        };
+        let tools = match wxwright_mcp::openai_tool_schemas(wxwright_mcp::ASSISTANT_TOOLS) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("skip: {e}");
+                return;
+            }
+        };
+        println!("provider: {} / {}", p.name, p.model);
+
+        let mut msgs = vec![
+            serde_json::json!({
+                "role": "system",
+                "content": "你是文章助手，可以调用工具。需要检查文章是否合规时调用 wxwright_validate。"
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": "请用工具检查这篇文章是否合规，然后把结果告诉我：\n\n# 标题\n\n正文内容，这里是一段用来测试的文字。"
+            }),
+        ];
+
+        for round in 0..4 {
+            let body = serde_json::json!({
+                "model": p.model,
+                "messages": msgs,
+                "temperature": 0.2,
+                "tools": tools,
+                "tool_choice": "auto",
+                // Reasoning models burn the budget on thinking before they can
+                // emit a tool call, so 1024 truncated this run to
+                // finish_reason=length with nothing in it.
+                "max_tokens": 16_384,
+                "stream": false,
+            });
+            let resp = match call_completions_post(&p.base_url, &key, "/chat/completions", &body) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!("PROVIDER-REJECTS: {e}");
+                    return;
+                }
+            };
+            let v: serde_json::Value = match resp.into_json() {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("BAD-JSON: {e}");
+                    return;
+                }
+            };
+            if let Some(err) = v.get("error") {
+                println!("PROVIDER-ERROR: {}", err);
+                return;
+            }
+            let choice = &v["choices"][0];
+            let finish = choice["finish_reason"].as_str().unwrap_or("");
+            println!("round {round}: finish_reason={finish}");
+
+            let calls = choice["message"]["tool_calls"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if calls.is_empty() {
+                println!(
+                    "FINAL-ANSWER: {}",
+                    choice["message"]["content"].as_str().unwrap_or("(empty)")
+                );
+                return;
+            }
+
+            // Assistant turn first, then one tool message per call.
+            msgs.push(serde_json::json!({
+                "role": "assistant",
+                "content": choice["message"]["content"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default(),
+                "tool_calls": calls,
+            }));
+            for c in &calls {
+                let name = c["function"]["name"].as_str().unwrap_or("");
+                let args = c["function"]["arguments"].as_str().unwrap_or("{}");
+                println!("MODEL-ASKED: {name}({args})");
+                let parsed: serde_json::Value =
+                    serde_json::from_str(args).unwrap_or(serde_json::json!({}));
+                let result = wxwright_mcp::call_tool_for_model(name, &parsed);
+                println!("TOOL-RESULT: {}", &result[..result.len().min(200)]);
+                msgs.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": result,
+                }));
+            }
+        }
+        println!("GAVE-UP: 4 rounds without a final answer");
     }
 
     /// A stop that lands before the first chunk must not be mistaken for a

@@ -291,6 +291,9 @@ body { display: flex; flex-direction: column; }
 .ai-messages { flex: 1 1 auto; overflow: auto; padding: 12px 14px; scrollbar-width: thin; }
 
 /* thinking dots */
+/* What the assistant's tool round is doing. Lives inside the streaming
+   bubble, so it is one line of status next to the answer, not a panel. */
+.ai-toolnote { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
 .ai-typing { display: inline-flex; gap: 4px; align-items: center; }
 .ai-typing i {
   width: 6px; height: 6px; border-radius: 50%;

@@ -119,6 +119,88 @@ fn text_result(v: Value) -> Value {
     })
 }
 
+/// Tools the GUI's assistant may call: the read-only ones.
+///
+/// The side-effectful tools - clipboard write, material upload, draft create -
+/// are deliberately not offered to the model. An assistant that can push to the
+/// user's 公众号 on its own is not an assistant. What makes tools worth having
+/// here is self-checking (validate / convert / export), which the read-only set
+/// covers completely.
+pub const ASSISTANT_TOOLS: &[&str] = &[
+    "wxwright_validate",
+    "wxwright_convert",
+    "wxwright_export",
+    "wxwright_themes_list",
+    "wxwright_draft_list",
+];
+
+/// The OpenAI `tools` array for `names`, in that order.
+///
+/// Built from `tools_list()` so a tool's description and schema are declared
+/// once and cannot drift between the MCP surface and the assistant's view of
+/// it. A name that is not declared fails loudly instead of being dropped.
+pub fn openai_tool_schemas(names: &[&str]) -> Result<Vec<serde_json::Value>, String> {
+    let listed = tools_list()["tools"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    names
+        .iter()
+        .map(|n| {
+            let t = listed
+                .iter()
+                .find(|t| t.get("name").and_then(|x| x.as_str()) == Some(*n))
+                .ok_or_else(|| format!("tool {n} is not declared in this server"))?;
+            Ok(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["inputSchema"],
+                }
+            }))
+        })
+        .collect()
+}
+
+/// Run one tool in-process and return what the model should read.
+///
+/// Same dispatch as the stdio `tools/call` path, minus the JSON-RPC envelope:
+/// one implementation, two consumers. Two deliberate differences from the stdio
+/// path:
+/// - the MCP wrapper (`content` / `structuredContent`) is unwrapped, because the
+///   model wants the payload and not a JSON string of itself inside a JSON
+///   string;
+/// - it never errors. A failed tool becomes a readable failure message, which is
+///   what a harness needs - the model sees why it failed and can adapt. The
+///   payload is truncated so a full article of HTML cannot eat the context
+///   window in one tool result.
+pub fn call_tool_for_model(name: &str, arguments: &serde_json::Value) -> String {
+    const MAX_TOOL_CHARS: usize = 6_000;
+    let params = serde_json::json!({ "name": name, "arguments": arguments });
+    let envelope = tools_call(Some(&params)).unwrap_or_else(|(code, msg)| {
+        text_result(serde_json::json!({
+            "isError": true,
+            "error": format!("code {code}: {msg}"),
+        }))
+    });
+    let payload = envelope
+        .get("structuredContent")
+        .cloned()
+        .unwrap_or(envelope);
+    let failed = payload
+        .get("isError")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+    let text = wxwright_core::util::truncate(&text, MAX_TOOL_CHARS);
+    if failed {
+        format!("工具 {name} 执行失败：{text}")
+    } else {
+        text
+    }
+}
+
 fn tools_list() -> Value {
     json!({
         "tools": [
@@ -623,6 +705,54 @@ mod tests {
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()
+    }
+
+    /// The GUI assistant calls tools in-process, so the dispatch has to work
+    /// without a stdio envelope - and the read-only tool set is the contract:
+    /// adding a side-effectful tool to ASSISTANT_TOOLS fails here.
+    #[test]
+    fn assistant_tools_dispatch_in_process_and_stay_read_only() {
+        // A real validation round-trip, no subprocess involved. The MCP
+        // envelope must be unwrapped: the model gets the payload, not a JSON
+        // string of the payload inside a JSON string.
+        let out = call_tool_for_model(
+            "wxwright_validate",
+            &serde_json::json!({ "markdown": "# 标题\n\n正文一段。" }),
+        );
+        assert!(out.contains("compliant"), "got: {out}");
+        assert!(out.contains("violations"), "got: {out}");
+        assert!(
+            !out.contains("structuredContent"),
+            "the envelope must be unwrapped: {out}"
+        );
+
+        // A failed tool becomes a readable failure, not an Err: the model has
+        // to see why it failed so it can adapt.
+        let err = call_tool_for_model("wxwright_nope", &serde_json::json!({}));
+        assert!(err.contains("执行失败"), "got: {err}");
+        assert!(err.contains("unknown tool"), "got: {err}");
+
+        // The side-effectful tools must never be offered to the model.
+        for dangerous in [
+            "wxwright_copy",
+            "wxwright_upload_images",
+            "wxwright_draft_create",
+        ] {
+            assert!(
+                !crate::ASSISTANT_TOOLS.contains(&dangerous),
+                "{dangerous} has side effects and must not be exposed to the assistant"
+            );
+        }
+
+        // And every name in ASSISTANT_TOOLS must actually be declared, so the
+        // schema request cannot fail at chat time.
+        let schemas = openai_tool_schemas(crate::ASSISTANT_TOOLS)
+            .expect("every assistant tool must be declared");
+        assert_eq!(schemas.len(), crate::ASSISTANT_TOOLS.len());
+        for (schema, name) in schemas.iter().zip(crate::ASSISTANT_TOOLS) {
+            assert_eq!(schema["type"], "function");
+            assert_eq!(schema["function"]["name"], *name);
+        }
     }
 
     #[test]
