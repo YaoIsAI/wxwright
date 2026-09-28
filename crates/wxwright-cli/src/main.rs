@@ -415,29 +415,17 @@ fn cmd_convert(
     // One engine, many exits (PRD 3.1): platforms that do not paste styled
     // HTML get the artifact they actually consume - a plain-text caption or
     // the Markdown unchanged.
-    if spec.export_kind != wxwright_core::platform::ExportKind::RichTextDialect {
-        let doc = wxwright_core::parser::parse_markdown(&md);
-        let title = front
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("title"))
-            .map(|(_, v)| v.clone());
-        let (kind, text) = match spec.export_kind {
-            wxwright_core::platform::ExportKind::Markdown => ("markdown", md.clone()),
-            _ => (
-                "caption",
-                wxwright_core::platform::render_caption(&doc, title.as_deref()),
-            ),
-        };
-        // The platform's own caption limits are part of the artifact: a
-        // Xiaohongshu note that breaks them is not usable, so report them here
-        // the same way the MCP export tool does instead of silently handing
-        // back text that will be rejected.
-        let violations = wxwright_core::platform::validate_platform_caption(
-            spec.id,
-            title.as_deref().unwrap_or(""),
-            &text,
-            0,
-        );
+    // One engine, three hosts: the artifact and the platform's caption rules
+    // both come from core, so the CLI cannot drift from the MCP tool.
+    let title = front
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("title"))
+        .map(|(_, v)| v.as_str());
+    if let Some((artifact, violations)) =
+        wxwright_core::platform::export_text_artifact(spec.id, &md, title)
+    {
+        let kind = artifact.kind();
+        let text = artifact.text().to_string();
         let blocking = violations.iter().filter(|v| v.is_block()).count();
         if out.json_mode {
             out.print_json(&serde_json::json!({

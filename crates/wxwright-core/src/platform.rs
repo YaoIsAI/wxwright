@@ -485,6 +485,68 @@ fn truncate_node(s: &str) -> String {
     s.chars().take(60).collect()
 }
 
+/// What a platform that does not paste styled HTML consumes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextArtifact {
+    /// Markdown passed through unchanged (Zhihu).
+    Markdown(String),
+    /// A plain-text caption (Xiaohongshu and the western feeds).
+    Caption(String),
+}
+
+impl TextArtifact {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TextArtifact::Markdown(_) => "markdown",
+            TextArtifact::Caption(_) => "caption",
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        match self {
+            TextArtifact::Markdown(t) | TextArtifact::Caption(t) => t,
+        }
+    }
+}
+
+/// Build the text artifact a platform consumes, plus any violations of that
+/// platform's own caption rules.
+///
+/// Returns `None` for rich-text platforms: their artifact depends on a theme
+/// and the image pipeline, which each host configures differently, so the host
+/// builds it and this function stays out of the way.
+///
+/// Why this exists: the CLI, the MCP server and the GUI each re-implemented the
+/// same `match export_kind` dispatch, and the copies disagreed.
+/// - the CLI reported no caption violations at all;
+/// - every caller passed `images = 0`, so XHS-4 ("image note without images")
+///   fired on articles full of images while XHS-5 ("more than nine") could
+///   never fire;
+/// - the MCP tool validated `render_caption(&doc, None)` but returned
+///   `render_caption(&doc, Some(title))`, so it checked a different string than
+///   the one it handed back.
+pub fn export_text_artifact(
+    platform: &str,
+    markdown: &str,
+    title: Option<&str>,
+) -> Option<(TextArtifact, Vec<crate::validator::Violation>)> {
+    let spec = get_platform(platform);
+    match spec.export_kind {
+        ExportKind::RichTextDialect => None,
+        ExportKind::Markdown => Some((TextArtifact::Markdown(markdown.to_string()), Vec::new())),
+        ExportKind::Caption => {
+            let doc = crate::parser::parse_markdown(markdown);
+            let text = render_caption(&doc, title);
+            // The number of images the note actually carries. Inline images are
+            // not counted - they are decoration inside a paragraph, not part of
+            // the note's image set.
+            let images = crate::ir::count_stats(&doc).images;
+            let violations = validate_platform_caption(spec.id, title.unwrap_or(""), &text, images);
+            Some((TextArtifact::Caption(text), violations))
+        }
+    }
+}
+
 // ------------------------------------------------------ plain article ----
 
 /// Minimal typographic HTML for Markdown-friendly hosts (Zhihu): real
@@ -821,6 +883,79 @@ mod tests {
                 assert!(!r.message.is_empty(), "{} has an empty message", r.rule_id);
             }
         }
+    }
+
+    /// The image count is what makes XHS-4 and XHS-5 meaningful. Every caller
+    /// used to pass `images = 0`, so "image note without images" fired on
+    /// articles full of images and "more than nine" could never fire.
+    #[test]
+    fn export_counts_the_images_a_note_actually_carries() {
+        let title = Some("标题");
+
+        let (artifact, with_image) = export_text_artifact(
+            "xhs",
+            "正文
+
+![图](https://example.com/a.png)
+",
+            title,
+        )
+        .expect("xhs is a caption platform");
+        assert_eq!(artifact.kind(), "caption");
+        assert!(
+            !with_image.iter().any(|v| v.rule_id == "XHS-4"),
+            "an article with an image must not be reported as image-less: {with_image:?}"
+        );
+
+        let (_, without) = export_text_artifact(
+            "xhs",
+            "正文，没有图。
+",
+            title,
+        )
+        .unwrap();
+        assert!(
+            without.iter().any(|v| v.rule_id == "XHS-4"),
+            "an article with no image must trip XHS-4: {without:?}"
+        );
+
+        let mut many = String::from(
+            "正文
+
+",
+        );
+        for i in 0..10 {
+            many.push_str(&format!(
+                "![图{i}](https://example.com/{i}.png)
+
+"
+            ));
+        }
+        let (_, too_many) = export_text_artifact("xhs", &many, title).unwrap();
+        assert!(
+            too_many.iter().any(|v| v.rule_id == "XHS-5"),
+            "ten images must trip the nine-image cap: {too_many:?}"
+        );
+
+        // Zhihu passes Markdown through and declares no caption rules.
+        let (md, none) = export_text_artifact(
+            "zhihu",
+            "# 标题
+",
+            None,
+        )
+        .expect("markdown");
+        assert_eq!(md.kind(), "markdown");
+        assert!(none.is_empty());
+
+        // Rich-text platforms are host-side, so core returns nothing.
+        assert!(export_text_artifact(
+            "wechat",
+            "# 标题
+",
+            None
+        )
+        .is_none());
     }
 
     #[test]

@@ -438,10 +438,25 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 let md = get_str("markdown").ok_or("missing argument: markdown")?;
                 let platform = get_str("platform").unwrap_or_else(|| "wechat".into());
                 let (spec, known) = wxwright_core::platform::resolve_platform(&platform);
-                let doc = wxwright_core::parser::parse_markdown(&md);
-                match spec.export_kind {
-                    wxwright_core::platform::ExportKind::RichTextDialect => {
-                        // WeChat pastes styled HTML: return the dialect artifact.
+                let title_arg = get_str("title").unwrap_or_default();
+                let title = if title_arg.trim().is_empty() {
+                    None
+                } else {
+                    Some(title_arg.as_str())
+                };
+                // Rich-text platforms need a theme and the image pipeline, which
+                // are host concerns, so they stay here; the caption and Markdown
+                // artifacts come from core so this tool cannot drift from the
+                // CLI's `convert --platform`.
+                match wxwright_core::platform::export_text_artifact(spec.id, &md, title) {
+                    Some((artifact, violations)) => Ok(json!({
+                        "platform": spec.id,
+                        "platform_known": known,
+                        "export_kind": artifact.kind(),
+                        "text": artifact.text(),
+                        "violations": violations,
+                    })),
+                    None => {
                         let opts = ConvertOptions::new(t);
                         let out = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
                         let blocking = out.blocking_violations().len();
@@ -452,29 +467,6 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                             "html": out.html,
                             "blocking_violations": blocking,
                             "warnings": out.violations.iter().filter(|v| !v.is_block()).count(),
-                        }))
-                    }
-                    wxwright_core::platform::ExportKind::Markdown => Ok(json!({
-                        "platform": spec.id,
-                        "platform_known": known,
-                        "export_kind": "markdown",
-                        "text": md,
-                    })),
-                    wxwright_core::platform::ExportKind::Caption => {
-                        let title = get_str("title").unwrap_or_default();
-                        Ok(json!({
-                            "platform": spec.id,
-                            "platform_known": known,
-                            "export_kind": "caption",
-                            "text": wxwright_core::platform::render_caption(
-                                &doc,
-                                if title.trim().is_empty() { None } else { Some(&title) },
-                            ),
-                            "caption_violations": wxwright_core::platform::validate_platform_caption(
-                                spec.id, &title,
-                                &wxwright_core::platform::render_caption(&doc, None),
-                                0,
-                            ),
                         }))
                     }
                 }
