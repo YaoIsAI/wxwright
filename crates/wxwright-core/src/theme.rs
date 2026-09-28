@@ -105,37 +105,48 @@ impl Theme {
     }
 }
 
+/// Every colour token the engine understands, with its default value.
+///
+/// The renderer's `{token}` substitution and `default_color` both read
+/// this table, so a new token cannot be added in one place and forgotten
+/// in the other - which is exactly what happened when the list lived in
+/// both render.rs and theme.rs.
+pub const COLOR_TOKENS: &[(&str, &str)] = &[
+    ("accent", "#2F6CEA"),
+    ("text", "#1F2328"),
+    ("text_secondary", "#57606A"),
+    ("text_tertiary", "#8B949E"),
+    ("border", "#D8DEE4"),
+    ("border_strong", "#A8B3BD"),
+    ("quote_bg", "#F7F8FA"),
+    ("quote_text", "#57606A"),
+    ("code_bg", "#F6F8FA"),
+    ("code_text", "#24292F"),
+    ("code_border", "#E4E7EC"),
+    ("inline_code_color", "#C2402A"),
+    ("table_head_bg", "#F6F8FA"),
+    ("table_border", "#D8DEE4"),
+    ("note_bg", "#EFF4FE"),
+    ("note_border", "#2F6CEA"),
+    ("tip_bg", "#ECFDF3"),
+    ("tip_border", "#059669"),
+    ("important_bg", "#F5F3FF"),
+    ("important_border", "#7C3AED"),
+    ("warning_bg", "#FEF3E2"),
+    ("warning_border", "#D97706"),
+    ("caution_bg", "#FEF2F2"),
+    ("caution_border", "#DC2626"),
+    ("keypoint_bg", "#EFF4FE"),
+    ("comment_bg", "#FAFBFC"),
+    ("toc_bg", "#FCFCFD"),
+];
+
 fn default_color(key: &str) -> &'static str {
-    match key {
-        "accent" => "#2F6CEA",
-        "text" => "#1F2328",
-        "text_secondary" => "#57606A",
-        "text_tertiary" => "#8B949E",
-        "border" => "#D8DEE4",
-        "border_strong" => "#A8B3BD",
-        "quote_bg" => "#F7F8FA",
-        "quote_text" => "#57606A",
-        "code_bg" => "#F6F8FA",
-        "code_text" => "#24292F",
-        "code_border" => "#E4E7EC",
-        "inline_code_color" => "#C2402A",
-        "table_head_bg" => "#F6F8FA",
-        "table_border" => "#D8DEE4",
-        "note_bg" => "#EFF4FE",
-        "note_border" => "#2F6CEA",
-        "tip_bg" => "#ECFDF3",
-        "tip_border" => "#059669",
-        "important_bg" => "#F5F3FF",
-        "important_border" => "#7C3AED",
-        "warning_bg" => "#FEF3E2",
-        "warning_border" => "#D97706",
-        "caution_bg" => "#FEF2F2",
-        "caution_border" => "#DC2626",
-        "keypoint_bg" => "#EFF4FE",
-        "comment_bg" => "#FAFBFC",
-        "toc_bg" => "#FCFCFD",
-        _ => "#1F2328",
-    }
+    COLOR_TOKENS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, v)| *v)
+        .unwrap_or("#1F2328")
 }
 
 /// Engine default styles per role. Values may reference `{color_key}`.

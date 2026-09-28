@@ -112,35 +112,7 @@ fn expand(v: &str, theme: &Theme) -> String {
         return v.to_string();
     }
     let mut out = v.to_string();
-    for key in [
-        "accent",
-        "text",
-        "text_secondary",
-        "text_tertiary",
-        "border",
-        "border_strong",
-        "quote_bg",
-        "quote_text",
-        "code_bg",
-        "code_text",
-        "code_border",
-        "inline_code_color",
-        "table_head_bg",
-        "table_border",
-        "note_bg",
-        "note_border",
-        "tip_bg",
-        "tip_border",
-        "important_bg",
-        "important_border",
-        "warning_bg",
-        "warning_border",
-        "caution_bg",
-        "caution_border",
-        "keypoint_bg",
-        "comment_bg",
-        "toc_bg",
-    ] {
+    for (key, _) in crate::theme::COLOR_TOKENS {
         let token = format!("{{{}}}", key);
         if out.contains(&token) {
             out = out.replace(&token, &theme.color(key));

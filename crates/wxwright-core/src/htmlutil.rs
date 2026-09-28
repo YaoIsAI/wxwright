@@ -78,18 +78,13 @@ pub fn strip_tags(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Escape a value for an HTML attribute.
+///
+/// The escaping set happens to be identical to `escape_text`, so this delegates
+/// rather than repeating the body. The separate name is kept because call sites
+/// read better with it.
 pub fn escape_attr(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 8);
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
+    escape_text(s)
 }
 
 /// Parse an inline `style` attribute into ordered (property, value) pairs.

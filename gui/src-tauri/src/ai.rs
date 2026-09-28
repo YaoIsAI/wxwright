@@ -91,7 +91,7 @@ pub fn settings() -> serde_json::Value {
         .map(|p| {
             serde_json::json!({
                 "id": p.id, "name": p.name, "base_url": p.base_url, "model": p.model,
-                "key_hint": mask(&effective_key(p).unwrap_or_default()),
+                "key_hint": wxwright_core::util::mask_secret(&effective_key(p).unwrap_or_default()),
                 "key_in_file": p.key_in_file,
                 "logo": p.logo,
                 "brand": p.brand,
@@ -99,19 +99,6 @@ pub fn settings() -> serde_json::Value {
         })
         .collect();
     serde_json::json!({ "providers": providers, "active": s.active })
-}
-
-fn mask(s: &str) -> String {
-    let n = s.chars().count();
-    if n == 0 {
-        return String::new();
-    }
-    if n <= 8 {
-        return "***".into();
-    }
-    let head: String = s.chars().take(4).collect();
-    let tail: String = s.chars().skip(n - 4).collect();
-    format!("{}****{}", head, tail)
 }
 
 fn effective_key(p: &Provider) -> Option<String> {
@@ -286,18 +273,9 @@ fn extract_error_message(raw: &str) -> String {
                 return m.to_string();
             }
         }
-        return truncate(raw, 300);
+        return wxwright_core::util::truncate(raw, 300);
     }
-    truncate(raw, 300)
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let t: String = s.chars().take(n).collect();
-        format!("{}...", t)
-    }
+    wxwright_core::util::truncate(raw, 300)
 }
 
 /// POST one API call with rich error extraction.
@@ -332,7 +310,7 @@ pub(crate) fn call_completions_post(
             Err(format!(
                 "HTTP {}: {}",
                 code,
-                truncate(&extract_error_message(&raw), 400)
+                wxwright_core::util::truncate(&extract_error_message(&raw), 400)
             ))
         }
         Err(e) => Err(format!("请求失败: {}", e)),
@@ -463,7 +441,10 @@ pub fn chat(app: AppHandle, messages: serde_json::Value, temperature: f64) -> Re
                 }
             }
             Err(_) => {
-                let msg = format!("响应不是 SSE 流也不是 JSON: {}", truncate(&whole, 200));
+                let msg = format!(
+                    "响应不是 SSE 流也不是 JSON: {}",
+                    wxwright_core::util::truncate(&whole, 200)
+                );
                 let _ = app.emit("ai-error", msg.clone());
                 return Err(msg);
             }
@@ -1377,9 +1358,9 @@ mod tests {
 
     #[test]
     fn mask_hides() {
-        assert_eq!(mask(""), "");
-        assert_eq!(mask("short"), "***");
-        assert!(mask("sk-1234567890abcdefgh").contains("****"));
+        assert_eq!(wxwright_core::util::mask_secret(""), "");
+        assert_eq!(wxwright_core::util::mask_secret("short"), "***");
+        assert!(wxwright_core::util::mask_secret("sk-1234567890abcdefgh").contains("****"));
     }
 
     #[test]

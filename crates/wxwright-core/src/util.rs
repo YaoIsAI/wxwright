@@ -124,6 +124,36 @@ pub fn write_private(path: &std::path::Path, contents: &str) -> std::io::Result<
     Ok(())
 }
 
+/// Mask a credential for display: four characters at each end, or `***` when
+/// the value is too short to be partially revealed.
+///
+/// An empty input returns an empty string, so a caller can tell "no key
+/// configured" apart from "a key is configured" - the GUI and the CLI used to
+/// have two near-identical copies that disagreed on exactly this case.
+pub fn mask_secret(s: &str) -> String {
+    let n = s.chars().count();
+    if n == 0 {
+        return String::new();
+    }
+    if n <= 8 {
+        return "***".into();
+    }
+    let head: String = s.chars().take(4).collect();
+    let tail: String = s.chars().skip(n - 4).collect();
+    format!("{}****{}", head, tail)
+}
+
+/// Truncate to `n` characters, appending an ellipsis when something was cut.
+/// Character-based, so it never splits a multi-byte character.
+pub fn truncate(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        let t: String = s.chars().take(n).collect();
+        format!("{}...", t)
+    }
+}
+
 /// Proxy URL for outbound HTTP, from the conventional environment variables.
 ///
 /// Why the engine exposes this at all: `ureq` (used by every host crate)
@@ -339,6 +369,33 @@ mod tests {
         ] {
             assert_eq!(super::redact_secrets(s), s, "must not touch: {s}");
         }
+    }
+
+    #[test]
+    fn mask_never_reveals_a_whole_secret() {
+        assert_eq!(super::mask_secret(""), "", "empty stays empty, not ***");
+        assert_eq!(super::mask_secret("short"), "***");
+        assert_eq!(
+            super::mask_secret("12345678"),
+            "***",
+            "8 chars is still short"
+        );
+        let m = super::mask_secret("sk-1234567890abcdefgh");
+        assert!(m.starts_with("sk-1"), "got: {m}");
+        assert!(m.ends_with("efgh"), "got: {m}");
+        assert!(m.contains("****"), "got: {m}");
+        assert!(
+            !m.contains("sk-1234567890abcdefgh"),
+            "the secret must not survive"
+        );
+    }
+
+    #[test]
+    fn truncate_is_character_based() {
+        assert_eq!(super::truncate("abc", 5), "abc");
+        assert_eq!(super::truncate("abcdefg", 3), "abc...");
+        // Multi-byte input must not be split mid-character.
+        assert_eq!(super::truncate("中文标题测试", 2), "中文...");
     }
 
     #[test]

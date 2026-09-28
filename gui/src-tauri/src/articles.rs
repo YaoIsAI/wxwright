@@ -82,29 +82,10 @@ fn sanitize_id(raw: &str) -> String {
     }
 }
 
-fn parse_frontmatter(raw: &str) -> (Vec<(String, String)>, String) {
-    let trimmed = raw.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("---") {
-        if let Some(end) = rest.find("\n---") {
-            let header = &rest[..end];
-            let body = rest[end + 4..].trim_start_matches('\n').to_string();
-            let mut pairs = Vec::new();
-            for line in header.lines() {
-                if let Some((k, v)) = line.split_once(':') {
-                    let v = v.trim().trim_matches('"').trim_matches('\'').to_string();
-                    pairs.push((k.trim().to_string(), v));
-                }
-            }
-            return (pairs, body);
-        }
-    }
-    (Vec::new(), raw.to_string())
-}
-
 fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
     let raw = std::fs::read_to_string(path).ok()?;
     let id = path.file_stem()?.to_string_lossy().to_string();
-    let (pairs, body) = parse_frontmatter(&raw);
+    let (pairs, body) = wxwright_core::util::strip_frontmatter(&raw);
     let get = |k: &str| pairs.iter().find(|(pk, _)| pk == k).map(|(_, v)| v.clone());
     let title = get("title").unwrap_or_else(|| {
         body.lines()
@@ -146,7 +127,7 @@ pub fn read_article(id: &str) -> Result<Article, String> {
     let path = library_dir().join(format!("{}.md", id));
     let raw = std::fs::read_to_string(&path).map_err(|e| format!("read failed: {}", e))?;
     let meta = meta_from_path(&path).ok_or("cannot parse article")?;
-    let (_, body) = parse_frontmatter(&raw);
+    let (_, body) = wxwright_core::util::strip_frontmatter(&raw);
     Ok(Article {
         meta,
         markdown: body,
@@ -228,8 +209,9 @@ mod tests {
 
     #[test]
     fn frontmatter_roundtrip() {
-        let (pairs, body) =
-            parse_frontmatter("---\ntitle: \"你好\"\ntheme: techblue\n---\n\n# H\n");
+        let (pairs, body) = wxwright_core::util::strip_frontmatter(
+            "---\ntitle: \"你好\"\ntheme: techblue\n---\n\n# H\n",
+        );
         assert_eq!(pairs.iter().find(|(k, _)| k == "title").unwrap().1, "你好");
         assert_eq!(body.trim_start(), "# H\n");
     }

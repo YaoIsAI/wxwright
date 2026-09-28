@@ -65,7 +65,7 @@ impl VState {
                 "warn".to_string()
             },
             message,
-            node: truncate(node, 120),
+            node: crate::util::truncate(node, 120),
             fixable: info.map(|i| i.auto_fixable).unwrap_or(false),
         });
     }
@@ -443,20 +443,11 @@ fn node_hint(el: &lol_html::html_content::Element) -> String {
     }
     if el.tag_name() == "img" {
         if let Some(src) = el.get_attribute("src") {
-            s.push_str(&format!(" src=\"{}\"", truncate(&src, 60)));
+            s.push_str(&format!(" src=\"{}\"", crate::util::truncate(&src, 60)));
         }
     }
     s.push('>');
     s
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let t: String = s.chars().take(n).collect();
-        format!("{}...", t)
-    }
 }
 
 /// Validate HTML and return all findings (blocks + warnings).

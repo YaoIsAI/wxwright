@@ -353,10 +353,10 @@ fn handle_conn(stream: &mut TcpStream, expected_state: &str) -> Option<Result<St
     result
 }
 
+/// Escape text for the OAuth result page. Delegates to the engine so there is
+/// one escaping implementation; the local copy also missed `"`.
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    wxwright_core::htmlutil::escape_text(s)
 }
 
 pub fn exchange_code(

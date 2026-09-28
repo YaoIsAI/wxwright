@@ -105,15 +105,11 @@ pub fn clear_credentials() -> Result<()> {
 }
 
 /// Mask a secret for logs (PRD 5.6: access_token always masked).
+/// Mask a credential for display. The one implementation lives in
+/// `wxwright_core::util`; this used to be a near-identical copy that disagreed
+/// on the empty case.
 pub fn mask(s: &str) -> String {
-    let n = s.chars().count();
-    if n <= 8 {
-        "***".to_string()
-    } else {
-        let head: String = s.chars().take(4).collect();
-        let tail: String = s.chars().skip(n - 4).collect();
-        format!("{}****{}", head, tail)
-    }
+    wxwright_core::util::mask_secret(s)
 }
 
 // ------------------------------------------------------------------ client ---
