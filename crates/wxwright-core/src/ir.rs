@@ -205,6 +205,60 @@ pub fn count_stats(blocks: &[Block]) -> Stats {
     s
 }
 
+/// Every image reference in the document, in first-occurrence order, deduped
+/// by source. The platform image fitter walks this list; renderers walk their
+/// own paths, so this stays a free function rather than a Stats by-product.
+pub fn collect_images(blocks: &[Block]) -> Vec<ImageRef> {
+    let mut s = ImagesState {
+        out: Vec::new(),
+        seen: std::collections::HashSet::new(),
+    };
+    walk_blocks_images(blocks, &mut s);
+    s.out
+}
+
+struct ImagesState {
+    out: Vec<ImageRef>,
+    seen: std::collections::HashSet<String>,
+}
+
+fn walk_blocks_images(blocks: &[Block], s: &mut ImagesState) {
+    for b in blocks {
+        match b {
+            Block::Image(img) => push_image(img, s),
+            Block::Figure { image, .. } => push_image(image, s),
+            Block::Paragraph { inlines } | Block::Heading { inlines, .. } => {
+                walk_inlines_images(inlines, s)
+            }
+            Block::Blockquote { blocks } | Block::Card { blocks, .. } => {
+                walk_blocks_images(blocks, s)
+            }
+            Block::List { items, .. } => {
+                for it in items {
+                    walk_blocks_images(&it.blocks, s);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn walk_inlines_images(inlines: &[Inline], s: &mut ImagesState) {
+    for i in inlines {
+        match i {
+            Inline::Image(img) => push_image(img, s),
+            Inline::Styled { children, .. } => walk_inlines_images(children, s),
+            _ => {}
+        }
+    }
+}
+
+fn push_image(img: &ImageRef, s: &mut ImagesState) {
+    if s.seen.insert(img.src.clone()) {
+        s.out.push(img.clone());
+    }
+}
+
 fn walk_blocks(blocks: &[Block], s: &mut Stats) {
     for b in blocks {
         match b {

@@ -4,7 +4,7 @@
 mod output;
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -157,6 +157,19 @@ enum ImageCmd {
         /// Image files to upload.
         paths: Vec<String>,
     },
+    /// Fit the article's local image set to the platform's shape: centre-crop
+    /// to the primary cover form and clamp the width (never upscale). Writes
+    /// numbered files into --out-dir and prints a manifest.
+    Fit {
+        /// Input markdown file whose images get fitted.
+        input: String,
+        /// Target platform id (see `wxwright platforms`).
+        #[arg(long)]
+        platform: String,
+        /// Directory to write the fitted images into.
+        #[arg(long)]
+        out_dir: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -291,6 +304,11 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
         } => cmd_copy(input, theme.as_deref(), *dry_run, out),
         Commands::Image { cmd } => match cmd {
             ImageCmd::Upload { paths } => cmd_image_upload(paths, out),
+            ImageCmd::Fit {
+                input,
+                platform,
+                out_dir,
+            } => cmd_image_fit(input, platform, out_dir, out),
         },
         Commands::Draft { cmd } => cmd_draft(cmd, out),
         Commands::Publish { draft_id, yes } => cmd_publish(draft_id, *yes, out),
@@ -750,6 +768,136 @@ fn cmd_image_upload(paths: &[String], out: &Out) -> Result<i32, String> {
         }
     }
     Ok(if all_ok { 0 } else { 1 })
+}
+
+/// `wxwright image fit`: the cross-platform crop/fit step. Every image the
+/// article references as a local file is centre-cropped to the platform's
+/// primary cover shape (rich-text platforms: width clamp only) and written
+/// into --out-dir in document order. Remote/inline images are reported as
+/// skipped - fitting those would mean fetching, which core never does.
+fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Result<i32, String> {
+    if !wxwright_core::platform::list_platforms()
+        .iter()
+        .any(|p| p.id == platform)
+    {
+        return Err(format!(
+            "unknown platform {platform:?}; see `wxwright platforms`"
+        ));
+    }
+    let spec = wxwright_core::platform::get_platform(platform);
+    let profile = spec.image_profile();
+    let md = std::fs::read_to_string(input).map_err(|e| format!("cannot read {input}: {e}"))?;
+    let doc = wxwright_core::parser::parse_markdown(&md);
+    let images = wxwright_core::ir::collect_images(&doc);
+    if images.is_empty() {
+        return Err(format!("{input} contains no images to fit"));
+    }
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("cannot create {out_dir}: {e}"))?;
+
+    // Image sources are resolved like the renderer resolves them: relative
+    // to the markdown file's directory.
+    let base = Path::new(input).parent().unwrap_or(Path::new("."));
+    let mut manifest = Vec::new();
+    for (i, img) in images.iter().enumerate() {
+        let src = img.src.as_str();
+        if src.starts_with("http://")
+            || src.starts_with("https://")
+            || src.starts_with("data:")
+            || src.is_empty()
+        {
+            manifest.push(serde_json::json!({
+                "source": src, "ok": false,
+                "skipped": "remote or inline image; only local files are fitted",
+            }));
+            continue;
+        }
+        let path = base.join(src);
+        let entry = match std::fs::read(&path) {
+            Ok(bytes) => match wxwright_core::img::fit_to_profile(&bytes, &profile) {
+                Ok(fit) => {
+                    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+                    let stem = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "image".into());
+                    let name = format!(
+                        "{:02}-{}.{}",
+                        i + 1,
+                        stem,
+                        if is_png { "png" } else { "jpg" }
+                    );
+                    let dest = Path::new(out_dir).join(&name);
+                    match std::fs::write(&dest, &fit.bytes) {
+                        Ok(()) => serde_json::json!({
+                            "source": src, "ok": true, "file": dest.display().to_string(),
+                            "alt": img.alt, "width": fit.width, "height": fit.height,
+                            "cropped": fit.cropped, "resized": fit.resized,
+                        }),
+                        Err(e) => serde_json::json!({
+                            "source": src, "ok": false, "error": format!("cannot write {}: {}", dest.display(), e),
+                        }),
+                    }
+                }
+                Err(e) => serde_json::json!({ "source": src, "ok": false, "error": e.to_string() }),
+            },
+            Err(e) => serde_json::json!({
+                "source": src, "ok": false,
+                "error": format!("cannot read {}: {}", path.display(), e),
+            }),
+        };
+        manifest.push(entry);
+    }
+    let fitted = manifest
+        .iter()
+        .filter(|e| e["ok"] == serde_json::json!(true))
+        .count();
+    let all_ok = fitted == manifest.len();
+    if out.json_mode {
+        out.print_json(&serde_json::json!({
+            "ok": all_ok,
+            "platform": platform,
+            "profile": { "max_width": profile.max_width, "cover_aspect": profile.cover_aspect },
+            "images": manifest,
+        }));
+    } else {
+        out.ok(&format!(
+            "{}: fitted {}/{} image(s) to {} ({})",
+            platform,
+            fitted,
+            manifest.len(),
+            out_dir,
+            match profile.cover_aspect {
+                Some((w, h)) => format!("cover {}:{}", w, h),
+                None => "no crop".to_string(),
+            }
+        ));
+        for e in &manifest {
+            if e["ok"] == serde_json::json!(true) {
+                out.ok(&format!(
+                    "{} -> {} ({}x{}{})",
+                    e["source"].as_str().unwrap_or(""),
+                    e["file"].as_str().unwrap_or(""),
+                    e["width"],
+                    e["height"],
+                    if e["cropped"] == serde_json::json!(true) {
+                        ", cropped"
+                    } else {
+                        ""
+                    }
+                ));
+            } else {
+                out.err(&format!(
+                    "{} -> {}",
+                    e["source"].as_str().unwrap_or(""),
+                    e["error"]
+                        .as_str()
+                        .or(e["skipped"].as_str())
+                        .unwrap_or("failed")
+                ));
+            }
+        }
+    }
+    Ok(if fitted > 0 { 0 } else { 1 })
 }
 
 fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {

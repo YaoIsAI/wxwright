@@ -103,6 +103,32 @@ pub struct PlatformSpec {
     pub note: &'static str,
 }
 
+impl PlatformSpec {
+    /// The image target for article images on this platform. Rich-text
+    /// platforms get a width clamp only (their editors scale down by
+    /// themselves and keep the source aspect); image/caption platforms take
+    /// their primary preset's shape as the cover form - the same data the
+    /// size studio shows, so "descriptor is data" stays true for behaviour.
+    pub fn image_profile(&self) -> crate::img::ImageProfile {
+        if self.rich_text {
+            crate::img::ImageProfile {
+                max_width: 1080,
+                cover_aspect: None,
+            }
+        } else {
+            let (w, h) = self
+                .presets
+                .first()
+                .map(|(_, w, h)| (*w, *h))
+                .unwrap_or((1080, 1080));
+            crate::img::ImageProfile {
+                max_width: w,
+                cover_aspect: Some((w, h)),
+            }
+        }
+    }
+}
+
 /// Xiaohongshu note limits.
 const XHS_RULES: &[CaptionRule] = &[
     CaptionRule {

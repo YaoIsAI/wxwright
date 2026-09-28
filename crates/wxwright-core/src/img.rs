@@ -315,3 +315,199 @@ fn dims_from_data_uri(src: &str) -> std::result::Result<(u32, u32), String> {
         .map_err(|e| format!("invalid base64: {}", e))?;
     dims_from_bytes(&bytes).map_err(|e| e.to_string())
 }
+
+// ------------------------------------------------------------ platform fit ---
+
+/// Per-platform target for article images. Rich-text platforms get a width
+/// clamp only (the MP editor scales down by itself); image-note platforms
+/// also get their primary cover shape as a centre-crop, so a 3:2 landscape
+/// photograph lands on Xiaohongshu as a real 3:4 instead of a broken frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageProfile {
+    pub max_width: u32,
+    /// (w, h) shape to centre-crop to; `None` keeps the source aspect.
+    pub cover_aspect: Option<(u32, u32)>,
+}
+
+/// One image fitted to a profile.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FitResult {
+    /// The fitted image. When nothing had to change this is the untouched
+    /// input buffer, so compliant images never pay a re-encode quality tax.
+    #[serde(skip)]
+    pub bytes: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// True when the aspect changed (a centre-crop happened).
+    pub cropped: bool,
+    /// True when the width was clamped down.
+    pub resized: bool,
+}
+
+/// Centre-crop to the profile's aspect (cover semantics) and clamp the width
+/// to `max_width`, never upscaling. PNG stays PNG so transparency survives;
+/// everything else re-encodes as JPEG q85. An image that already fits comes
+/// back byte-for-byte untouched - compliant inputs pay no quality tax.
+/// GIF returns an error rather than silently dropping animation frames; the
+/// caller decides whether to pass the original through.
+pub fn fit_to_profile(bytes: &[u8], profile: &ImageProfile) -> Result<FitResult> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| Error::Image(e.to_string()))?;
+    let src_format = reader.format();
+    if src_format == Some(image::ImageFormat::Gif) {
+        return Err(Error::Image(
+            "gif cannot be fitted (animation would be lost); pass it through unfitted".into(),
+        ));
+    }
+    let mut img = reader.decode().map_err(|e| Error::Image(e.to_string()))?;
+
+    let (w, h) = (img.width(), img.height());
+    let mut cropped = false;
+    if let Some((aw, ah)) = profile.cover_aspect {
+        let src_ratio = w as f64 / h as f64;
+        let target = aw as f64 / ah as f64;
+        if (src_ratio - target).abs() > 0.001 {
+            cropped = true;
+            if src_ratio > target {
+                // Wider than the target: trim the left/right flanks.
+                let nw = ((h as f64) * target).round().max(1.0) as u32;
+                let x = (w - nw) / 2;
+                img = img.crop_imm(x, 0, nw, h);
+            } else {
+                // Taller than the target: trim top/bottom.
+                let nh = ((w as f64) / target).round().max(1.0) as u32;
+                let y = (h - nh) / 2;
+                img = img.crop_imm(0, y, w, nh);
+            }
+        }
+    }
+    let mut resized = false;
+    let (w, h) = (img.width(), img.height());
+    if w > profile.max_width {
+        resized = true;
+        let scale = profile.max_width as f64 / w as f64;
+        let nh = ((h as f64) * scale).round().max(1.0) as u32;
+        img = img.resize_exact(profile.max_width, nh, image::imageops::FilterType::Lanczos3);
+    }
+    let (w, h) = (img.width(), img.height());
+    if !cropped && !resized {
+        return Ok(FitResult {
+            bytes: bytes.to_vec(),
+            width: w,
+            height: h,
+            cropped,
+            resized,
+        });
+    }
+    if w == 0 || h == 0 {
+        return Err(Error::Image("fitted image collapsed to zero size".into()));
+    }
+
+    let mut out = Vec::new();
+    let write_err = |e: image::ImageError| Error::Image(e.to_string());
+    if src_format == Some(image::ImageFormat::Png) {
+        img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .map_err(write_err)?;
+    } else {
+        let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85);
+        img.to_rgb8().write_with_encoder(enc).map_err(write_err)?;
+    }
+    Ok(FitResult {
+        bytes: out,
+        width: w,
+        height: h,
+        cropped,
+        resized,
+    })
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    fn solid_png(w: u32, h: u32) -> Vec<u8> {
+        let img = image::RgbaImage::from_fn(w, h, |x, _| {
+            if x < 4 {
+                image::Rgba([255, 0, 0, 255])
+            } else {
+                image::Rgba([0, 128, 255, 255])
+            }
+        });
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn landscape_is_cropped_to_the_target_shape() {
+        // 1600x900 (16:9) -> 3:4 target: crop flanks to 607x900... the exact
+        // crop keeps the full height and narrows the width; output must be
+        // portrait with the target ratio.
+        let bytes = solid_png(1600, 900);
+        let p = ImageProfile {
+            max_width: 1080,
+            cover_aspect: Some((3, 4)),
+        };
+        let r = fit_to_profile(&bytes, &p).expect("fit ok");
+        assert!(r.cropped && !r.resized, "crop only: {:?}", r);
+        let ratio = r.width as f64 / r.height as f64;
+        assert!(
+            (ratio - 0.75).abs() < 0.01,
+            "output must be 3:4, got {}x{}",
+            r.width,
+            r.height
+        );
+    }
+
+    #[test]
+    fn oversized_width_is_clamped_never_upscaled() {
+        // 2000x1500 (4:3), target 1:1 max 1080: crop to 1500x1500, then
+        // clamp to 1080x1080.
+        let bytes = solid_png(2000, 1500);
+        let p = ImageProfile {
+            max_width: 1080,
+            cover_aspect: Some((1, 1)),
+        };
+        let r = fit_to_profile(&bytes, &p).expect("fit ok");
+        assert!(r.cropped && r.resized);
+        assert_eq!((r.width, r.height), (1080, 1080));
+
+        // Below the width clamp nothing is scaled (never upscale), but the
+        // cover shape still applies: 800x600 crops to a centred 600x600.
+        let small = solid_png(800, 600);
+        let r2 = fit_to_profile(&small, &p).expect("fit ok");
+        assert!(r2.cropped && !r2.resized);
+        assert_eq!((r2.width, r2.height), (600, 600));
+    }
+
+    #[test]
+    fn compliant_images_pass_through_byte_for_byte() {
+        let bytes = solid_png(1080, 1440);
+        let p = ImageProfile {
+            max_width: 1080,
+            cover_aspect: Some((3, 4)),
+        };
+        let r = fit_to_profile(&bytes, &p).expect("fit ok");
+        assert!(!r.cropped && !r.resized);
+        // The pass-through returns the original buffer unchanged, so a
+        // compliant image never pays a re-encode quality tax.
+        assert_eq!(r.bytes, bytes);
+        assert_eq!(r.width, 1080);
+        assert_eq!(r.height, 1440);
+    }
+
+    #[test]
+    fn aspect_only_clamp_keeps_the_source_shape() {
+        let bytes = solid_png(2000, 900);
+        let p = ImageProfile {
+            max_width: 1080,
+            cover_aspect: None,
+        };
+        let r = fit_to_profile(&bytes, &p).expect("fit ok");
+        assert!(!r.cropped && r.resized);
+        assert_eq!((r.width, r.height), (1080, 486));
+    }
+}
