@@ -1406,6 +1406,8 @@ mod tests {
     //! render.rs is the largest file in the repo and had no unit tests of its
     //! own - the integration suites cover the happy path, not these branches.
 
+    use super::apply_role_overrides;
+
     fn opts() -> crate::ConvertOptions {
         crate::ConvertOptions::new(
             crate::theme::load_theme("minimal").expect("built-in minimal theme"),
@@ -1416,6 +1418,64 @@ mod tests {
         crate::pipeline(md, &opts())
             .expect("pipeline must succeed")
             .html
+    }
+
+    /// The merge rule the theme contract depends on: an override replaces a
+    /// declaration with the same property and appends one it does not have.
+    /// The test this replaces called `role_style("h1")` and discarded the
+    /// result, so it asserted nothing at all.
+    #[test]
+    fn role_overrides_replace_matching_properties_and_append_new_ones() {
+        let mut theme = crate::theme::load_theme("minimal").expect("builtin theme");
+        theme.blocks.insert(
+            "paragraph_leaf".to_string(),
+            vec![
+                ("font-size".to_string(), "19px".to_string()),
+                ("letter-spacing".to_string(), "2px".to_string()),
+            ],
+        );
+
+        let css = apply_role_overrides(
+            &theme,
+            "paragraph_leaf",
+            vec![
+                ("font-size".to_string(), "15px".to_string()),
+                ("color".to_string(), "#123456".to_string()),
+            ],
+        );
+
+        assert!(
+            css.contains("font-size: 19px"),
+            "the override must win: {css}"
+        );
+        assert!(
+            !css.contains("font-size: 15px"),
+            "the default must be replaced, not kept alongside: {css}"
+        );
+        assert!(css.contains("color: #123456"), "untouched defaults survive");
+        assert!(
+            css.contains("letter-spacing: 2px"),
+            "a new property must be appended: {css}"
+        );
+    }
+
+    /// R-3.1 is absolute: not even a theme may set font-family.
+    #[test]
+    fn a_theme_cannot_smuggle_font_family_through_the_merge() {
+        let mut theme = crate::theme::load_theme("minimal").expect("builtin theme");
+        theme.blocks.insert(
+            "paragraph_leaf".to_string(),
+            vec![("font-family".to_string(), "Comic Sans".to_string())],
+        );
+        let css = apply_role_overrides(
+            &theme,
+            "paragraph_leaf",
+            vec![("font-size".to_string(), "15px".to_string())],
+        );
+        assert!(
+            !css.contains("Comic Sans"),
+            "font-family must be dropped at the merge: {css}"
+        );
     }
 
     /// Ordered lists carry their start number (GFM records the first number).

@@ -82,27 +82,6 @@ impl Theme {
             .cloned()
             .unwrap_or_else(|| default_color(key).to_string())
     }
-
-    /// Merged style declarations for a role: engine defaults first, then
-    /// theme overrides (theme wins per property).
-    pub fn role_style(&self, role: &str) -> Vec<(String, String)> {
-        let mut out: Vec<(String, String)> = default_role_style(role, self)
-            .into_iter()
-            .filter(|(p, _)| p != "font-family")
-            .collect();
-        if let Some(over) = self.blocks.get(role) {
-            for (p, v) in over {
-                if p == "font-family" {
-                    continue; // R-3.1: never, not even from a theme
-                }
-                match out.iter_mut().find(|(ep, _)| ep == p) {
-                    Some(slot) => slot.1 = v.clone(),
-                    None => out.push((p.clone(), v.clone())),
-                }
-            }
-        }
-        out
-    }
 }
 
 /// Every colour token the engine understands, with its default value.
@@ -147,19 +126,6 @@ fn default_color(key: &str) -> &'static str {
         .find(|(k, _)| *k == key)
         .map(|(_, v)| *v)
         .unwrap_or("#1F2328")
-}
-
-/// Engine default styles per role. Values may reference `{color_key}`.
-pub fn default_role_style(role: &str, theme: &Theme) -> Vec<(String, String)> {
-    let c = |k: &str| theme.color(k);
-    let v: Vec<(&str, String)> = match role {
-        "paragraph" => vec![],
-        "h1" => vec![],
-        // ... defaults mostly expressed at render call sites with tokens.
-        _ => vec![],
-    };
-    let _ = &c;
-    v.into_iter().map(|(a, b)| (a.to_string(), b)).collect()
 }
 
 /// Parse a theme from TOML text.
@@ -368,11 +334,5 @@ name = "bad"
 font-family = "serif"
 "#;
         assert!(parse_theme(src).is_err());
-    }
-
-    #[test]
-    fn role_override_merges() {
-        let t = load_builtin_theme("minimal").unwrap();
-        let _ = t.role_style("h1");
     }
 }
