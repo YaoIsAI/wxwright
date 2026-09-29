@@ -52,6 +52,7 @@ pub fn run() {
             commands::wx_bind_status,
             commands::wx_draft_list,
             commands::wx_draft_delete,
+            commands::wx_update_draft,
             commands::wx_bind,
             commands::wx_unbind,
             commands::ai_job_start,

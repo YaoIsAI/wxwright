@@ -19,7 +19,8 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "review"]
 const REQUIRED_SITES: &[(&str, usize)] = &[
     ("crates/wxwright-cli/src/main.rs", 1),
     ("crates/wxwright-mcp/src/lib.rs", 2),
-    ("gui/src-tauri/src/commands.rs", 2),
+    // push draft + update draft: two write paths, one gate each
+    ("gui/src-tauri/src/commands.rs", 3),
 ];
 
 fn repo_root() -> PathBuf {

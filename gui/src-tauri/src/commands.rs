@@ -582,6 +582,116 @@ pub async fn wx_push_draft(
     .map_err(|e| format!("task join failed: {}", e))?
 }
 
+/// Replace a draft's content with a re-rendered article: the same render ->
+/// gate -> upload chain as wx_push_draft, ending in draft_update instead of
+/// draft_add. The thumb is kept when the re-render produces no media_id, so
+/// updating a text-only edit does not demand a new cover.
+#[tauri::command]
+pub async fn wx_update_draft(
+    media_id: String,
+    title: String,
+    markdown: String,
+    theme_id: String,
+    cover_image_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::load_credentials()
+            .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
+        let client = wxwright_mp::MpClient::new(creds.clone());
+        let (front, md) = wxwright_core::util::strip_frontmatter(&markdown);
+        let fm = |keys: &[&str]| -> String {
+            front
+                .iter()
+                .find(|(k, _)| keys.iter().any(|want| k.eq_ignore_ascii_case(want)))
+                .map(|(_, v)| v.trim().to_string())
+                .unwrap_or_default()
+        };
+        let author = fm(&["author"]);
+        let digest: String = fm(&["digest", "summary", "description"])
+            .chars()
+            .take(120)
+            .collect();
+        let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
+        opts.image_mode = ImageMode::Upload;
+        opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
+        let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+        let blocks = result.blocking_violations();
+        if !blocks.is_empty() {
+            let list = blocks
+                .iter()
+                .map(|v| format!("{} {}", v.rule_id, v.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(format!(
+                "存在 {} 个阻断级违规，草稿未更新：{}",
+                blocks.len(),
+                list
+            ));
+        }
+        let paste_hostile: Vec<String> = result
+            .images
+            .iter()
+            .filter(|i| i.paste_hostile())
+            .map(|i| i.source.clone())
+            .collect();
+        if !paste_hostile.is_empty() {
+            return Err(format!(
+                "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或微信可拉取的 https 直链），草稿未更新：{}。",
+                paste_hostile.len(),
+                paste_hostile.join("; ")
+            ));
+        }
+        let new_thumb = result.images.iter().find_map(|i| i.media_id.clone());
+        let thumb = match new_thumb {
+            Some(t) => Some(t),
+            None => match cover_image_path.filter(|p| !p.trim().is_empty()) {
+                Some(path) => {
+                    let bytes = std::fs::read(&path).map_err(|e| format!("封面图读取失败: {e}"))?;
+                    let filename = std::path::Path::new(&path)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "cover.png".to_string());
+                    Some(
+                        client
+                            .upload_material(bytes, &filename)
+                            .map_err(|e| e.to_string())?
+                            .0,
+                    )
+                }
+                None => None,
+            },
+        };
+        let thumb = match thumb {
+            Some(t) => t,
+            // No fresh media_id and no new cover: draft_update still needs a
+            // thumb_media_id in its payload, and the current thumb is not
+            // readable through the API - refuse with the reason instead of
+            // silently clearing the cover.
+            None => {
+                return Err(
+                    "NO_COVER: 更新后的文章没有可用的封面图。插入一张图片、或指定封面后重试（保留原封面需要公众号「获取草稿」接口，暂未开放给普通账号）"
+                        .into(),
+                )
+            }
+        };
+        let article = wxwright_mp::DraftArticle {
+            title,
+            author,
+            digest,
+            content_html: result.html.clone(),
+            content_source_url: String::new(),
+            thumb_media_id: thumb,
+        };
+        client
+            .draft_update(&media_id, 0, &article)
+            .map_err(|e| e.to_string())?;
+        let warns = result.violations.iter().filter(|v| !v.is_block()).count();
+        Ok(serde_json::json!({ "draft_media_id": media_id, "warnings": warns }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {}", e))?
+}
+
 // ---------------------------------------------------- AI generation jobs ---
 #[tauri::command]
 pub async fn ai_job_start(

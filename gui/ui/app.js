@@ -43,6 +43,9 @@ const I18N = {
     drafts_none: "草稿箱为空。",
     drafts_delete: "删除",
     drafts_deleted: "草稿已删除",
+    drafts_update: "用当前文章更新",
+    drafts_updated: "草稿已更新",
+    drafts_warns: (n) => `${n} 条非阻断提示`,
     illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
     illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
     ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，用 ```html 围栏输出富样式块，内容会原样进入文章。铁律：HTML 必须完整包在 ```html 围栏里；严禁在围栏外直接写裸 HTML 标签——围栏外的 HTML 不会渲染，会以源码文本显示。只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。示例：\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">要强调的句子</p></section>\n```",
@@ -177,6 +180,9 @@ const I18N = {
     drafts_none: "The drafts box is empty.",
     drafts_delete: "Delete",
     drafts_deleted: "Draft deleted",
+    drafts_update: "Update from editor",
+    drafts_updated: "Draft updated",
+    drafts_warns: (n) => `${n} non-blocking note(s)`,
     illustrate_need_save: "Save the article (with body text) before using AI illustrations",
     illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
     ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), use a ```html fence and its markup goes into the article verbatim. Iron rule: the HTML must be wrapped COMPLETELY in a ```html fence; never write bare HTML tags outside a fence - HTML outside a fence does not render, it shows as literal source text. Only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block. Example:\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">The sentence to emphasize</p></section>\n```",
@@ -3694,6 +3700,7 @@ function bindUI() {
             <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>
             <div style="font-size:11px;color:var(--text-tertiary);">${when}</div>
           </div>
+          <button type="button" class="btn btn-ghost" style="padding:2px 10px;font-size:12px;" data-draft-update="${mediaId}">${t("drafts_update")}</button>
           <button type="button" class="btn btn-ghost" style="padding:2px 10px;font-size:12px;" data-draft="${mediaId}">${t("drafts_delete")}</button>
         </div>`;
       }).join("");
@@ -3708,6 +3715,32 @@ function bindUI() {
           } catch (e) {
             toast(String(e), "err");
             btn.disabled = false;
+          }
+        });
+      });
+      host.querySelectorAll("[data-draft-update]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const mid = btn.dataset.draftUpdate;
+          const md = $("editor").value;
+          if (!md.trim()) { toast(t("illustrate_need_save"), "err"); return; }
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spin"></span>';
+          try {
+            if (dirty) await persistCurrent(true);
+            const r = await invoke("wx_update_draft", {
+              mediaId: mid,
+              title: loadedTitle || autoTitle(md),
+              markdown: md,
+              themeId: currentTheme,
+              coverImagePath: null,
+            });
+            const warns = r && r.warnings ? r.warnings : 0;
+            toast(t("drafts_updated") + (warns ? ` (${t("drafts_warns", warns)})` : ""), "ok");
+            renderWxDrafts();
+          } catch (e) {
+            toast(String(e), "err");
+            btn.disabled = false;
+            btn.innerHTML = t("drafts_update");
           }
         });
       });
