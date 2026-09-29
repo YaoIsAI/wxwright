@@ -62,8 +62,18 @@ jobs:
       - name: Official verify-article-structure-spec
         run: |
           git clone --depth 1 https://github.com/wechatjs/verify-article-structure-spec /tmp/spec
-          # the checker CLI lives in the cli/ subdirectory (puppeteer downloads Chromium on install)
-          (cd /tmp/spec/cli && npm install)
+          # the checker CLI lives in the cli/ subdirectory (puppeteer downloads
+          # Chromium on install). That download sometimes HANGS instead of
+          # failing - one live run sat silent for 24 minutes - so every
+          # attempt is time-bounded and retried; a succeeded run fills the
+          # puppeteer cache above and later installs are instant.
+          ok=0
+          for i in 1 2 3; do
+            if timeout 360 bash -c "cd /tmp/spec/cli && npm install"; then ok=1; break; fi
+            echo "npm install attempt $i did not finish; retrying"
+            sleep 20
+          done
+          [ "$ok" = 1 ] || { echo "npm install kept hanging after 3 attempts"; exit 1; }
           for f in golden-*.html; do
             cp "$f" /tmp/spec/cli/
             (cd /tmp/spec/cli && npm run check -- "$f")
