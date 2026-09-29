@@ -68,6 +68,7 @@ pub fn run() {
             social::social_unbind,
             social::social_oauth_start,
             social::social_oauth_cancel,
+            social::social_post_article,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {

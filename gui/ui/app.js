@@ -32,6 +32,10 @@ const I18N = {
     ai_tool_call: (n) => `已调用工具 ${n}`,
     ai_tool_note: (n) => `正在调用 ${n}…`,
     illustrate_title: "AI 配图：自动规划插图位并生成图片插入文章",
+    social_post: "发帖",
+    social_post_title: "发布到当前平台（X / LinkedIn）",
+    social_post_busy: "发布中…",
+    social_post_ok: (url) => `已发布：${url}`,
     illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
     illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
     ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，用 ```html 围栏输出富样式块，内容会原样进入文章。铁律：HTML 必须完整包在 ```html 围栏里；严禁在围栏外直接写裸 HTML 标签——围栏外的 HTML 不会渲染，会以源码文本显示。只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。示例：\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">要强调的句子</p></section>\n```",
@@ -155,6 +159,10 @@ const I18N = {
     ai_tool_call: (n) => `Called tool ${n}`,
     ai_tool_note: (n) => `Calling ${n}…`,
     illustrate_title: "AI illustrations: plan slots, generate images, insert them",
+    social_post: "Post",
+    social_post_title: "Publish to the current platform (X / LinkedIn)",
+    social_post_busy: "Posting…",
+    social_post_ok: (url) => `Published: ${url}`,
     illustrate_need_save: "Save the article (with body text) before using AI illustrations",
     illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
     ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), use a ```html fence and its markup goes into the article verbatim. Iron rule: the HTML must be wrapped COMPLETELY in a ```html fence; never write bare HTML tags outside a fence - HTML outside a fence does not render, it shows as literal source text. Only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block. Example:\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">The sentence to emphasize</p></section>\n```",
@@ -1005,10 +1013,16 @@ async function renderPublishBindings() {
   );
 }
 
-/* push-draft button: WeChat-only, mirrors the CLI draft create chain */
+/* push button: WeChat pushes a draft; X/LinkedIn publish live. The label
+   switches with the platform so one button covers both flows. */
 function updatePushDraftButton() {
   const b = $("btn-push-draft");
-  if (b) b.hidden = currentPlatform !== "wechat";
+  if (!b) return;
+  const social = currentPlatform === "x" || currentPlatform === "linkedin";
+  b.hidden = !(currentPlatform === "wechat" || social);
+  const span = b.querySelector("span[data-i18n='push_draft']");
+  if (span) span.textContent = social ? t("social_post") : t("push_draft");
+  b.title = social ? t("social_post_title") : t("push_draft_title");
 }
 
 /* --------------------------------------------------------- prompt modal */
@@ -3382,6 +3396,26 @@ function bindUI() {
   });
   $("btn-push-draft").addEventListener("click", async () => {
     if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    // X/LinkedIn: publish live via the platform API (caption + fitted images)
+    if (currentPlatform === "x" || currentPlatform === "linkedin") {
+      const btn = $("btn-push-draft");
+      const btnOriginal = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span>' + escapeHtml(t("social_post_busy"));
+      try {
+        if (dirty) await persistCurrent(true);
+        if (!currentArticleId) { toast(t("illustrate_need_save"), "err"); return; }
+        const r = await invoke("social_post_article", { platform: currentPlatform, id: currentArticleId });
+        toast(t("social_post_ok", (r && r.url) || ""), "ok");
+        window.Mozai && Mozai.celebrate();
+      } catch (e) {
+        toast(String(e), "err");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = btnOriginal;
+      }
+      return;
+    }
     if (currentPlatform !== "wechat") { toast(t("push_draft_need_wechat"), "err"); return; }
     const btn = $("btn-push-draft");
     const btnOriginal = btn.innerHTML;
@@ -4004,6 +4038,7 @@ function bindUI() {
     renderPlatformPresets();
     refreshCopyButton();
     renderPublishBindings();
+    updatePushDraftButton();
     if (!$("modal-help").hidden) renderHelp();
     convertNow();
   });

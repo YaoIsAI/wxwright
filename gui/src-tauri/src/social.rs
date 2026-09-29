@@ -47,7 +47,7 @@ pub const SPECS: &[SocialSpec] = &[
         flow_ready: true,
         auth_url: "https://x.com/i/oauth2/authorize",
         token_url: "https://api.x.com/2/oauth2/token",
-        scope: "tweet.read tweet.write users.read offline.access",
+        scope: "tweet.read tweet.write users.read offline.access media.write",
     },
     SocialSpec {
         id: "linkedin",
@@ -423,6 +423,331 @@ pub fn social_bind_status() -> Value {
     Value::Array(SPECS.iter().map(|s| status_of(s.id)).collect())
 }
 
+/* ------------------------------------------------------------- posting */
+
+/// The delivery layer: a rendered caption plus local images becomes a live
+/// post. Login was the hard half and it already existed; this is the reason
+/// it existed.
+/// X counts most characters as 1 and CJK as 2 against a 280 budget, and a
+/// URL is always 23. The caption export is CJK-heavy, so a plain char count
+/// overshoots; this pares the text back to the weighted budget with an
+/// ellipsis instead of trusting the API to answer politely.
+pub fn x_fit_text(text: &str) -> String {
+    const BUDGET: usize = 277; // 280 - room for the ellipsis
+    let mut used = 0usize;
+    let mut out = String::new();
+    for c in text.chars() {
+        let w = if (c as u32) > 0x2E7F { 2 } else { 1 };
+        if used + w > BUDGET {
+            out.push('…');
+            return out;
+        }
+        used += w;
+        out.push(c);
+    }
+    out
+}
+
+/// ureq 2 turns every non-2xx into `Error::Status(code, Response)`; the API's
+/// error body rides inside that response, so surface it instead of only the
+/// status line - "HTTP 403" alone sends the user hunting in the wrong place.
+fn ureq_body_err(label: &str, e: ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(code, r) => {
+            let body = r.into_string().unwrap_or_default();
+            format!(
+                "{label} (HTTP {code}): {}",
+                wxwright_core::util::truncate(&body, 300)
+            )
+        }
+        e => format!("{label}: {e}"),
+    }
+}
+
+fn x_upload_media(access_token: &str, path: &Path) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法读取图片 {path:?}: {e}"))?;
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err(format!(
+            "图片 {path:?} 超过 X 的 5MB 限制（{}KB）",
+            bytes.len() / 1024
+        ));
+    }
+    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+    let mime = if is_png { "image/png" } else { "image/jpeg" };
+    let ext = if is_png { "png" } else { "jpg" };
+    let boundary = "wxwright-media-7d3a9c1f";
+    let mut body: Vec<u8> = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"media\"; filename=\"upload.{ext}\"\r\nContent-Type: {mime}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(120));
+    let resp = agent
+        .post("https://api.x.com/2/media/upload")
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .set(
+            "Content-Type",
+            &format!("multipart/form-data; boundary={boundary}"),
+        )
+        .send_bytes(&body)
+        .map_err(|e| ureq_body_err("X 媒体上传失败", e))?;
+    let v: Value = resp
+        .into_json()
+        .map_err(|e| format!("X 媒体响应解析失败: {e}"))?;
+    let id = v["data"]["id"]
+        .as_str()
+        .ok_or_else(|| format!("X 媒体上传未返回 id: {}", v))?
+        .to_string();
+    Ok(id)
+}
+
+fn x_create_tweet(access_token: &str, text: &str, media_ids: &[String]) -> Result<String, String> {
+    let mut body = json!({ "text": text });
+    if !media_ids.is_empty() {
+        body["media"] = json!({ "media_ids": media_ids });
+    }
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(60));
+    let resp = agent
+        .post("https://api.x.com/2/tweets")
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .send_json(body)
+        .map_err(|e| ureq_body_err("X 发帖失败", e))?;
+    let v: Value = resp
+        .into_json()
+        .map_err(|e| format!("X 发帖响应解析失败: {e}"))?;
+    let id = v["data"]["id"]
+        .as_str()
+        .ok_or_else(|| format!("X 发帖未返回 id: {}", v))?
+        .to_string();
+    Ok(format!("https://x.com/i/web/status/{id}"))
+}
+
+fn linkedin_member_urn(access_token: &str) -> Result<String, String> {
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(30));
+    let resp = agent
+        .get("https://api.linkedin.com/v2/userinfo")
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .call()
+        .map_err(|e| ureq_body_err("LinkedIn 身份读取失败", e))?;
+    let v: Value = resp
+        .into_json()
+        .map_err(|e| format!("LinkedIn 身份响应解析失败: {e}"))?;
+    let sub = match v["sub"].as_str() {
+        Some(s) => s.to_string(),
+        None => v["sub"]
+            .as_u64()
+            .map(|n| n.to_string())
+            .ok_or_else(|| format!("LinkedIn 身份响应缺少 sub: {}", v))?,
+    };
+    Ok(format!("urn:li:person:{sub}"))
+}
+
+/// Register an image asset and push the bytes: registerUpload returns a
+/// pre-signed URL (the PUT must NOT carry the Authorization header) plus the
+/// asset URN the post references.
+fn linkedin_upload_image(access_token: &str, author: &str, path: &Path) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法读取图片 {path:?}: {e}"))?;
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(120));
+    let register = json!({
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": author,
+            "serviceRelationships": [{
+                "relationshipType": "OWNER",
+                "identifier": "urn:li:userGeneratedContent",
+            }],
+        }
+    });
+    let resp = agent
+        .post("https://api.linkedin.com/rest/images?action=registerUpload")
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .set("LinkedIn-Version", "202411")
+        .set("X-Restli-Protocol-Version", "2.0.0")
+        .send_json(register)
+        .map_err(|e| ureq_body_err("LinkedIn 图片注册失败", e))?;
+    let v: Value = resp
+        .into_json()
+        .map_err(|e| format!("LinkedIn 图片注册响应解析失败: {e}"))?;
+    let asset = v["value"]["asset"]
+        .as_str()
+        .ok_or_else(|| format!("LinkedIn 图片注册未返回 asset: {}", v))?
+        .to_string();
+    let upload_url = v["value"]["uploadMechanism"]
+        ["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+        .as_str()
+        .ok_or_else(|| format!("LinkedIn 图片注册未返回 uploadUrl: {}", v))?
+        .to_string();
+    agent
+        .put(&upload_url)
+        .set("Content-Type", "application/octet-stream")
+        .send_bytes(&bytes)
+        .map_err(|e| ureq_body_err("LinkedIn 图片上传失败", e))?;
+    Ok(asset)
+}
+
+fn linkedin_create_post(
+    access_token: &str,
+    author: &str,
+    text: &str,
+    image_urn: Option<&str>,
+) -> Result<String, String> {
+    let mut body = json!({
+        "author": author,
+        "commentary": text,
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": false,
+    });
+    if let Some(u) = image_urn {
+        body["content"] = json!({ "media": { "id": u } });
+    }
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(60));
+    let resp = agent
+        .post("https://api.linkedin.com/rest/posts")
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .set("LinkedIn-Version", "202411")
+        .set("X-Restli-Protocol-Version", "2.0.0")
+        .send_json(body);
+    match resp {
+        Ok(r) => {
+            let urn = r
+                .header("x-restli-id")
+                .or_else(|| r.header("x-linkedin-id"))
+                .unwrap_or_default()
+                .to_string();
+            if urn.is_empty() {
+                Err("LinkedIn 发帖成功但未返回帖子 id".into())
+            } else {
+                Ok(format!("https://www.linkedin.com/feed/update/{urn}"))
+            }
+        }
+        Err(e) => Err(ureq_body_err("LinkedIn 发帖失败", e)),
+    }
+}
+
+fn require_binding(platform: &str) -> Result<SocialBinding, String> {
+    let b = load_binding(platform)
+        .filter(|b| !b.access_token.is_empty())
+        .ok_or_else(|| format!("{platform} 尚未绑定：请到 设置 → 发布绑定 完成一键登录"))?;
+    Ok(b)
+}
+
+/// Post a caption with local images to the platform's live API. X takes up
+/// to four images, LinkedIn one; extra paths are ignored deliberately.
+pub fn publish(platform: &str, text: &str, image_paths: &[String]) -> Result<Value, String> {
+    match platform {
+        "x" => {
+            let b = require_binding("x")?;
+            let text = x_fit_text(text);
+            let mut ids = Vec::new();
+            for p in image_paths.iter().take(4) {
+                ids.push(x_upload_media(&b.access_token, Path::new(p))?);
+            }
+            let url = x_create_tweet(&b.access_token, &text, &ids)?;
+            Ok(json!({
+                "platform": "x", "url": url, "text": text,
+                "media": ids.len(), "images_ignored": image_paths.len().saturating_sub(4),
+            }))
+        }
+        "linkedin" => {
+            let b = require_binding("linkedin")?;
+            let author = linkedin_member_urn(&b.access_token)?;
+            let image_urn = match image_paths.first() {
+                Some(p) => Some(linkedin_upload_image(
+                    &b.access_token,
+                    &author,
+                    Path::new(p),
+                )?),
+                None => None,
+            };
+            let text: String = text.chars().take(2900).collect();
+            let url = linkedin_create_post(&b.access_token, &author, &text, image_urn.as_deref())?;
+            Ok(json!({
+                "platform": "linkedin", "url": url,
+                "text": text, "media": image_urn.is_some() as u8,
+            }))
+        }
+        other => Err(format!(
+            "平台 {other} 暂无投递层：公众号用「推草稿」，其余平台用「复制/导出」"
+        )),
+    }
+}
+
+/// The article-level entry the GUI calls: caption export (the same
+/// linearisation the export path uses) + the article's local images fitted
+/// to the platform's profile, then `publish`. Temporary fitted files land in
+/// the OS temp dir, which the OS cleans.
+pub fn publish_article(platform: &str, article_id: &str) -> Result<Value, String> {
+    let path = crate::articles::library_dir().join(format!("{}.md", article_id));
+    if !path.exists() {
+        return Err(format!("找不到文章 {article_id}（请先保存）"));
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("无法读取文章: {e}"))?;
+    let (fm, body) = wxwright_core::util::strip_frontmatter(&raw);
+    let title = fm
+        .iter()
+        .find(|(k, _)| k == "title")
+        .map(|(_, v)| v.clone());
+    let doc = wxwright_core::parser::parse_markdown(&body);
+    let text = wxwright_core::platform::render_caption(&doc, title.as_deref());
+    if text.trim().is_empty() {
+        return Err("文章内容为空，无可发布文本".into());
+    }
+    let max = match platform {
+        "x" => 4,
+        "linkedin" => 1,
+        _ => 0,
+    };
+    let profile = wxwright_core::platform::get_platform(platform).image_profile();
+    let base = path.parent().unwrap_or(Path::new("."));
+    let stamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let mut fitted: Vec<String> = Vec::new();
+    for (i, img) in wxwright_core::ir::collect_images(&doc)
+        .iter()
+        .filter(|im| {
+            !im.src.is_empty() && !im.src.starts_with("http") && !im.src.starts_with("data:")
+        })
+        .take(max)
+        .enumerate()
+    {
+        let p = base.join(&img.src);
+        let Ok(bytes) = std::fs::read(&p) else {
+            continue;
+        };
+        let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+        let out = match wxwright_core::img::fit_to_profile(&bytes, &profile) {
+            Ok(f) => f.bytes,
+            // unfittable (gif): pass the original through
+            Err(_) => bytes,
+        };
+        let tmp = std::env::temp_dir().join(format!(
+            "wxwright-post-{stamp}-{i}.{}",
+            if is_png { "png" } else { "jpg" }
+        ));
+        if std::fs::write(&tmp, &out).is_ok() {
+            fitted.push(tmp.display().to_string());
+        }
+    }
+    let result = publish(platform, &text, &fitted);
+    for f in &fitted {
+        let _ = std::fs::remove_file(f);
+    }
+    result
+}
+
 #[tauri::command]
 pub fn social_save_config(
     platform: String,
@@ -450,6 +775,17 @@ pub fn social_unbind(platform: String) -> Result<Value, String> {
     spec(&platform).ok_or("unknown platform")?;
     clear_binding(&platform);
     Ok(status_of(&platform))
+}
+
+/// Publish a saved article to an overseas platform: the caption export (the
+/// same linearisation `convert --platform` produces) plus the article's local
+/// images fitted to the platform's profile. Blocking network IO end to end,
+/// hence spawn_blocking at the command layer.
+#[tauri::command]
+pub async fn social_post_article(platform: String, id: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || publish_article(&platform, &id))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
@@ -523,6 +859,35 @@ pub fn social_oauth_cancel() -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// The weighted budget: CJK costs 2, so a pure-CJK caption must come back
+    /// inside the weighted budget, plain-latin text passes through untouched,
+    /// and the ellipsis marks where anything got cut.
+    #[test]
+    fn x_fit_text_respects_the_weighted_budget() {
+        let plain = "Hello world, this is a short plain-latin caption.";
+        assert_eq!(x_fit_text(plain), plain, "short text passes through");
+
+        let cjk: String = "你好".repeat(200); // 你好 x200 = 800 weight
+        let fitted = x_fit_text(&cjk);
+        let weight: usize = fitted
+            .chars()
+            .map(|c| if (c as u32) > 0x2E7F { 2 } else { 1 })
+            .sum();
+        assert!(weight <= 278, "weight {weight} must fit the budget");
+        assert!(
+            fitted.ends_with('…'),
+            "truncated text must end with an ellipsis"
+        );
+
+        let mixed = "abc你def好".repeat(50);
+        let fitted = x_fit_text(&mixed);
+        let weight: usize = fitted
+            .chars()
+            .map(|c| if (c as u32) > 0x2E7F { 2 } else { 1 })
+            .sum();
+        assert!(weight <= 278);
+    }
+
     fn load_binding_from(platform: &str, path: &Path) -> Option<SocialBinding> {
         read_file_map(path).get(platform).cloned()
     }
@@ -556,7 +921,9 @@ mod tests {
         assert!(url.contains("client_id=cid-1"));
         assert!(url.contains(&format!("redirect_uri={}", qp(&redirect_uri(x)))));
         assert!(url.contains("code_challenge_method=S256"));
-        assert!(url.contains("scope=tweet.read%20tweet.write%20users.read%20offline.access"));
+        assert!(url.contains(
+            "scope=tweet.read%20tweet.write%20users.read%20offline.access%20media.write",
+        ));
         assert!(url.contains("state=st-1"));
 
         let li = spec("linkedin").unwrap();

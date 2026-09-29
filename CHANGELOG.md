@@ -10,6 +10,21 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Added
+- **Live posting for X and LinkedIn.** The publish bindings pane used to end
+  at token storage; the last mile - actually putting a post on the feed - is
+  now wired end to end. The status-row push button doubles by platform: on
+  WeChat it pushes a draft, on X / LinkedIn it publishes the article's
+  caption export (the same linearisation `convert --platform` produces) with
+  the article's local images fitted to the platform's image profile. X takes
+  up to four images via the v2 media upload (the login scope gains
+  `media.write`; nobody had bound an account before the scope change, so no
+  re-login is forced), LinkedIn takes one via registerUpload + pre-signed
+  PUT. API errors surface their response bodies, not bare status codes.
+- **`wxwright draft delete --media-id <id>`.** A mistaken push could only be
+  cleaned up by hand in the web console; the lifecycle now closes in the CLI
+  the same way it opens.
+
 ## [0.11.0] - 2026-09-29
 
 > The entries below this heading come from a multi-agent review round
