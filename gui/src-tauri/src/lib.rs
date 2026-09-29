@@ -50,6 +50,8 @@ pub fn run() {
             commands::comfy_save_config,
             commands::comfy_launch,
             commands::wx_bind_status,
+            commands::wx_draft_list,
+            commands::wx_draft_delete,
             commands::wx_bind,
             commands::wx_unbind,
             commands::ai_job_start,

@@ -412,6 +412,32 @@ pub fn wx_bind_status() -> serde_json::Value {
     }
 }
 
+/// The drafts box as the GUI sees it: title / updated / media_id per item, so
+/// a mistaken push can be cleaned up without leaving the app.
+#[tauri::command]
+pub async fn wx_draft_list(offset: u64, count: u64) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::load_credentials()
+            .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
+        let client = wxwright_mp::MpClient::new(creds);
+        client.draft_list(offset, count).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn wx_draft_delete(media_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::load_credentials()
+            .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
+        let client = wxwright_mp::MpClient::new(creds);
+        client.draft_delete(&media_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
 #[tauri::command]
 pub fn wx_bind(appid: String, secret: String) -> Result<serde_json::Value, String> {
     if appid.trim().is_empty() || secret.trim().is_empty() {

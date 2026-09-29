@@ -36,6 +36,13 @@ const I18N = {
     social_post_title: "发布到当前平台（X / LinkedIn）",
     social_post_busy: "发布中…",
     social_post_ok: (url) => `已发布：${url}`,
+    drafts_title: "草稿箱",
+    drafts_hint: "最近 10 条草稿；误推的内容可以在这里直接删除。",
+    drafts_refresh: "刷新草稿箱",
+    drafts_loading: "读取草稿箱…",
+    drafts_none: "草稿箱为空。",
+    drafts_delete: "删除",
+    drafts_deleted: "草稿已删除",
     illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
     illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
     ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，用 ```html 围栏输出富样式块，内容会原样进入文章。铁律：HTML 必须完整包在 ```html 围栏里；严禁在围栏外直接写裸 HTML 标签——围栏外的 HTML 不会渲染，会以源码文本显示。只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。示例：\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">要强调的句子</p></section>\n```",
@@ -163,6 +170,13 @@ const I18N = {
     social_post_title: "Publish to the current platform (X / LinkedIn)",
     social_post_busy: "Posting…",
     social_post_ok: (url) => `Published: ${url}`,
+    drafts_title: "Drafts box",
+    drafts_hint: "The last 10 drafts; clean up a mistaken push without leaving the app.",
+    drafts_refresh: "Refresh drafts",
+    drafts_loading: "Loading drafts…",
+    drafts_none: "The drafts box is empty.",
+    drafts_delete: "Delete",
+    drafts_deleted: "Draft deleted",
     illustrate_need_save: "Save the article (with body text) before using AI illustrations",
     illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
     ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), use a ```html fence and its markup goes into the article verbatim. Iron rule: the HTML must be wrapped COMPLETELY in a ```html fence; never write bare HTML tags outside a fence - HTML outside a fence does not render, it shows as literal source text. Only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block. Example:\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">The sentence to emphasize</p></section>\n```",
@@ -3617,6 +3631,7 @@ function bindUI() {
     renderProviderList();
     refreshWxStatus();
     renderPublishBindings();
+    renderWxDrafts();
     if (invoke) {
       try {
         const st = await invoke("comfy_status");
@@ -3657,6 +3672,50 @@ function bindUI() {
       chip.textContent = t("wx_status_fail");
     }
   }
+  /* drafts box: recent 10 items with delete, so a mistaken push never
+     requires a trip to the web console */
+  async function renderWxDrafts() {
+    const host = $("drafts-list");
+    if (!host) return;
+    if (!invoke) { host.textContent = ""; return; }
+    host.textContent = t("drafts_loading");
+    try {
+      const v = await invoke("wx_draft_list", { offset: 0, count: 10 });
+      const items = v.item || [];
+      if (!items.length) { host.textContent = t("drafts_none"); return; }
+      host.innerHTML = items.map((it) => {
+        const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
+        const mediaId = escapeHtml(String(it.media_id || ""));
+        const title = escapeHtml(String(nid.title || "(untitled)")).slice(0, 60);
+        const ts = it.content && it.content.update_time ? it.content.update_time : 0;
+        const when = ts ? new Date(ts * 1000).toLocaleString() : "";
+        return `<div class="draft-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);">${when}</div>
+          </div>
+          <button type="button" class="btn btn-ghost" style="padding:2px 10px;font-size:12px;" data-draft="${mediaId}">${t("drafts_delete")}</button>
+        </div>`;
+      }).join("");
+      host.querySelectorAll("[data-draft]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const mid = btn.dataset.draft;
+          btn.disabled = true;
+          try {
+            await invoke("wx_draft_delete", { mediaId: mid });
+            toast(t("drafts_deleted"), "ok");
+            renderWxDrafts();
+          } catch (e) {
+            toast(String(e), "err");
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      host.textContent = String(e);
+    }
+  }
+  $("drafts-refresh").addEventListener("click", () => renderWxDrafts());
   $("wx-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!invoke) return toast(t("wx_demo_only"), "err");
