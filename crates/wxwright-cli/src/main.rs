@@ -208,6 +208,11 @@ enum DraftCmd {
         #[arg(long, default_value = "10")]
         count: u64,
     },
+    /// Delete a draft by media_id (see `wxwright draft list`).
+    Delete {
+        #[arg(long)]
+        media_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1011,6 +1016,11 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
                     }
                 }
             }
+            Ok(0)
+        }
+        DraftCmd::Delete { media_id } => {
+            client.draft_delete(media_id).map_err(|e| e.to_string())?;
+            out.ok(&format!("draft deleted: {}", media_id));
             Ok(0)
         }
     }

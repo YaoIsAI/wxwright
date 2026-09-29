@@ -321,6 +321,14 @@ impl MpClient {
         self.post_with_token_value("/cgi-bin/draft/batchget", &payload)
     }
 
+    /// Delete one draft by media_id. The complements of create: without it,
+    /// a mistaken push can only be cleaned up by hand in the web console.
+    pub fn draft_delete(&self, media_id: &str) -> Result<()> {
+        let payload = serde_json::json!({ "media_id": media_id });
+        let resp: GenericResponse = self.post_with_token("/cgi-bin/draft/delete", &payload)?;
+        check(&resp)
+    }
+
     pub fn draft_update(&self, media_id: &str, index: u64, article: &DraftArticle) -> Result<()> {
         let payload = serde_json::json!({
             "media_id": media_id,
