@@ -56,6 +56,8 @@ wxwright copy article.md
 # then open the MP editor and press Ctrl+V
 ```
 
+**Prefer pictures?** The [full illustrated manual](docs/tutorial.md) walks every page and every button with 18 real screenshots.
+
 ## For AI Agents
 
 Paste the whole card from `wxwright agent-card --md` into any agent's system prompt and it can operate wxwright immediately. Machine-readable contract: `wxwright agent-card --json`.

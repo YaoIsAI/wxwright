@@ -56,6 +56,8 @@ wxwright copy article.md
 # 然后打开公众号编辑器，Ctrl+V 粘贴
 ```
 
+**喜欢看图？** [图文完整手册](docs/tutorial.md) 用 18 张实拍截图走遍每一个页面与按钮。
+
 ## 面向 AI Agent
 
 把 `wxwright agent-card --md` 输出的整段卡片贴进任意 Agent 的系统提示，Agent 即刻接手。机读合同：`wxwright agent-card --json`。
