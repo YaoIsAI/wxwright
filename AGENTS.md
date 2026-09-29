@@ -25,7 +25,7 @@ wxwright 是**面向社交媒体创作的桌面客户端 + Rust 引擎**：一�
 crates/wxwright-core/    引擎：parser(IR) / render(方言) / normalizer / validator(R-规则) /
                          theme(TOML) / platform(平台注册表+出口适配) / img / clipboard / htmlutil
 crates/wxwright-cli/     CLI：convert / validate / fix / copy / draft / publish / platforms / doctor / agent-card / mcp
-crates/wxwright-mcp/     MCP stdio server（8 工具，手写 JSON-RPC，per-request catch_unwind）
+crates/wxwright-mcp/     MCP stdio server（9 工具，手写 JSON-RPC，per-request catch_unwind）
 crates/wxwright-mp/      公众号 API（凭据 keyring / 草稿 / freepublish / mmbiz 上传）
 gui/src-tauri/           Tauri 2 桌面客户端后端（Rust；不是 crates/ 下的成员）
 gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生成运行时) · social.rs(海外平台 BYO 一键登录/凭据) · comfy.rs(ComfyUI) ·
@@ -84,7 +84,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
    必须 grep `<path` 验证）；Simple Icons 没有的（xAI/Zhipu/LinkedIn）取 Wikimedia 官方素材
    并在 CHANGELOG 注明来源。不要手绘品牌标。
 8. **SVG 组件插入必须作为文档末尾独立块**（光标插入会嵌进列表/代码块导致渲染失效）。
-9. **MCP 工具面**（8 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
+9. **MCP 工具面**（9 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
    改工具清单必须同步 agent card + README，否则 CI 红。
 10. **修改 logo/图标**需三处同步：master.svg、index.html symbol、icongen 重跑。
 11. **主题角色以 `wxwright-core/src/roles.rs` 为唯一事实源**。渲染器、AI 主题提示词

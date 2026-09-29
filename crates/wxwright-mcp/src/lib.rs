@@ -288,6 +288,17 @@ fn tools_list() -> Value {
                 })
             ),
             tool(
+                "wxwright_draft_delete",
+                "Delete one draft from the WeChat MP 草稿箱 by media_id (get ids from wxwright_draft_list). Requires credentials.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "media_id": { "type": "string" }
+                    },
+                    "required": ["media_id"]
+                })
+            ),
+            tool(
                 "wxwright_export",
                 "Export one Markdown source for a specific platform. Returns the artifact that platform actually consumes: WeChat gets dialect rich text (html), Xiaohongshu/Facebook/Instagram/X/LinkedIn get a plain-text caption, Zhihu gets Markdown unchanged. Use `wxwright platforms` for the id list.",
                 json!({
@@ -561,6 +572,20 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(10);
                 client.draft_list(offset, count).map_err(|e| e.to_string())
             }
+            "wxwright_draft_delete" => {
+                let creds = wxwright_mp::load_credentials()
+                    .ok_or("no credentials configured; run `wxwright login` first")?;
+                let client = wxwright_mp::MpClient::new(creds);
+                let media_id = args
+                    .get("media_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or("media_id is required (see wxwright_draft_list)")?;
+                client
+                    .draft_delete(media_id.trim())
+                    .map(|_| json!({ "deleted": media_id.trim() }))
+                    .map_err(|e| e.to_string())
+            }
             _ => Err(format!("unknown tool: {}", name)),
         }
     })();
@@ -737,6 +762,7 @@ mod tests {
             "wxwright_copy",
             "wxwright_upload_images",
             "wxwright_draft_create",
+            "wxwright_draft_delete",
         ] {
             assert!(
                 !crate::ASSISTANT_TOOLS.contains(&dangerous),

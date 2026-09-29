@@ -63,13 +63,13 @@ Read it, fix the source, retry. Do not ship while `blocking_violations` is non-e
 Start `wxwright mcp serve` (stdio) or `wxwright mcp install --target claude`.
 Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
 wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
-wxwright_export.
+wxwright_draft_delete, wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
 
 ## Publishing (optional, needs credentials)
 
 - `wxwright draft create --file article.md --title "..."` creates a 草稿箱 (Drafts) entry.
-- `wxwright draft update|list` manages existing drafts.
+- `wxwright draft update|list|delete` manages existing drafts (delete takes --media-id).
 - 群发 (mass send) is intentionally NOT part of the agent surface: it is
   irreversible and reaches real subscribers, so a human must trigger it from
   the desktop app. Do not look for a way to automate it.
@@ -94,14 +94,14 @@ pub fn card_json() -> Value {
             { "cmd": "mcp install", "args": ["--target <claude|cursor|vscode|opencode>"], "desc": "write MCP client config" },
             { "cmd": "login / logout", "args": ["--appid", "--secret"], "desc": "store MP credentials in OS keychain" },
             { "cmd": "image upload <paths...>", "args": ["--json"], "desc": "upload to material library, print mmbiz mapping" },
-            { "cmd": "draft create|update|list", "args": ["--file", "--title", "--author", "--digest", "--thumb-media-id"], "desc": "草稿箱 (Drafts) API" },
+            { "cmd": "draft create|update|list|delete", "args": ["--file", "--title", "--author", "--digest", "--thumb-media-id", "--media-id"], "desc": "草稿箱 (Drafts) API" },
             { "cmd": "publish <draft_id>", "args": ["--yes"], "desc": "群发 (mass send); HUMAN-ONLY, irreversible, not for agents" },
             { "cmd": "agent-card", "args": ["--md", "--json"], "desc": "this card" }
         ],
         "mcp": {
             "transport": "stdio",
             "start": "wxwright mcp serve",
-            "tools": ["wxwright_convert", "wxwright_validate", "wxwright_copy", "wxwright_themes_list", "wxwright_upload_images", "wxwright_draft_create", "wxwright_draft_list", "wxwright_export"],
+            "tools": ["wxwright_convert", "wxwright_validate", "wxwright_copy", "wxwright_themes_list", "wxwright_upload_images", "wxwright_draft_create", "wxwright_draft_list", "wxwright_draft_delete", "wxwright_export"],
             "resources": ["wxwright://themes", "wxwright://spec/rules"],
             "prompts": ["wxwright-publish-guide"]
         },
