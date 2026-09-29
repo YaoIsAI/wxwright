@@ -10,7 +10,9 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
-> The entries below the second heading come from a multi-agent review round
+## [0.11.0] - 2026-09-29
+
+> The entries below this heading come from a multi-agent review round
 > (four independent reviewers: correctness, engineering governance,
 > architecture, plus a dedicated verifier whose job was to falsify the other
 > three). Three blocking defects were confirmed by hand and by black-box
