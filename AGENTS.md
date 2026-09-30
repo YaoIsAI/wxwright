@@ -164,6 +164,14 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 37 | **同一判定在多条路径上各写一遍**（图片门禁 `inlined && !mmbiz` 曾在 CLI/GUI/MCP 各写一份，MCP 那份还漏 http 与读取失败；`wxwright_draft_create` 干脆一道门禁都没有） | 同一篇文章，四条路径给出四个不同答案 | 判定只留一处实现（`ImageOutcome::paste_hostile()`），全部写出口调用它；再加**源码扫描测试**（`tests/image_gate_test.rs`）让手写过滤无法复现 |
 | 38 | **`ureq` 不读环境变量也不读 Windows 系统代理**（本机 Clash 在 127.0.0.1:7897，`curl` 走 `HTTPS_PROXY` 能通，应用内直连 Cloudflare 前置的境外端点全部 `os error 10060`） | 桌面端 AI 助手 / 云端生图 / X·LinkedIn 换 token **全部不可用**，但日志只显示「连接超时」，极易误判成「服务商挂了」或「密钥错了」 | 境外出口一律走 `gui/src-tauri/src/net.rs` 的 `with_env_proxy`（读 `HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY` + `NO_PROXY=*` 退出）。**本地（ComfyUI 127.0.0.1）与境内（微信 API）保持直连**——别开 ureq 的 `proxy-from-env` feature，它没有 NO_PROXY 支持且 `ALL_PROXY` 优先于 `HTTPS_PROXY`，会把回环请求也塞进代理 |
 | 39 | **`cargo test ... \| grep "test result"` 会把编译失败伪装成「没有测试」**（本次实测：E 盘增量目录被瞬时占用 → `os error 5 拒绝访问` → 编译中止 → grep 无输出 → 汇总统计显示为空，差点被当成通过） | 静默漏测；比报错更危险 | 跑测试时**先看退出码**，或用 `set -o pipefail`；拿汇总数时断言它非空（`[ -n "$TOTAL" ] \|\| exit 1`）。Windows 上若出现 `os error 5` 占用增量目录，加 `CARGO_INCREMENTAL=0` 重跑即可（多为 Defender 扫描新写的 .rmeta） |
+| 40 | **CI 卡死与 CI 慢是两种病**（spec-gate 的 npm install 内 puppeteer Chromium 下载挂死 24 分钟零输出，三次绿代码被 15 分钟上限取消；调大 timeout 无效） | 绿代码反复假红；缓存永不命中（job 不成功→缓存永不保存） | **先拉 job 日志（`gh api .../actions/jobs/<id>/logs`）区分 hang 与 slow**：hang 用「单步 `timeout 360` + 重试循环」治，slow 才调大 timeout；配 actions/cache 让首次成功后秒装 |
+| 41 | **模型不包围栏，提示词教不会**（chart JSON 裸写段落、JSON 黏在前言句尾、表格后紧跟 spec 行被 CommonMark 懒延续吸进表格 cell——三形态实证，铁律+示例提示词均无效） | 读者看到源码/JSON 而非图表卡片 | **引擎必须兜住**：解析前隔离 chart JSON 行（isolate_chart_lines）+ 段内花括号平衡提取（extract_chart_json）+ 前导文字保留；html 通道同理（裸块/行内过白名单即渲染） |
+| 42 | **CDP `Runtime.evaluate` 的 `exceptionDetails` 在 result 里层**（读错层级把 SyntaxError 吞成 None，表现为「表达式无声失败」）；且 `invoke` 是 async——**必须 `awaitPromise: true`**，否则拿到空 Promise 序列化成 {} | 误判「列表为空」「补丁没生效」，浪费排查轮次 | 封装 js() 助手时在 `r["result"]["exceptionDetails"]` 读异常；长字符串一律 `json.dumps` 注入，不走多层转义 |
+| 43 | **点侧栏条目会自动保存脏缓冲进该文章**（违规演示残留在编辑器时点库条目=把演示内容覆盖进手册文件） | 用户文章被测试内容覆盖；推草稿推错内容 | **切换文章/推草稿前必须校验编辑器内容**（含关键正文/图数门槛，不符即中止）；恢复靠上下文原文重写 |
+| 44 | **`cargo test` 不重编 CLI bin**（库测试绿 ≠ 二进制新——两次被陈进制 debug CLI 误导行为验证） | 用旧 exe 验证新行为，结论相反 | 行为验证前先 `cargo build -p wxwright-cli`；验证一律用刚构建出的产物路径 |
+| 45 | **WebView2 的 CDP `Page.captureScreenshot` 返回空**（0 字节，plain/beyondViewport 均如此） | 截图管线看似成功实则全空文件 | 桌面截图走 PS 窗口捕获（GetWindowRect+CopyFromScreen，1396×919）；网页截图走 Playwright 元素截图 |
+| 46 | **追加/heredoc 代码后必须重跑 `cargo fmt --all -- --check`**（追加 builtin-variants 测试后没跑，fmt --check 三平台齐红一次） | CI 假红一轮 | fmt 在追加**前**跑不算数；任何写文件操作后 gate 前必须再 fmt --check |
+| 47 | **Edit 加了调用但后续 Edit 的 old_string 含该行会把调用删回去**（变体兜底 ensure_default_variants 加了又被还原成死代码，实测主题未被补才暴露） | 函数成死代码，功能静默失效 | 每次功能性 Edit 后 **grep 调用点确认真在链路上**；新功能用 live 实测闭环而非仅单测 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
