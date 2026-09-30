@@ -390,3 +390,33 @@ fn list_and_code_variants_are_scoped_to_their_shapes() {
         "short code must stay normal: {miss}"
     );
 }
+
+/// Zebra striping is a theme meta option: even body rows (0-based odd rows)
+/// carry the table_zebra_bg token, and a theme without the flag is untouched.
+#[test]
+fn table_zebra_shades_alternate_rows_when_enabled() {
+    let md = "| 甲 | 乙 |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n";
+    let mk = |zebra: &str| {
+        format!(
+            "[meta]\nid = \"z\"\nname = \"z\"\ntable_zebra = {}\n\n[colors]\ntable_zebra_bg = \"#EFEFEF\"\n",
+            zebra
+        )
+    };
+    let on = parse_theme(&mk("true")).expect("on parses");
+    let mut opts = ConvertOptions::new(on);
+    opts.image_mode = ImageMode::Keep;
+    let html = convert_markdown(md, &opts).expect("ok").html;
+    assert_eq!(
+        html.matches("background: #EFEFEF").count(),
+        2,
+        "rows 2 and 4 (0-based odd) must be shaded: {html}"
+    );
+    let off = parse_theme(&mk("false")).expect("off parses");
+    let mut opts = ConvertOptions::new(off);
+    opts.image_mode = ImageMode::Keep;
+    let html = convert_markdown(md, &opts).expect("ok").html;
+    assert!(
+        !html.contains("background: #EFEFEF"),
+        "no zebra flag, no stripes: {html}"
+    );
+}

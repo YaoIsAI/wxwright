@@ -42,6 +42,11 @@ pub struct ThemeMeta {
     pub link_style: Option<LinkStyle>,
     #[serde(default)]
     pub code_theme: Option<CodeTheme>,
+    /// Zebra-stripe table body rows (the professional read aid). Off by
+    /// default; a theme that wants it declares `table_zebra = true` and may
+    /// tune the stripe via the `table_zebra_bg` color token.
+    #[serde(default)]
+    pub table_zebra: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +110,7 @@ pub const COLOR_TOKENS: &[(&str, &str)] = &[
     ("inline_code_color", "#C2402A"),
     ("table_head_bg", "#F6F8FA"),
     ("table_border", "#D8DEE4"),
+    ("table_zebra_bg", "#FAFBFC"),
     ("note_bg", "#EFF4FE"),
     ("note_border", "#2F6CEA"),
     ("tip_bg", "#ECFDF3"),

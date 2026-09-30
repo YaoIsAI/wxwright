@@ -1323,11 +1323,20 @@ fn render_table(
 
     let mut tbody = String::new();
     if !rows.is_empty() {
+        // Zebra striping is a theme meta option (`table_zebra = true`): the
+        // classic professional read aid, impossible for a theme to express
+        // itself because CommonMark themes have no :nth-child.
+        let zebra = ctx.theme.meta.table_zebra.unwrap_or(false);
+        let zebra_bg = ctx.theme.color("table_zebra_bg");
         tbody.push_str("<tbody>");
-        for row in rows {
+        for (ri, row) in rows.iter().enumerate() {
+            let shade = zebra && ri % 2 == 1;
             tbody.push_str("<tr>");
             for (i, cell) in row.iter().enumerate() {
-                let base = cell_base(i, false);
+                let mut base = cell_base(i, false);
+                if shade {
+                    base = format!("{}; background: {}", base.trim_end_matches(';'), zebra_bg);
+                }
                 tbody.push_str(&format!(
                     "<td style=\"{}\">{}</td>",
                     escape_attr(&base),
