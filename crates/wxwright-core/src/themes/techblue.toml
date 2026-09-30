@@ -55,3 +55,24 @@ color = "{text}"
 text = "#CBD5E1"
 background = "#191919"
 accent = "#60A5FA"
+
+# Content variants: pull quote and lede carry the theme's character.
+[block.quote.hero]
+background = "none"
+border-left = "4px solid {accent}"
+padding = "4px 0"
+border-radius = "0 6px 6px 0"
+
+[block.quote.hero_leaf]
+font-size = "20px"
+font-weight = "700"
+color = "{accent}"
+
+[block.paragraph.lead]
+font-size = "17px"
+border-left = "3px solid {border_strong}"
+padding-left = "10px"
+
+[block.paragraph.lead_leaf]
+font-size = "17px"
+color = "{text_secondary}"

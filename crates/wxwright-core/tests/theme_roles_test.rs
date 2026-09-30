@@ -420,3 +420,25 @@ fn table_zebra_shades_alternate_rows_when_enabled() {
         "no zebra flag, no stripes: {html}"
     );
 }
+
+/// Every built-in theme ships the variant keys, so the capability is visible
+/// out of the box (a user picking 素黑 sees the pull-quote styling without
+/// writing TOML) and the variants stay tuned per theme, not copy-pasted.
+#[test]
+fn builtin_themes_ship_variant_styling() {
+    for id in ["minimal", "techblue", "magazine"] {
+        let theme = wxwright_core::theme::load_theme(id)
+            .unwrap_or_else(|e| panic!("builtin {id}: {e}"));
+        for key in [
+            "quote.hero",
+            "quote.hero_leaf",
+            "paragraph.lead",
+            "paragraph.lead_leaf",
+        ] {
+            assert!(
+                theme.blocks.contains_key(key),
+                "builtin theme {id} must ship the {key} variant"
+            );
+        }
+    }
+}

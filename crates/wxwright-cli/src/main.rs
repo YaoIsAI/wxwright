@@ -1170,6 +1170,24 @@ padding-left = "10px"
 [block.h2_leaf]
 color = "{{accent}}"
 
+# Content variants: the pull quote and the lede are where a theme shows its
+# character - restyle these four keys with your own palette.
+[block.quote.hero]
+background = "none"
+border-left = "4px solid {{accent}}"
+padding = "4px 0"
+
+[block.quote.hero_leaf]
+font-size = "20px"
+font-weight = "600"
+
+[block.paragraph.lead]
+font-size = "17px"
+color = "{{text_secondary}}"
+
+[block.paragraph.lead_leaf]
+font-size = "17px"
+
 [color_dark]
 text = "#C9D1D9"
 background = "#191919"

@@ -42,3 +42,21 @@ toc_bg = "#FCFCFD"
 text = "#C9D1D9"
 background = "#191919"
 accent = "#5B8DEF"
+
+# Content variants: pull quote and lede carry the theme's character.
+[block.quote.hero]
+background = "none"
+border-left = "3px solid {accent}"
+padding = "4px 0"
+
+[block.quote.hero_leaf]
+font-size = "20px"
+font-weight = "600"
+color = "{text}"
+
+[block.paragraph.lead]
+font-size = "17px"
+
+[block.paragraph.lead_leaf]
+font-size = "17px"
+letter-spacing = "0.5px"
