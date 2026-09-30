@@ -21,6 +21,9 @@
   --warn: #D97706;
   --err: #DC2626;
 
+  --code-bg: #F6F8FA;
+  --code-color: #C2402A;
+
   --radius: 8px;
   --radius-sm: 4px;
   --sidebar-w: 248px;

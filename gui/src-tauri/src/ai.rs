@@ -1137,10 +1137,24 @@ font-size = "15px"
 [block.*] 覆盖规则（严格遵守）：
 1. role 只能取：{ROLES}；
    可加 _leaf 后缀修饰行内文字；卡片类（card_*）还可加 _title 后缀修饰卡片标题标签；
-2. 内容变体（可选，写法：在角色表下再建一层子表）：
+2. 内容变体（必须包含，这是主题质感的关键——金句和导语是全文最出彩的两处）：
    {VARIANTS}
-   例：[block.quote.hero] 为短金句单独定样式（覆盖 [block.quote] 的对应属性，
-   未覆盖的属性自动继承基础角色），[block.quote.hero_leaf] 修饰金句文字。
+   写法：在角色表下再建一层子表，覆盖基础角色的对应属性（未覆盖的自动继承）。
+   主题必须同时包含 [block.quote.hero]、[block.quote.hero_leaf]、
+   [block.paragraph.lead]、[block.paragraph.lead_leaf] 四个键。
+   完整示例（直接照此结构写，替换颜色字号即可）：
+   [block.quote.hero]
+   background = "none"
+   border-left = "4px solid {accent}"
+   padding = "4px 0"
+   [block.quote.hero_leaf]
+   font-size = "20px"
+   font-weight = "600"
+   [block.paragraph.lead]
+   font-size = "17px"
+   color = "{text_secondary}"
+   [block.paragraph.lead_leaf]
+   font-size = "17px"
    变体由引擎按内容自动判定（短单段引用=hero、全文首段=lead），不需要文章配合；
 3. 禁止任何伪类与复杂选择器：没有 a:hover、没有 [block.a]、没有嵌套——写 [block.a:hover] 是非法 TOML，会直接被拒；
 4. 想要发光、渐变、悬浮效果，用安全属性近似：border + 鲜明 accent 色、background、letter-spacing、border-radius；
@@ -1343,11 +1357,42 @@ pub(crate) fn validate_generated_theme(toml_src: &str) -> Result<Vec<String>, St
         .collect())
 }
 
+/// Guarantee the four variant keys a theme's quality hangs on (quote.hero /
+/// quote.hero_leaf / paragraph.lead / paragraph.lead_leaf): the prompt now
+/// demands them, but a model that still omits them gets defaults derived from
+/// its own palette - the hero pull-quote and the lede are where a theme's
+/// character shows, and "no variants" reads as a flat, generic theme.
+/// Applied at save time, after validation, so the repair loop is untouched.
+fn ensure_default_variants(toml_src: &str) -> String {
+    if toml_src.contains("[block.quote.hero]") && toml_src.contains("[block.paragraph.lead]") {
+        return toml_src.to_string();
+    }
+    let t = match theme::parse_theme(toml_src) {
+        Ok(t) => t,
+        Err(_) => return toml_src.to_string(),
+    };
+    let accent = t.color("accent");
+    let secondary = t.color("text_secondary");
+    let mut extra = String::new();
+    if !toml_src.contains("[block.quote.hero]") {
+        extra.push_str(&format!(
+            "\n[block.quote.hero]\nbackground = \"none\"\nborder-left = \"4px solid {accent}\"\npadding = \"4px 0\"\n\n[block.quote.hero_leaf]\nfont-size = \"20px\"\nfont-weight = \"600\"\n"
+        ));
+    }
+    if !toml_src.contains("[block.paragraph.lead]") {
+        extra.push_str(&format!(
+            "\n[block.paragraph.lead]\nfont-size = \"17px\"\ncolor = \"{secondary}\"\n\n[block.paragraph.lead_leaf]\nfont-size = \"17px\"\n"
+        ));
+    }
+    format!("{}{}", toml_src.trim_end(), extra)
+}
+
 /// Persist a validated theme TOML into the user themes dir and return the
 /// metadata payload shared by the sync and job-based generation paths.
 pub(crate) fn save_theme_artifact(toml_src: &str) -> Result<serde_json::Value, String> {
-    let path = theme::save_user_theme(toml_src).map_err(|e| e.to_string())?;
-    let t = theme::parse_theme(toml_src).map_err(|e| e.to_string())?;
+    let toml_src = ensure_default_variants(toml_src);
+    let path = theme::save_user_theme(&toml_src).map_err(|e| e.to_string())?;
+    let t = theme::parse_theme(&toml_src).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
         "id": t.meta.id,
         "name": t.meta.name,
@@ -1440,6 +1485,28 @@ pub fn generate_theme(description: &str) -> Result<serde_json::Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A theme that omits the variant keys gets them derived from its own
+    /// palette at save time; broken TOML passes through for the normal error
+    /// path. (Idempotence is covered by the contains-guards above.)
+    #[test]
+    fn missing_variants_are_backfilled_from_the_theme_palette() {
+        let base = "[meta]\nid = \"t\"\nname = \"t\"\n\n[colors]\naccent = \"#8B6C42\"\ntext_secondary = \"#5F7A73\"\n";
+        let backfilled = ensure_default_variants(base);
+        assert!(backfilled.contains("[block.quote.hero]"));
+        assert!(backfilled.contains("[block.paragraph.lead]"));
+        assert!(
+            backfilled.contains("#8B6C42"),
+            "the hero border must come from the theme's own accent"
+        );
+        // The generated variant block must parse back as a valid theme.
+        assert!(crate::ai::validate_generated_theme(&backfilled).is_ok());
+        // Broken TOML must not be "fixed" into something else.
+        assert_eq!(
+            ensure_default_variants("not toml at all {{{"),
+            "not toml at all {{{"
+        );
+    }
 
     /// Regression for the stop button never working.
     ///
