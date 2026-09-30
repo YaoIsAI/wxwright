@@ -9,6 +9,12 @@ use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options
 use crate::ir::{Align, Block, CardKind, ChartSpec, ImageRef, Inline, InlineKind, ListItem};
 
 pub fn parse_markdown(md: &str) -> Vec<Block> {
+    // Models drop a chart JSON line straight under a table (or any lazy
+    // continuation) with no blank line, and CommonMark absorbs it into the
+    // preceding block - the reader sees raw JSON inside a table cell.
+    // Isolating chart-looking lines into their own paragraph up front costs
+    // one scan and removes the whole class.
+    let md = &isolate_chart_lines(md);
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_STRIKETHROUGH);
@@ -28,6 +34,27 @@ pub fn parse_markdown(md: &str) -> Vec<Block> {
     p.root.extend(extra);
     postprocess(&mut p.root);
     p.root
+}
+
+/// Give every line that IS a chart JSON object its own blank-line frame, so
+/// CommonMark cannot glue it to a table/list/paragraph above it.
+fn isolate_chart_lines(md: &str) -> String {
+    if !md.contains("{\"kind\"") && !md.contains("{\"labels\"") && !md.contains("{\"values\"") {
+        return md.to_string();
+    }
+    let mut out = String::with_capacity(md.len() + 64);
+    for line in md.lines() {
+        let trimmed = line.trim();
+        if looks_like_chart_json(trimmed) {
+            out.push('\n');
+            out.push_str(trimmed);
+            out.push_str("\n\n");
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 enum Frame {
