@@ -10,6 +10,22 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Changed
+- **The theme prompt now demands the variant keys, and the save path
+  backfills them from the theme's own palette.** Live generations wrote 30
+  block roles and zero variants - the pull quote and the lede, the two
+  places a theme's character shows, rendered flat. The prompt section is a
+  required four-key block with a complete copy-paste example, and
+  save_theme_artifact derives defaults from the theme's accent /
+  text_secondary when a model still omits them. Verified across three live
+  generations: the first (pre-fix binary) needed the backfill, the two
+  after the prompt change wrote the variants themselves - dunhuang-fresco
+  and nordic-minimal-snow both carry model-authored hero/lead blocks with
+  their own palette colours.
+- **X / LinkedIn posting guidance when unbound.** Hitting Post without a
+  binding says exactly that and where to fix it, instead of a generic
+  failure.
+
 ### Fixed
 - **Bare chart JSON now renders as a chart - three live shapes, all covered.**
   The AI-quality audit drove the real assistant panel across task classes and
