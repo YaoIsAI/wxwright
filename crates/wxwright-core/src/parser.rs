@@ -589,6 +589,23 @@ fn card_from_gfm(k: BlockQuoteKind) -> CardKind {
 /// 2. image followed by italic-only paragraph -> Figure with caption;
 /// 3. paragraph with a single display formula -> Formula;
 /// 4. paragraph exactly "[TOC]" -> Toc.
+///
+/// Cheap pre-filter before a full ChartSpec parse: the text must look like a
+/// JSON object carrying the chart vocabulary. A paragraph of prose that
+/// happens to contain "labels" will not pass; a bare model-emitted spec will.
+fn looks_like_chart_json(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.first() != Some(&b'{') || b.last() != Some(&b'}') {
+        return false;
+    }
+    let lower = s.to_ascii_lowercase();
+    let hits = ["\"kind\"", "\"labels\"", "\"values\""]
+        .iter()
+        .filter(|k| lower.contains(*k))
+        .count();
+    hits >= 2
+}
+
 fn postprocess(blocks: &mut Vec<Block>) {
     let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut i = 0;
@@ -629,6 +646,19 @@ fn postprocess(blocks: &mut Vec<Block>) {
                 }
                 Inline::Text(t) if t.trim() == "[TOC]" => {
                     out.push(Block::Toc);
+                    i += 1;
+                }
+                Inline::Text(t) if looks_like_chart_json(t.trim()) => {
+                    // Models keep emitting the chart spec as bare JSON in a
+                    // paragraph - exactly the fence-discipline hole the html
+                    // channel hit. The JSON itself is the contract; when a
+                    // whole paragraph parses as a chart spec, honour it
+                    // instead of printing JSON at the reader.
+                    if let Ok(spec) = serde_json::from_str::<ChartSpec>(t.trim()) {
+                        out.push(Block::Chart { spec });
+                    } else {
+                        out.push(blocks[i].clone());
+                    }
                     i += 1;
                 }
                 _ => {
@@ -698,6 +728,23 @@ mod tests {
             "```chart\n{\"kind\":\"bar\",\"title\":\"周下载\",\"labels\":[\"一\",\"二\"],\"values\":[3,5]}\n```\n",
         );
         assert!(matches!(&blocks[0], Block::Chart { .. }));
+    }
+
+    /// Models emit the chart spec as a bare JSON paragraph instead of a
+    /// ```chart fence (the same fence-discipline hole as html). The JSON
+    /// itself is the contract; honour it instead of printing it at readers.
+    #[test]
+    fn bare_chart_json_paragraph_becomes_a_chart() {
+        let md = "{\"kind\":\"bar\",\"title\":\"用户规模\",\"labels\":[\"2023\",\"2024\",\"2025\"],\"values\":[120,350,900],\"unit\":\"万\"}\n";
+        let blocks = parse_markdown(md);
+        assert!(
+            matches!(&blocks[0], Block::Chart { .. }),
+            "bare chart JSON must render as a chart, got: {:?}",
+            blocks[0]
+        );
+        // Prose that merely mentions the vocabulary must stay prose.
+        let prose = parse_markdown("labels and values are chart words, this is not JSON.\n");
+        assert!(matches!(&prose[0], Block::Paragraph { .. }));
     }
 
     #[test]
