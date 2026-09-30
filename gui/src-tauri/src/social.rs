@@ -566,7 +566,7 @@ fn linkedin_upload_image(access_token: &str, author: &str, path: &Path) -> Resul
     let resp = agent
         .post("https://api.linkedin.com/rest/images?action=registerUpload")
         .set("Authorization", &format!("Bearer {access_token}"))
-        .set("LinkedIn-Version", "202411")
+        .set("LinkedIn-Version", "202609")
         .set("X-Restli-Protocol-Version", "2.0.0")
         .send_json(register)
         .map_err(|e| ureq_body_err("LinkedIn 图片注册失败", e))?;
@@ -615,7 +615,7 @@ fn linkedin_create_post(
     let resp = agent
         .post("https://api.linkedin.com/rest/posts")
         .set("Authorization", &format!("Bearer {access_token}"))
-        .set("LinkedIn-Version", "202411")
+        .set("LinkedIn-Version", "202609")
         .set("X-Restli-Protocol-Version", "2.0.0")
         .send_json(body);
     match resp {
