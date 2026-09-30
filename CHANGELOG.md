@@ -10,6 +10,21 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Fixed
+- **Bare chart JSON now renders as a chart - three live shapes, all covered.**
+  The AI-quality audit drove the real assistant panel across task classes and
+  found the model never wraps a chart spec in the ```chart fence (it teaches
+  the fence; the model writes it bare). Three shapes shipped to readers as
+  raw JSON: a spec-only paragraph, an intro sentence glued to the spec, and
+  the spec line dropped straight under a table (CommonMark lazy continuation
+  put the JSON inside a table cell). The engine now honours the contract the
+  JSON itself carries: chart-looking lines are isolated into their own
+  paragraph before parsing, and a paragraph containing a complete chart
+  object renders the chart with any lead prose kept. The regression transcript
+  that leaked went from 0 charts to 2 charts with zero leakage; the chat
+  system prompt also carries the fence iron rule. Final live regression:
+  3/3 deliver a clean chart.
+
 ### Added
 - **Live posting for X and LinkedIn.** The publish bindings pane used to end
   at token storage; the last mile - actually putting a post on the feed - is
