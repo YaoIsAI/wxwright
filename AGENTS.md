@@ -172,12 +172,15 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎 /
-  **主题变体**（role.variant 点分键：quote.hero 短金句 / paragraph.lead 首段导语，
-  渲染期内容分类+双层合并，`roles::RoleDef.variants` 是唯一事实源，AI 主题提示词
-  自动教变体）/ **AI 配图**（jobs kind `illustrate`：文本模型规划锚点插图位 → 云端
+  **主题变体**（role.variant 点分键，六族：quote.hero 短金句 / paragraph.lead 首段
+  导语 / table.dense ≥5 列收紧 / list.tight ≥6 短项紧凑 / code.wide 长行缩排 /
+  figure.portrait 竖图收窄居中，渲染期内容分类+双层合并，`roles::RoleDef.variants`
+  是唯一事实源，AI 主题提示词自动教变体、save 兜底补默认、脚手架与内置主题均带
+  样板）/ **斑马纹表格**（meta.table_zebra 开关 + table_zebra_bg token）/
+  **AI 配图**（jobs kind `illustrate`：文本模型规划锚点插图位 → 云端
   生图 → 按平台画像 fit → 写回文章，工具栏火花按钮）/ **图像跨平台裁剪**
   （`img::fit_to_profile` + `PlatformSpec::image_profile()` + CLI `image fit`）。
-- 测试 180（173 常规 + 7 条 live 冒烟 ignored）；版本 0.10.0（workspace+tauri.conf）。
+- 测试 194（187 常规 + 7 条 live 冒烟 ignored）；版本 0.11.0（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源；`wxwright image fit --platform <id>` 把文章图集裁到目标平台
