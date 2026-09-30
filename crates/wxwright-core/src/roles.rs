@@ -74,7 +74,15 @@ pub const ROLES: &[RoleDef] = &[
         // `hero` is a one-sentence standalone quote - the pull-quote slot.
         variants: &["hero"],
     },
-    role!("code", "代码块容器", "Code block", RoleShape::Block),
+    RoleDef {
+        id: "code",
+        label_zh: "代码块容器",
+        label_en: "Code block",
+        shape: RoleShape::Block,
+        // `wide` fires when any code line exceeds 100 chars - heavy wrapping
+        // on a phone, so a theme can shrink the font for the wide form.
+        variants: &["wide"],
+    },
     RoleDef {
         id: "table",
         label_zh: "表格容器",
@@ -98,7 +106,15 @@ pub const ROLES: &[RoleDef] = &[
         shape: RoleShape::BlockWithLeaf,
         variants: &["dense"],
     },
-    role!("list_item", "列表项", "List item", RoleShape::BlockWithLeaf),
+    RoleDef {
+        id: "list_item",
+        label_zh: "列表项",
+        label_en: "List item",
+        shape: RoleShape::BlockWithLeaf,
+        // `tight` fires on six or more short items - the index/directory
+        // shape reads better with tighter spacing.
+        variants: &["tight"],
+    },
     role!(
         "figure_caption",
         "图片图注",
@@ -272,7 +288,8 @@ mod tests {
             }
         }
         assert_eq!(list.matches("quote.hero").count(), 1);
-        assert!(!list.contains("code."));
+        // A role with no variants must not appear dotted in the prompt.
+        assert!(!list.contains("toc."));
     }
 
     /// The renderer builds heading roles dynamically (`format!("h{}", level)`
@@ -331,10 +348,10 @@ mod tests {
             "base key count changed - update the docs too"
         );
         assert_eq!(
-            variant_keys, 9,
+            variant_keys, 12,
             "variant key count changed - update the docs too"
         );
-        assert_eq!(all_keys().len(), 63);
+        assert_eq!(all_keys().len(), 66);
     }
 
     /// Every `BlockWithLeaf` / `CardWithTitle` role must expand its suffix

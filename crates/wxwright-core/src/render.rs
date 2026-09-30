@@ -913,10 +913,14 @@ fn render_code(lang: Option<&str>, code: &str, ctx: &Ctx) -> String {
     }
     inner.push_str(&section("padding: 2px 0; min-width: 0;", &body));
 
+    // `code.wide`: any line over 100 chars will wrap heavily on a phone
+    // (pre-wrap + break-all); a theme can shrink the font for the wide form.
+    let wide = code.lines().any(|l| l.chars().count() > 100);
     section(
-        &css(
+        &css_variant(
             ctx.theme,
             "code",
+            wide.then_some("code.wide"),
             &[
                 ("margin", "20px 0"),
                 ("background", "{code_bg}"),
@@ -1068,6 +1072,10 @@ fn render_card(kind: CardKind, blocks: &[Block], ctx: &Ctx) -> String {
 }
 
 fn render_list(ordered: bool, start: u64, items: &[ListItem], ctx: &Ctx, depth: usize) -> String {
+    // `list.tight`: many short items are an index/directory shape - tighter
+    // spacing reads far better than the airy default, and a theme can restyle
+    // the tight form (list_item.tight / list_item.tight_leaf).
+    let tight = items.len() >= 6 && items.iter().all(|it| list_item_first_para_len(it) <= 30);
     let mut out = String::new();
     for (i, item) in items.iter().enumerate() {
         let marker = if ordered {
@@ -1075,9 +1083,21 @@ fn render_list(ordered: bool, start: u64, items: &[ListItem], ctx: &Ctx, depth: 
         } else {
             String::new()
         };
-        out.push_str(&render_list_item(item, ordered, &marker, ctx, depth));
+        out.push_str(&render_list_item(item, ordered, &marker, ctx, depth, tight));
     }
     out
+}
+
+/// Visible length of the item's first paragraph - the text a reader skims
+/// when deciding whether a list is an index.
+fn list_item_first_para_len(item: &ListItem) -> usize {
+    item.blocks
+        .first()
+        .and_then(|b| match b {
+            Block::Paragraph { inlines } => Some(inlines_visible_len(inlines)),
+            _ => None,
+        })
+        .unwrap_or(usize::MAX)
 }
 
 fn render_list_item(
@@ -1086,6 +1106,7 @@ fn render_list_item(
     marker: &str,
     ctx: &Ctx,
     depth: usize,
+    tight: bool,
 ) -> String {
     let indent = 1.6 + depth as f64 * 1.4;
     let mut inner = String::new();
@@ -1128,9 +1149,10 @@ fn render_list_item(
     }
 
     // Content: first paragraph inline with marker, further blocks below.
-    let base = css(
+    let base = css_variant(
         ctx.theme,
         "list_item_leaf",
+        tight.then_some("list_item.tight_leaf"),
         &[
             ("font-size", "15px"),
             ("color", "{text}"),
@@ -1169,13 +1191,24 @@ fn render_list_item(
     }
 
     section(
-        &css_owned(
+        &css_owned_variant(
             ctx.theme,
             "list_item",
+            tight.then_some("list_item.tight"),
             vec![
-                ("margin".into(), "6px 0".into()),
+                (
+                    "margin".into(),
+                    if tight {
+                        "2px 0".into()
+                    } else {
+                        "6px 0".into()
+                    },
+                ),
                 ("padding-left".into(), format!("{:.2}em", indent)),
-                ("line-height".into(), "1.75".into()),
+                (
+                    "line-height".into(),
+                    if tight { "1.5".into() } else { "1.75".into() },
+                ),
             ],
         ),
         &inner,

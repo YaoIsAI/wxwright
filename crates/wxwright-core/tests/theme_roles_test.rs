@@ -67,8 +67,17 @@ const DOC: &str = r#"# 一级标题
 |---|---|---|---|---|
 | 1 | 2 | 3 | 4 | 5 |
 
+- 索引一
+- 索引二
+- 索引三
+- 索引四
+- 索引五
+- 索引六
+
 ```rust
 fn main() {}
+
+let a_very_long_configuration_line_that_exceeds_one_hundred_characters_to_trigger_the_wide_variant_of_the_code_block = true;
 ```
 
 - 列表项一
@@ -333,4 +342,51 @@ fn table_dense_is_scoped_to_wide_tables() {
             "{label} table dense-probe presence wrong: {html}"
         );
     }
+}
+
+/// `list.tight` fires on six or more short items (the index shape) and stays
+/// off for short lists; `code.wide` fires when any code line exceeds 100
+/// chars. Both are structure-derived, so the probe document exercises them.
+#[test]
+fn list_and_code_variants_are_scoped_to_their_shapes() {
+    // tight: 6 short items
+    let src = format!(
+        "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.list_item.tight]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+    );
+    let theme = parse_theme(&src).expect("probe theme parses");
+    let mut opts = ConvertOptions::new(theme);
+    opts.image_mode = ImageMode::Keep;
+    let many = "- 一\n- 二\n- 三\n- 四\n- 五\n- 六\n";
+    let few = "- 一\n- 二\n";
+    let hit = convert_markdown(many, &opts).expect("ok").html;
+    let miss = convert_markdown(few, &opts).expect("ok").html;
+    assert!(
+        hit.contains(PROBE_VALUE),
+        "6-item list must go tight: {hit}"
+    );
+    assert!(
+        !miss.contains(PROBE_VALUE),
+        "2-item list must stay airy: {miss}"
+    );
+
+    // wide: any code line over 100 chars
+    let src = format!(
+        "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.code.wide]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+    );
+    let theme = parse_theme(&src).expect("probe theme parses");
+    let mut opts = ConvertOptions::new(theme);
+    opts.image_mode = ImageMode::Keep;
+    let long_line = format!("let v = \"{}\";\n", "x".repeat(120));
+    let hit_md = format!("```rust\n{long_line}```\n");
+    let miss_md = "```rust\nfn main() {}\n```\n";
+    let hit = convert_markdown(&hit_md, &opts).expect("ok").html;
+    let miss = convert_markdown(miss_md, &opts).expect("ok").html;
+    assert!(
+        hit.contains(PROBE_VALUE),
+        "long-line code must go wide: {hit}"
+    );
+    assert!(
+        !miss.contains(PROBE_VALUE),
+        "short code must stay normal: {miss}"
+    );
 }
