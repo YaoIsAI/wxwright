@@ -748,6 +748,45 @@ pub fn publish_article(platform: &str, article_id: &str) -> Result<Value, String
     result
 }
 
+/// 同步发文: post the saved article to every bound social platform (x,
+/// linkedin). Unbound platforms are skipped with a note - never errors - so
+/// one missing binding never masks another platform's success. Per-platform
+/// failures are isolated the same way.
+pub fn publish_all_bound(id: &str) -> Result<Value, String> {
+    let mut results = Vec::new();
+    for platform in ["x", "linkedin"] {
+        let bound = load_binding(platform)
+            .map(|b| !b.access_token.is_empty())
+            .unwrap_or(false);
+        if !bound {
+            results.push(json!({
+                "platform": platform,
+                "status": "skipped",
+                "reason": "尚未绑定：请到 设置 → 发布绑定 完成一键登录",
+            }));
+            continue;
+        }
+        match publish_article(platform, id) {
+            Ok(mut v) => {
+                v["status"] = json!("posted");
+                results.push(v);
+            }
+            Err(e) => results.push(json!({ "platform": platform, "status": "failed", "error": e })),
+        }
+    }
+    let posted = results.iter().filter(|r| r["status"] == "posted").count();
+    Ok(json!({ "posted": posted, "results": results }))
+}
+
+/// Publish the saved article to every bound social platform in one call.
+/// Blocking network IO per platform, hence spawn_blocking at the command layer.
+#[tauri::command]
+pub async fn social_post_all(id: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || publish_all_bound(&id))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
+}
+
 #[tauri::command]
 pub fn social_save_config(
     platform: String,

@@ -36,6 +36,13 @@ const I18N = {
     social_post_title: "发布到当前平台（X / LinkedIn）",
     social_post_busy: "发布中…",
     social_post_ok: (url) => `已发布：${url}`,
+    syncpost_title: "同步发文",
+    syncpost_hint: "把当前编辑器中的文章（需先保存）一键发布到所有已绑定的社交平台（X / LinkedIn）。结果按平台逐条汇报。",
+    syncpost_go: "同步发文",
+    syncpost_busy: "发布中…",
+    syncpost_need_save: "请先保存文章（含正文内容）再同步发文",
+    syncpost_none_bound: "尚未绑定任何社交平台：请先在上方完成 X / LinkedIn 的一键登录",
+    syncpost_done: (posted, total) => `已发布 ${posted}/${total} 个平台，详情见下方`,
     drafts_title: "草稿箱",
     drafts_hint: "最近 10 条草稿；误推的内容可以在这里直接删除。",
     drafts_refresh: "刷新草稿箱",
@@ -173,6 +180,13 @@ const I18N = {
     social_post_title: "Publish to the current platform (X / LinkedIn)",
     social_post_busy: "Posting…",
     social_post_ok: (url) => `Published: ${url}`,
+    syncpost_title: "Sync post",
+    syncpost_hint: "Publish the article in the editor (save first) to every bound social platform (X / LinkedIn) in one click. Results are reported per platform.",
+    syncpost_go: "Sync post",
+    syncpost_busy: "Posting…",
+    syncpost_need_save: "Save the article (with body text) before sync-posting",
+    syncpost_none_bound: "No social platform bound yet: finish the X / LinkedIn one-click login above first",
+    syncpost_done: (posted, total) => `Posted to ${posted}/${total} platforms - details below`,
     drafts_title: "Drafts box",
     drafts_hint: "The last 10 drafts; clean up a mistaken push without leaving the app.",
     drafts_refresh: "Refresh drafts",
@@ -1031,6 +1045,45 @@ async function renderPublishBindings() {
       renderPublishBindings();
     })
   );
+
+  /* 同步发文: one click posts the saved article to every bound social
+     platform; per-platform results render inline under the button. */
+  $("btn-syncpost").addEventListener("click", async () => {
+    if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    const btn = $("btn-syncpost");
+    if (btn.disabled) return;
+    const md = $("editor").value;
+    if (!md.trim()) { toast(t("syncpost_need_save"), "err"); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>' + escapeHtml(t("syncpost_busy"));
+    const status = $("syncpost-status");
+    status.textContent = "";
+    try {
+      if (dirty) await persistCurrent(true);
+      if (!currentArticleId) { toast(t("syncpost_need_save"), "err"); return; }
+      const r = await invoke("social_post_all", { id: currentArticleId });
+      const rows = (r.results || []).map((x) => {
+        const name = (x.platform || "").toUpperCase();
+        if (x.status === "posted") return `${name} OK ${x.url || ""}`;
+        if (x.status === "skipped") return `${name} — ${x.reason || "skipped"}`;
+        return `${name} FAIL ${x.error || "failed"}`;
+      });
+      status.innerHTML = rows.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
+      const posted = (r.results || []).filter((x) => x.status === "posted").length;
+      const total = (r.results || []).length;
+      if (posted > 0) {
+        toast(t("syncpost_done", posted, total), "ok");
+        window.Mozai && Mozai.celebrate();
+      } else if (total > 0) {
+        toast(t("syncpost_none_bound"), "err");
+      }
+    } catch (e) {
+      toast(String(e), "err");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = escapeHtml(t("syncpost_go"));
+    }
+  });
 }
 
 /* push button: WeChat pushes a draft; X/LinkedIn publish live. The label
