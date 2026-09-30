@@ -1235,19 +1235,35 @@ fn render_table(
             decls.push(("background".into(), ctx.theme.color("table_head_bg")));
             decls.push(("font-weight".into(), "600".into()));
         }
-        let role = if head { "table_head" } else { "table_cell" };
+        // `table.dense` family: five or more columns will not fit a phone at
+        // full padding, so wide tables tighten automatically and a theme can
+        // restyle the dense form per role.
+        let dense = ncols >= 5;
+        let role = match (head, dense) {
+            (true, true) => "table_head.dense",
+            (true, false) => "table_head",
+            (false, true) => "table_cell.dense",
+            (false, false) => "table_cell",
+        };
         css_owned(ctx.theme, role, decls)
     };
     // Leaf runs inside cells carry only typography, not the cell layout.
     let cell_leaf = |head: bool| -> String {
+        let dense = ncols >= 5;
         if head {
-            css(
+            css_variant(
                 ctx.theme,
                 "table_head_leaf",
+                dense.then_some("table_head.dense_leaf"),
                 &[("font-weight", "600"), ("color", "{text}")],
             )
         } else {
-            css(ctx.theme, "table_cell_leaf", &[("color", "{text}")])
+            css_variant(
+                ctx.theme,
+                "table_cell_leaf",
+                dense.then_some("table_cell.dense_leaf"),
+                &[("color", "{text}")],
+            )
         }
     };
 
@@ -1304,9 +1320,10 @@ fn render_table(
     }
 
     section(
-        &css(
+        &css_variant(
             ctx.theme,
             "table",
+            (ncols >= 5).then_some("table.dense"),
             &[("margin", "20px 0"), ("overflow-x", "auto")],
         ),
         &format!(

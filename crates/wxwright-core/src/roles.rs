@@ -75,19 +75,29 @@ pub const ROLES: &[RoleDef] = &[
         variants: &["hero"],
     },
     role!("code", "代码块容器", "Code block", RoleShape::Block),
-    role!("table", "表格容器", "Table wrapper", RoleShape::Block),
-    role!(
-        "table_head",
-        "表头单元格",
-        "Table head cell",
-        RoleShape::BlockWithLeaf
-    ),
-    role!(
-        "table_cell",
-        "表格正文单元格",
-        "Table body cell",
-        RoleShape::BlockWithLeaf
-    ),
+    RoleDef {
+        id: "table",
+        label_zh: "表格容器",
+        label_en: "Table wrapper",
+        shape: RoleShape::Block,
+        // `dense` fires on five or more columns: wide tables tighten to fit a
+        // phone, and a theme can style the dense form separately.
+        variants: &["dense"],
+    },
+    RoleDef {
+        id: "table_head",
+        label_zh: "表头单元格",
+        label_en: "Table head cell",
+        shape: RoleShape::BlockWithLeaf,
+        variants: &["dense"],
+    },
+    RoleDef {
+        id: "table_cell",
+        label_zh: "表格正文单元格",
+        label_en: "Table body cell",
+        shape: RoleShape::BlockWithLeaf,
+        variants: &["dense"],
+    },
     role!("list_item", "列表项", "List item", RoleShape::BlockWithLeaf),
     role!(
         "figure_caption",
@@ -321,10 +331,10 @@ mod tests {
             "base key count changed - update the docs too"
         );
         assert_eq!(
-            variant_keys, 4,
+            variant_keys, 9,
             "variant key count changed - update the docs too"
         );
-        assert_eq!(all_keys().len(), 58);
+        assert_eq!(all_keys().len(), 63);
     }
 
     /// Every `BlockWithLeaf` / `CardWithTitle` role must expand its suffix

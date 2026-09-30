@@ -63,6 +63,10 @@ const DOC: &str = r#"# 一级标题
 |---|---|
 | 甲 | 乙 |
 
+| 一 | 二 | 三 | 四 | 五 |
+|---|---|---|---|---|
+| 1 | 2 | 3 | 4 | 5 |
+
 ```rust
 fn main() {}
 ```
@@ -306,4 +310,27 @@ padding = "4px 0"
         sec.contains("margin: 20px 0"),
         "properties the variant does not declare must come from the base role: {sec}"
     );
+}
+
+/// `table.dense` fires on five or more columns - wide tables tighten to fit a
+/// phone - and stays off for narrow ones. A theme restyles the dense form
+/// without touching normal tables.
+#[test]
+fn table_dense_is_scoped_to_wide_tables() {
+    let wide = "| 甲 | 乙 | 丙 | 丁 | 戊 |\n| - | - | - | - | - |\n| 1 | 2 | 3 | 4 | 5 |\n";
+    let narrow = "| 甲 | 乙 |\n| - | - |\n| 1 | 2 |\n";
+    for (label, md, expect_hits) in [("wide", wide, true), ("narrow", narrow, false)] {
+        let src = format!(
+            "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.table_cell.dense]\n{PROBE_PROP} = \"{PROBE_VALUE}\"\n"
+        );
+        let theme = parse_theme(&src).expect("probe theme parses");
+        let mut opts = ConvertOptions::new(theme);
+        opts.image_mode = ImageMode::Keep;
+        let html = convert_markdown(md, &opts).expect("convert ok").html;
+        assert_eq!(
+            html.matches(PROBE_VALUE).count() > 0,
+            expect_hits,
+            "{label} table dense-probe presence wrong: {html}"
+        );
+    }
 }
