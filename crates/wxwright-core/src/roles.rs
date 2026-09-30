@@ -115,6 +115,16 @@ pub const ROLES: &[RoleDef] = &[
         // shape reads better with tighter spacing.
         variants: &["tight"],
     },
+    RoleDef {
+        id: "figure",
+        label_zh: "图片容器",
+        label_en: "Figure",
+        shape: RoleShape::Block,
+        // `portrait` fires on tall images (ratio >= 1.4): full-width portraits
+        // dominate a phone's first screen, so a theme can narrow and centre
+        // the figure instead.
+        variants: &["portrait"],
+    },
     role!(
         "figure_caption",
         "图片图注",
@@ -342,16 +352,16 @@ mod tests {
             "all_keys() disagrees with the ROLES shape arithmetic"
         );
         // Pinned so a role change is a deliberate edit, not an accident.
-        assert_eq!(ROLES.len(), 26, "role count changed - update the docs too");
+        assert_eq!(ROLES.len(), 27, "role count changed - update the docs too");
         assert_eq!(
-            base_keys, 54,
+            base_keys, 55,
             "base key count changed - update the docs too"
         );
         assert_eq!(
-            variant_keys, 12,
+            variant_keys, 13,
             "variant key count changed - update the docs too"
         );
-        assert_eq!(all_keys().len(), 66);
+        assert_eq!(all_keys().len(), 68);
     }
 
     /// Every `BlockWithLeaf` / `CardWithTitle` role must expand its suffix

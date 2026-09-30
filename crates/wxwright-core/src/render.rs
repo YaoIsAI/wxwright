@@ -783,6 +783,16 @@ fn flatten_text(inlines: &[Inline]) -> String {
 
 fn render_img_tag(img: &crate::ir::ImageRef, ctx: &Ctx) -> String {
     let resolved = ctx.img.resolve(&img.src);
+    render_img_tag_resolved(img, &resolved, ctx)
+}
+
+/// Same, for callers that already resolved (figure portraits need the ratio
+/// before rendering, and a second resolve would duplicate the outcome record).
+fn render_img_tag_resolved(
+    img: &crate::ir::ImageRef,
+    resolved: &crate::img::Resolved,
+    ctx: &Ctx,
+) -> String {
     if resolved.failed || resolved.src.is_empty() {
         let label = if img.alt.is_empty() {
             i18n::t("image.missing")
@@ -824,10 +834,36 @@ fn render_standalone_image(
     ctx: &Ctx,
     caption: Option<&[Inline]>,
 ) -> String {
-    let mut out = section(
-        "margin: 20px 0; text-align: center;",
-        &render_img_tag(img, ctx),
-    );
+    // `figure.portrait` fires on tall images (ratio >= 1.4): full-width
+    // portraits dominate a phone's first screen, so a theme can narrow the
+    // figure. The ratio arrives from the resolve in render_img_tag via the
+    // data-ratio attribute the pipeline stamps on every local image.
+    let resolved = ctx.img.resolve(&img.src);
+    let portrait = resolved
+        .data_ratio
+        .as_deref()
+        .and_then(|r| r.parse::<f64>().ok())
+        .is_some_and(|r| r >= 1.4);
+    let container = if portrait {
+        css_variant(
+            ctx.theme,
+            "figure",
+            Some("figure.portrait"),
+            &[
+                ("margin", "20px auto"),
+                ("text-align", "center"),
+                ("max-width", "78%"),
+            ],
+        )
+    } else {
+        css_variant(
+            ctx.theme,
+            "figure",
+            None,
+            &[("margin", "20px 0"), ("text-align", "center")],
+        )
+    };
+    let mut out = section(&container, &render_img_tag_resolved(img, &resolved, ctx));
     if let Some(cap) = caption {
         let style = css(
             ctx.theme,

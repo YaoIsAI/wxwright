@@ -55,7 +55,7 @@ const DOC: &str = r#"# 一级标题
 
 [TOC]
 
-![示例图](https://example.com/pic.png)
+![示例图](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAIAAAAW4yFwAAAAEElEQVR4nGM4YWPDxMDAAAAIHAFD2A3oAAAAAABJRU5ErkJggg==)
 
 *图注文字*
 
@@ -441,4 +441,36 @@ fn builtin_themes_ship_variant_styling() {
             );
         }
     }
+}
+
+const TALL_URI: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAIAAAAW4yFwAAAAEElEQVR4nGM4YWPDxMDAAAAIHAFD2A3oAAAAAABJRU5ErkJggg==";
+const WIDE_URI: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGO0sTnBwMAAAAXCAULLBtHMAAAAAElFTkSuQmCC";
+
+/// `figure.portrait` fires on tall images (ratio >= 1.4) and narrows the
+/// figure; landscape images stay full-width.
+#[test]
+fn figure_portrait_is_scoped_to_tall_images() {
+    let src = "[meta]\nid = \"probe\"\nname = \"probe\"\n\n[block.figure.portrait]\nPROBE_LINE\n";
+    let src = src.replace(
+        "PROBE_LINE",
+        &format!("{} = \"{}\"", PROBE_PROP, PROBE_VALUE),
+    );
+    let tall = format!("![\u{7ad6}\u{56fe}]({})", TALL_URI);
+    let wide = format!("![\u{6a2a}\u{56fe}]({})", WIDE_URI);
+    let mk = || {
+        let t = parse_theme(&src).expect("reparse");
+        let mut o = ConvertOptions::new(t);
+        o.image_mode = ImageMode::Keep;
+        o
+    };
+    let hit = convert_markdown(&tall, &mk()).expect("ok").html;
+    let miss = convert_markdown(&wide, &mk()).expect("ok").html;
+    assert!(
+        hit.contains(PROBE_VALUE),
+        "portrait figure must take the variant: {hit}"
+    );
+    assert!(
+        !miss.contains(PROBE_VALUE),
+        "landscape figure must stay full-width: {miss}"
+    );
 }
