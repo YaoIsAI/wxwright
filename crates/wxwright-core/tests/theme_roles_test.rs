@@ -427,8 +427,8 @@ fn table_zebra_shades_alternate_rows_when_enabled() {
 #[test]
 fn builtin_themes_ship_variant_styling() {
     for id in ["minimal", "techblue", "magazine"] {
-        let theme = wxwright_core::theme::load_theme(id)
-            .unwrap_or_else(|e| panic!("builtin {id}: {e}"));
+        let theme =
+            wxwright_core::theme::load_theme(id).unwrap_or_else(|e| panic!("builtin {id}: {e}"));
         for key in [
             "quote.hero",
             "quote.hero_leaf",
