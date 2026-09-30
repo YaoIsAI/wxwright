@@ -97,6 +97,30 @@ jobs:
       - name: Build GUI bundles
         working-directory: ${{ env.GUI_DIR }}
         run: cargo tauri build --bundles ${{ matrix.bundles }}
+      # Signing is dormant until the maintainer adds the two secrets (see
+      # docs/code-signing.md): without them the step skips and the release
+      # ships unsigned exactly as before - zero-risk infrastructure-in-waiting.
+      - name: Sign Windows installer
+        if: matrix.label == 'windows' && env.SIGNING_PFX != ''
+        working-directory: ${{ env.GUI_DIR }}
+        env:
+          SIGNING_PFX: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          $pfx = "$env:RUNNER_TEMP\signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
+          $signtool = (Get-ChildItem "C:/Program Files (x86)/Windows Kits/10/bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "x64" } | Select-Object -First 1).FullName
+          if (-not $signtool) { throw "signtool.exe not found in Windows SDK" }
+          $bundle = Get-ChildItem -Recurse -Filter "*.exe" |
+            Where-Object { $_.FullName -match "nsis" } |
+            Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $bundle) { throw "no installer exe found to sign" }
+          & $signtool sign /f $pfx /p $env:SIGNING_PFX_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $bundle.FullName
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed: $LASTEXITCODE" }
+          Remove-Item $pfx
+          Write-Output "signed: $($bundle.FullName)"
       - name: Collect bundle artifacts
         shell: bash
         run: |
