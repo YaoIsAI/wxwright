@@ -1536,3 +1536,30 @@ fn cmd_bench(iters: usize, out: &Out) -> Result<i32, String> {
     }
     Ok(0)
 }
+
+#[cfg(test)]
+mod scaffold_tests {
+    use super::*;
+
+    /// `theme new` hands the user a starting point; it must parse as a valid
+    /// theme (including the variant blocks) or the first command a new theme
+    /// author runs is a failure.
+    #[test]
+    fn scaffold_parses_and_ships_variants() {
+        let toml = theme_scaffold("my-theme");
+        let theme =
+            wxwright_core::theme::parse_theme(&toml).expect("scaffold must parse as a valid theme");
+        assert_eq!(theme.meta.id, "my-theme");
+        for key in [
+            "quote.hero",
+            "quote.hero_leaf",
+            "paragraph.lead",
+            "paragraph.lead_leaf",
+        ] {
+            assert!(
+                theme.blocks.contains_key(key),
+                "scaffold must ship the {key} variant"
+            );
+        }
+    }
+}
