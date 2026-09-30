@@ -590,20 +590,44 @@ fn card_from_gfm(k: BlockQuoteKind) -> CardKind {
 /// 3. paragraph with a single display formula -> Formula;
 /// 4. paragraph exactly "[TOC]" -> Toc.
 ///
-/// Cheap pre-filter before a full ChartSpec parse: the text must look like a
-/// JSON object carrying the chart vocabulary. A paragraph of prose that
-/// happens to contain "labels" will not pass; a bare model-emitted spec will.
+/// 5. a paragraph containing a complete chart JSON object -> the chart, with
+///    any prose kept as its own paragraph. Models bolt the spec onto an
+///    intro sentence ("以下是柱状图：{...}") instead of fencing it; the JSON
+///    itself is the contract.
+///
+/// Cheap pre-filter before a full ChartSpec parse: the text must contain a
+/// brace-balanced object that mentions at least two of the chart vocabulary
+/// keys. Prose that merely says "labels" will not pass.
 fn looks_like_chart_json(s: &str) -> bool {
-    let b = s.as_bytes();
-    if b.first() != Some(&b'{') || b.last() != Some(&b'}') {
-        return false;
+    extract_chart_json(s).is_some()
+}
+
+/// Pull the first brace-balanced `{...}` object out of `s`. Returns None when
+/// no object exists or the braces never balance.
+fn extract_chart_json(s: &str) -> Option<&str> {
+    let start = s.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (off, ch) in s[start..].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => depth += 1,
+            '}' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[start..=start + off]);
+                }
+            }
+            _ => {}
+        }
     }
-    let lower = s.to_ascii_lowercase();
-    let hits = ["\"kind\"", "\"labels\"", "\"values\""]
-        .iter()
-        .filter(|k| lower.contains(*k))
-        .count();
-    hits >= 2
+    None
 }
 
 fn postprocess(blocks: &mut Vec<Block>) {
@@ -648,16 +672,24 @@ fn postprocess(blocks: &mut Vec<Block>) {
                     out.push(Block::Toc);
                     i += 1;
                 }
-                Inline::Text(t) if looks_like_chart_json(t.trim()) => {
-                    // Models keep emitting the chart spec as bare JSON in a
-                    // paragraph - exactly the fence-discipline hole the html
-                    // channel hit. The JSON itself is the contract; when a
-                    // whole paragraph parses as a chart spec, honour it
-                    // instead of printing JSON at the reader.
-                    if let Ok(spec) = serde_json::from_str::<ChartSpec>(t.trim()) {
-                        out.push(Block::Chart { spec });
-                    } else {
-                        out.push(blocks[i].clone());
+                Inline::Text(t) if looks_like_chart_json(t) => {
+                    // Models bolt the chart spec onto an intro sentence or
+                    // emit it bare - exactly the fence-discipline hole the
+                    // html channel hit. The JSON itself is the contract:
+                    // extract the object, render the chart, and keep any
+                    // prose in front of it as its own paragraph.
+                    let json_str = extract_chart_json(t).unwrap_or("");
+                    match serde_json::from_str::<ChartSpec>(json_str) {
+                        Ok(spec) => {
+                            let lead = t[..t.find(json_str).unwrap_or(0)].trim();
+                            if !lead.is_empty() {
+                                out.push(Block::Paragraph {
+                                    inlines: vec![Inline::Text(lead.to_string())],
+                                });
+                            }
+                            out.push(Block::Chart { spec });
+                        }
+                        Err(_) => out.push(blocks[i].clone()),
                     }
                     i += 1;
                 }
@@ -745,6 +777,28 @@ mod tests {
         // Prose that merely mentions the vocabulary must stay prose.
         let prose = parse_markdown("labels and values are chart words, this is not JSON.\n");
         assert!(matches!(&prose[0], Block::Paragraph { .. }));
+    }
+
+    /// The live shape from a real model: an intro sentence and the spec in
+    /// ONE paragraph. The prose survives as a paragraph, the JSON becomes the
+    /// chart, and the reader never sees raw JSON.
+    #[test]
+    fn chart_json_glued_to_prose_is_split_and_rendered() {
+        let md = "以下是柱状图，展示 2023–2025 年用户规模的三年增长：\n{\"kind\":\"bar\",\"title\":\"年度用户规模增长\",\"labels\":[\"2023\",\"2024\",\"2025\"],\"values\":[120,350,900],\"unit\":\"万\"}\n\n读数速览：\n";
+        let blocks = parse_markdown(md);
+        assert!(
+            matches!(&blocks[0], Block::Paragraph { .. }),
+            "lead prose stays: {:?}",
+            blocks[0]
+        );
+        assert!(
+            matches!(&blocks[1], Block::Chart { .. }),
+            "chart renders: {:?}",
+            blocks[1]
+        );
+        assert!(matches!(&blocks[2], Block::Paragraph { .. }));
+        let full: String = format!("{:?}", &blocks[..2]);
+        assert!(!full.contains("{&quot;"), "no raw JSON reaches output");
     }
 
     #[test]
