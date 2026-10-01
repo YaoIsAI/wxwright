@@ -59,6 +59,12 @@ enum Commands {
         /// Target platform id (see `wxwright platforms`). Default: wechat.
         #[arg(long)]
         platform: Option<String>,
+        /// Source format: markdown (default) or html. HTML input skips the
+        /// template renderer and runs the compliance normalizer + validator
+        /// directly - arbitrary HTML from any tool goes in, official-spec
+        /// HTML comes out.
+        #[arg(long, default_value = "markdown")]
+        input_format: String,
         /// Output file, or "-" for stdout.
         #[arg(long, default_value = "-")]
         out: String,
@@ -291,8 +297,16 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
             input,
             theme,
             platform,
+            input_format,
             out: out_path,
-        } => cmd_convert(input, theme.as_deref(), platform.as_deref(), out_path, out),
+        } => cmd_convert(
+            input,
+            theme.as_deref(),
+            platform.as_deref(),
+            input_format.as_str(),
+            out_path,
+            out,
+        ),
         Commands::Validate {
             input,
             strict,
@@ -421,6 +435,7 @@ fn cmd_convert(
     input: &str,
     theme_name: Option<&str>,
     platform: Option<&str>,
+    input_format: &str,
     out_path: &str,
     out: &Out,
 ) -> Result<i32, String> {
@@ -433,6 +448,43 @@ fn cmd_convert(
             "unknown platform {:?}; falling back to {} - run `wxwright platforms` for the id list",
             platform_id, spec.id
         ));
+    }
+
+    // Direct-HTML entry: the source is already HTML, so the template renderer
+    // is skipped - the compliance normalizer + validator are the whole chain
+    // (PRD 5.1: the normalizer as the fixer for hand-authored HTML).
+    if input_format.eq_ignore_ascii_case("html") {
+        let result = wxwright_core::pipeline_html(&raw).map_err(|e| e.to_string())?;
+        let html = wxwright_core::wrap_document(&result.html, "#FFFFFF");
+        let blocking = result.blocking_violations().len();
+        let payload = serde_json::json!({
+            "ok": true,
+            "input_format": "html",
+            "html": html,
+            "fixes": result.fixes,
+            "violations": result.violations,
+            "blocking_count": blocking,
+        });
+        if out.json_mode {
+            out.print_json(&payload);
+        } else {
+            violation_report(out, &result.violations);
+        }
+        if out_path == "-" {
+            if !out.json_mode {
+                std::io::stdout()
+                    .write_all(html.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                println!();
+            }
+        } else {
+            std::fs::write(out_path, &html)
+                .map_err(|e| format!("cannot write {}: {}", out_path, e))?;
+            if !out.json_mode {
+                out.ok(&format!("written to {}", out_path));
+            }
+        }
+        return Ok(if blocking > 0 { 1 } else { 0 });
     }
 
     // One engine, many exits (PRD 3.1): platforms that do not paste styled

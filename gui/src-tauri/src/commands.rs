@@ -494,10 +494,34 @@ pub async fn wx_push_draft(
             .chars()
             .take(120)
             .collect();
-        let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
-        opts.image_mode = ImageMode::Upload;
-        opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
-        let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+        // format: html frontmatter switches the source to direct HTML: the
+        // compliance normalizer + validator are the whole chain (no template
+        // render) - arbitrary HTML goes in, official-spec HTML goes to the
+        // draft box. Local images in HTML mode still need manual upload.
+        let is_html = front
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("format") && v.trim().eq_ignore_ascii_case("html"));
+        let result = if is_html {
+            let norm = wxwright_core::normalizer::normalize_html(
+                &md,
+                wxwright_core::normalizer::NormalizeOptions::default(),
+            )
+            .map_err(|e| e.to_string())?;
+            let violations = wxwright_core::validator::validate_html(&norm.html);
+            wxwright_core::PipelineOutput {
+                html: norm.html,
+                images: Vec::new(),
+                stats: wxwright_core::ir::Stats::default(),
+                links: Vec::new(),
+                fixes: norm.fixes,
+                violations,
+            }
+        } else {
+            let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
+            opts.image_mode = ImageMode::Upload;
+            opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
+            wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?
+        };
         let blocks = result.blocking_violations();
         if !blocks.is_empty() {
             let list = blocks
@@ -510,6 +534,27 @@ pub async fn wx_push_draft(
                 blocks.len(),
                 list
             ));
+        }
+        if is_html {
+            // I-03 for the direct-HTML entry: the img pipeline did not run,
+            // so scan the normalized HTML for paste-hostile sources manually.
+            let hostile: Vec<String> = result
+                .html
+                .split("src=\"")
+                .skip(1)
+                .filter_map(|rest| {
+                    let end = rest.find('"')?;
+                    let src = &rest[..end];
+                    if src.starts_with("https://") { None } else { Some(src.to_string()) }
+                })
+                .collect();
+            if !hostile.is_empty() {
+                return Err(format!(
+                    "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或 https 直链），草稿未推送：{}",
+                    hostile.len(),
+                    hostile.join("; ")
+                ));
+            }
         }
         // I-03: the draft content must not carry base64 payloads, plain-http
         // hosts or images that failed to upload - the MP editor renders all
@@ -611,10 +656,34 @@ pub async fn wx_update_draft(
             .chars()
             .take(120)
             .collect();
-        let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
-        opts.image_mode = ImageMode::Upload;
-        opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
-        let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+        // format: html frontmatter switches the source to direct HTML: the
+        // compliance normalizer + validator are the whole chain (no template
+        // render) - arbitrary HTML goes in, official-spec HTML goes to the
+        // draft box. Local images in HTML mode still need manual upload.
+        let is_html = front
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("format") && v.trim().eq_ignore_ascii_case("html"));
+        let result = if is_html {
+            let norm = wxwright_core::normalizer::normalize_html(
+                &md,
+                wxwright_core::normalizer::NormalizeOptions::default(),
+            )
+            .map_err(|e| e.to_string())?;
+            let violations = wxwright_core::validator::validate_html(&norm.html);
+            wxwright_core::PipelineOutput {
+                html: norm.html,
+                images: Vec::new(),
+                stats: wxwright_core::ir::Stats::default(),
+                links: Vec::new(),
+                fixes: norm.fixes,
+                violations,
+            }
+        } else {
+            let mut opts = ConvertOptions::new(load_theme_or_default(&theme_id));
+            opts.image_mode = ImageMode::Upload;
+            opts.transport = Some(std::sync::Arc::new(wxwright_mp::MpClient::new(creds)));
+            wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?
+        };
         let blocks = result.blocking_violations();
         if !blocks.is_empty() {
             let list = blocks
@@ -627,6 +696,25 @@ pub async fn wx_update_draft(
                 blocks.len(),
                 list
             ));
+        }
+        if is_html {
+            let hostile: Vec<String> = result
+                .html
+                .split("src=\"")
+                .skip(1)
+                .filter_map(|rest| {
+                    let end = rest.find('"')?;
+                    let src = &rest[..end];
+                    if src.starts_with("https://") { None } else { Some(src.to_string()) }
+                })
+                .collect();
+            if !hostile.is_empty() {
+                return Err(format!(
+                    "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或 https 直链），草稿未更新：{}",
+                    hostile.len(),
+                    hostile.join("; ")
+                ));
+            }
         }
         let paste_hostile: Vec<String> = result
             .images
