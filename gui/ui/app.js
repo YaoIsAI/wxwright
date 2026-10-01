@@ -52,6 +52,7 @@ const I18N = {
     drafts_loading: "读取草稿箱…",
     drafts_none: "草稿箱为空。",
     drafts_delete: "删除",
+    drafts_update: "用当前文章更新此草稿",
     drafts_deleted: "草稿已删除",
     drafts_update: "用当前文章更新",
     drafts_updated: "草稿已更新",
@@ -199,6 +200,7 @@ const I18N = {
     drafts_loading: "Loading drafts…",
     drafts_none: "The drafts box is empty.",
     drafts_delete: "Delete",
+    drafts_update: "Update this draft from the editor",
     drafts_deleted: "Draft deleted",
     drafts_update: "Update from editor",
     drafts_updated: "Draft updated",
@@ -577,6 +579,9 @@ async function renderSidebarDrafts() {
           <div class="draft-title" title="${title}">${title}</div>
           <div class="draft-when">${when}</div>
         </div>
+        <button type="button" class="draft-act" data-draft-update="${mediaId}" title="${t("drafts_update")}">
+          <svg class="icon icon-sm"><use href="#i-edit"/></svg>
+        </button>
         <button type="button" class="draft-del" data-del-draft="${mediaId}" title="${t("drafts_delete")}">
           <svg class="icon icon-sm"><use href="#i-trash"/></svg>
         </button>
@@ -594,6 +599,30 @@ async function renderSidebarDrafts() {
           toast(String(e), "err");
           btn.disabled = false;
         }
+      });
+    });
+    host.querySelectorAll("[data-draft-update]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const mid = btn.dataset.draftUpdate;
+        const md = $("editor").value;
+        if (!md.trim()) { toast(t("syncpost_need_save"), "err"); return; }
+        btn.disabled = true;
+        try {
+          if (dirty) await persistCurrent(true);
+          if (!currentArticleId) { toast(t("syncpost_need_save"), "err"); btn.disabled = false; return; }
+          const r = await invoke("wx_update_draft", {
+            mediaId: mid,
+            title: loadedTitle || autoTitle(md),
+            markdown: md,
+            themeId: currentTheme,
+            coverImagePath: null,
+          });
+          const warns = r && r.warnings ? r.warnings : 0;
+          toast(t("drafts_updated") + (warns ? ` (${t("drafts_warns", warns)})` : ""), "ok");
+        } catch (e) {
+          toast(String(e), "err");
+        }
+        btn.disabled = false;
       });
     });
   } catch (e) {

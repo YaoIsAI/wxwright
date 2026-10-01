@@ -1516,3 +1516,5 @@ body { display: flex; flex-direction: column; }
 .draft-del { border: 0; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; border-radius: 4px; }
 .draft-del:hover { color: var(--err); }
 .sd-empty { padding: 14px 10px; font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
+.draft-act { border: 0; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; border-radius: 4px; }
+.draft-act:hover { color: var(--accent); }
