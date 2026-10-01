@@ -10,7 +10,10 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
   "zh-CN": {
-    library: "文章库", theme: "主题", copy: "复制富文本", ai: "AI 助手",
+    library: "文章库",
+    stab_articles: "文章",
+    stab_drafts: "草稿箱",
+    drafts_hint_other: "当前平台的云端草稿箱暂未接入；公众号平台的草稿箱在此查看。", theme: "主题", copy: "复制富文本", ai: "AI 助手",
     ready: "就绪", converting: "转换中...", not_saved: "未保存", saved: "已保存",
     save: "保存", empty_library: "还没有文章\n点击右上角 + 新建",
     search_ph: "搜索文章...",
@@ -154,7 +157,10 @@ const I18N = {
     job_stopped: "已停止",
   },
   en: {
-    library: "Library", theme: "Theme", copy: "Copy rich text", ai: "AI",
+    library: "Library",
+    stab_articles: "Articles",
+    stab_drafts: "Drafts",
+    drafts_hint_other: "No cloud drafts box for this platform yet; the WeChat MP drafts box shows here.", theme: "Theme", copy: "Copy rich text", ai: "AI",
     ready: "Ready", converting: "Converting...", not_saved: "unsaved", saved: "saved",
     save: "Save", empty_library: "No articles yet.\nClick + to create.",
     search_ph: "Search articles...",
@@ -525,6 +531,76 @@ async function loadThemesText() {
 }
 
 /* -------------------------------------------------------------- library */
+
+/* ------------------------------------------------- sidebar drafts tab */
+let sidebarTab = "articles";
+
+function setSidebarTab(tab) {
+  sidebarTab = tab;
+  document.querySelectorAll(".stab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.stab === tab)
+  );
+  $("article-list").hidden = tab !== "articles";
+  $("drafts-list").hidden = tab !== "drafts";
+  $("library-search").hidden = tab !== "articles";
+  if (tab === "drafts") renderSidebarDrafts();
+}
+
+function openMpAdmin() {
+  const url = "https://mp.weixin.qq.com/";
+  if (window.__TAURI__ && window.__TAURI__.opener) window.__TAURI__.opener.openUrl(url);
+  else window.open(url, "_blank");
+}
+
+async function renderSidebarDrafts() {
+  const host = $("drafts-list");
+  if (!host) return;
+  if (!invoke) { host.innerHTML = `<div class="sd-empty">${t("demo_mode")}</div>`; return; }
+  // platform-aware: only WeChat has a cloud drafts box today
+  if (currentPlatform !== "wechat") {
+    host.innerHTML = `<div class="sd-empty">${t("drafts_hint_other")}</div>`;
+    return;
+  }
+  host.innerHTML = `<div class="sd-empty">${t("drafts_loading")}</div>`;
+  try {
+    const v = await invoke("wx_draft_list", { offset: 0, count: 20 });
+    const items = v.item || [];
+    if (!items.length) { host.innerHTML = `<div class="sd-empty">${t("drafts_none")}</div>`; return; }
+    host.innerHTML = items.map((it) => {
+      const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
+      const mediaId = escapeHtml(String(it.media_id || ""));
+      const title = escapeHtml(String(nid.title || "(untitled)"));
+      const ts = it.content && it.content.update_time ? it.content.update_time : 0;
+      const when = ts ? new Date(ts * 1000).toLocaleString() : "";
+      return `<div class="draft-item" data-media="${mediaId}">
+        <div class="draft-meta">
+          <div class="draft-title" title="${title}">${title}</div>
+          <div class="draft-when">${when}</div>
+        </div>
+        <button type="button" class="draft-del" data-del-draft="${mediaId}" title="${t("drafts_delete")}">
+          <svg class="icon icon-sm"><use href="#i-trash"/></svg>
+        </button>
+      </div>`;
+    }).join("");
+    host.querySelectorAll("[data-del-draft]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const mid = btn.dataset.delDraft;
+        btn.disabled = true;
+        try {
+          await invoke("wx_draft_delete", { mediaId: mid });
+          toast(t("drafts_deleted"), "ok");
+          renderSidebarDrafts();
+        } catch (e) {
+          toast(String(e), "err");
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (e) {
+    host.innerHTML = `<div class="sd-empty">${escapeHtml(String(e))}</div>`;
+  }
+}
+
 function autoTitle(md) {
   const m = md.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : (lang === "zh-CN" ? "未命名文章" : "Untitled");
@@ -1783,6 +1859,7 @@ function applyPlatform(id) {
   renderPlatformPresets();
   refreshCopyButton();
   updatePushDraftButton();
+  if (sidebarTab === "drafts") renderSidebarDrafts();
   if (!$("modal-poster").hidden) {
     // untouched template follows the new platform's canvas; edited HTML stays
     if (!posterTemplateDirty) {
@@ -3435,6 +3512,9 @@ function bindUI() {
   $("btn-library").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
   $("btn-new-article").addEventListener("click", newArticle);
   $("btn-import").addEventListener("click", importMdFiles);
+  document.querySelectorAll(".stab").forEach((b) => {
+    b.addEventListener("click", () => setSidebarTab(b.dataset.stab));
+  });
   $("btn-save").addEventListener("click", () => persistCurrent(false));
   $("btn-illustrate").addEventListener("click", async () => {
     if (!invoke) { toast(t("demo_mode"), "err"); return; }
@@ -3690,7 +3770,6 @@ function bindUI() {
     renderProviderList();
     refreshWxStatus();
     renderPublishBindings();
-    renderWxDrafts();
     if (invoke) {
       try {
         const st = await invoke("comfy_status");
@@ -3731,77 +3810,6 @@ function bindUI() {
       chip.textContent = t("wx_status_fail");
     }
   }
-  /* drafts box: recent 10 items with delete, so a mistaken push never
-     requires a trip to the web console */
-  async function renderWxDrafts() {
-    const host = $("drafts-list");
-    if (!host) return;
-    if (!invoke) { host.textContent = ""; return; }
-    host.textContent = t("drafts_loading");
-    try {
-      const v = await invoke("wx_draft_list", { offset: 0, count: 10 });
-      const items = v.item || [];
-      if (!items.length) { host.textContent = t("drafts_none"); return; }
-      host.innerHTML = items.map((it) => {
-        const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
-        const mediaId = escapeHtml(String(it.media_id || ""));
-        const title = escapeHtml(String(nid.title || "(untitled)")).slice(0, 60);
-        const ts = it.content && it.content.update_time ? it.content.update_time : 0;
-        const when = ts ? new Date(ts * 1000).toLocaleString() : "";
-        return `<div class="draft-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</div>
-            <div style="font-size:11px;color:var(--text-tertiary);">${when}</div>
-          </div>
-          <button type="button" class="btn btn-ghost" style="padding:2px 10px;font-size:12px;" data-draft-update="${mediaId}">${t("drafts_update")}</button>
-          <button type="button" class="btn btn-ghost" style="padding:2px 10px;font-size:12px;" data-draft="${mediaId}">${t("drafts_delete")}</button>
-        </div>`;
-      }).join("");
-      host.querySelectorAll("[data-draft]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const mid = btn.dataset.draft;
-          btn.disabled = true;
-          try {
-            await invoke("wx_draft_delete", { mediaId: mid });
-            toast(t("drafts_deleted"), "ok");
-            renderWxDrafts();
-          } catch (e) {
-            toast(String(e), "err");
-            btn.disabled = false;
-          }
-        });
-      });
-      host.querySelectorAll("[data-draft-update]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const mid = btn.dataset.draftUpdate;
-          const md = $("editor").value;
-          if (!md.trim()) { toast(t("illustrate_need_save"), "err"); return; }
-          btn.disabled = true;
-          btn.innerHTML = '<span class="spin"></span>';
-          try {
-            if (dirty) await persistCurrent(true);
-            const r = await invoke("wx_update_draft", {
-              mediaId: mid,
-              title: loadedTitle || autoTitle(md),
-              markdown: md,
-              themeId: currentTheme,
-              coverImagePath: null,
-            });
-            const warns = r && r.warnings ? r.warnings : 0;
-            toast(t("drafts_updated") + (warns ? ` (${t("drafts_warns", warns)})` : ""), "ok");
-            renderWxDrafts();
-          } catch (e) {
-            toast(String(e), "err");
-            btn.disabled = false;
-            btn.innerHTML = t("drafts_update");
-          }
-        });
-      });
-    } catch (e) {
-      host.textContent = String(e);
-    }
-  }
-  $("drafts-refresh").addEventListener("click", () => renderWxDrafts());
   $("wx-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!invoke) return toast(t("wx_demo_only"), "err");

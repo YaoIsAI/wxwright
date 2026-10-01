@@ -1503,3 +1503,16 @@ body { display: flex; flex-direction: column; }
 .help-steps li { font-size: 13px; line-height: 1.55; }
 .help-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .help-note { border-left: 3px solid var(--accent-soft); padding-left: 10px; }
+
+/* sidebar tabs: articles / drafts box */
+.sidebar-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; }
+.stab { border: 0; background: none; padding: 2px 8px; font: inherit; color: var(--text-secondary); cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.stab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.draft-item { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 8px; }
+.draft-item:hover { background: var(--bg-subtle); }
+.draft-meta { flex: 1; min-width: 0; }
+.draft-title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.draft-when { font-size: 11px; color: var(--text-tertiary); }
+.draft-del { border: 0; background: none; color: var(--text-tertiary); cursor: pointer; padding: 2px; border-radius: 4px; }
+.draft-del:hover { color: var(--err); }
+.sd-empty { padding: 14px 10px; font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
