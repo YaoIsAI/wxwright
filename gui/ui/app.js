@@ -475,6 +475,17 @@ async function convertNow() {
     return;
   }
   try {
+    // direct-HTML articles: editor content IS the layout - straight through
+    // the compliance normalizer + validator, no template render
+    if (articleFormat === "html") {
+      const res = await invoke("html_preview", { html: md });
+      lastResult = res;
+      $("preview").srcdoc = wrapPreviewHtml(res.html);
+      updateStats(res.stats, res.violations);
+      if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
+      $("status-text").textContent = t("ready");
+      return;
+    }
     const res = await invoke("convert_preview", { markdown: md, themeId: currentTheme });
     lastResult = res;
     // channel preview: same article, the target platform's own layout
@@ -688,7 +699,7 @@ async function refreshLibrary() {
       const art = await invoke("read_article", { id: btn.dataset.rename });
       const newTitle = await uiPrompt(t("prompt_rename"), art.meta.title);
       if (newTitle && newTitle.trim() && newTitle !== art.meta.title) {
-        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, platform: art.meta.platform, markdown: art.markdown });
+        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, platform: art.meta.platform, format: articleFormat, markdown: art.markdown });
         toast(t("renamed_ok"), "ok");
         refreshLibrary();
       }
@@ -698,7 +709,7 @@ async function refreshLibrary() {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const art = await invoke("read_article", { id: btn.dataset.dup });
-      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, platform: art.meta.platform, markdown: art.markdown });
+      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, platform: art.meta.platform, format: articleFormat, markdown: art.markdown });
       toast(t("duplicated_ok"), "ok");
       refreshLibrary();
     });
@@ -736,6 +747,7 @@ async function persistCurrent(silent = false) {
     title,
     theme: currentTheme,
     platform: currentPlatform,
+    format: articleFormat,
     markdown: md,
   });
   currentArticleId = meta.id;
@@ -758,7 +770,7 @@ async function openArticle(id) {
     if (currentArticleId === null) {
       const md = $("editor").value;
       if (md.trim().length > 0) {
-        const meta = await invoke("save_article", { id: null, title: autoTitle(md), theme: currentTheme, platform: currentPlatform, markdown: md });
+        const meta = await invoke("save_article", { id: null, title: autoTitle(md), theme: currentTheme, platform: currentPlatform, format: articleFormat, markdown: md });
         toast(t("saved_new_ok", meta.title));
       }
     } else {
@@ -803,7 +815,7 @@ async function importMdFiles() {
     });
     if (!path) return;
     const content = await invoke("read_text_file", { path });
-    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, platform: currentPlatform, markdown: content });
+    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, platform: currentPlatform, format: articleFormat, markdown: content });
     toast(t("imported_ok"), "ok");
     refreshLibrary();
   } catch (e) {

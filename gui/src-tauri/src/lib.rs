@@ -19,6 +19,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_themes,
             commands::convert_preview,
+            commands::html_preview,
             commands::copy_rich,
             commands::export_html,
             commands::read_text_file,

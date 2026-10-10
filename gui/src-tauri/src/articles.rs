@@ -13,6 +13,8 @@ pub struct ArticleMeta {
     pub theme: String,
     /// Target platform id ("wechat" | "xhs" | ...), persisted in frontmatter.
     pub platform: String,
+    /// Source format: "markdown" (default) or "html" (direct-HTML entry).
+    pub format: String,
     pub chars: usize,
 }
 
@@ -96,6 +98,14 @@ fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
     let updated = get("updated").unwrap_or_default();
     let theme = get("theme").unwrap_or_else(|| "minimal".to_string());
     let platform = get("platform").unwrap_or_else(|| "wechat".to_string());
+    let format = {
+        let f = get("format").unwrap_or_default();
+        if f.eq_ignore_ascii_case("html") {
+            "html".to_string()
+        } else {
+            "markdown".to_string()
+        }
+    };
     Some(ArticleMeta {
         id,
         title,
@@ -103,6 +113,7 @@ fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
         updated,
         theme,
         platform,
+        format,
         chars: body.chars().count(),
     })
 }
@@ -139,6 +150,7 @@ pub fn save_article(
     title: &str,
     theme: &str,
     platform: &str,
+    format: &str,
     markdown: &str,
 ) -> Result<ArticleMeta, String> {
     let dir = library_dir();
@@ -165,13 +177,20 @@ pub fn save_article(
     } else {
         title.trim()
     };
+    let fmt = if format.eq_ignore_ascii_case("html") {
+        "html"
+    } else {
+        "markdown"
+    };
+    let format_line = if fmt == "html" { "\nformat: html" } else { "" };
     let body = format!(
-        "---\ntitle: \"{}\"\ncreated: {}\nupdated: {}\ntheme: {}\nplatform: {}\n---\n\n{}",
+        "---\ntitle: \"{}\"\ncreated: {}\nupdated: {}\ntheme: {}\nplatform: {}{}\n---\n\n{}",
         title.replace('"', "'"),
         created,
         updated,
         theme,
         platform,
+        format_line,
         markdown.trim_start()
     );
     let path = dir.join(format!("{}.md", id));
@@ -188,6 +207,7 @@ pub fn save_article(
         updated,
         theme: theme.to_string(),
         platform: platform.to_string(),
+        format: fmt.to_string(),
         chars: markdown.chars().count(),
     })
 }

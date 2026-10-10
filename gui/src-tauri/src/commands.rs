@@ -56,6 +56,23 @@ pub struct PreviewResult {
 }
 
 #[tauri::command]
+pub fn html_preview(html: String) -> Result<PreviewResult, String> {
+    let norm = wxwright_core::normalizer::normalize_html(
+        &html,
+        wxwright_core::normalizer::NormalizeOptions::default(),
+    )
+    .map_err(|e| e.to_string())?;
+    let violations = wxwright_core::validator::validate_html(&norm.html);
+    Ok(PreviewResult {
+        html: norm.html,
+        stats: wxwright_core::ir::Stats::default(),
+        fixes: norm.fixes,
+        violations,
+        image_warnings: Vec::new(),
+    })
+}
+
+#[tauri::command]
 pub fn convert_preview(markdown: String, theme_id: String) -> Result<PreviewResult, String> {
     let opts = ConvertOptions {
         theme: load_theme_or_default(&theme_id),
@@ -205,6 +222,7 @@ pub fn save_article(
     title: String,
     theme: String,
     platform: Option<String>,
+    format: Option<String>,
     markdown: String,
 ) -> Result<ArticleMeta, String> {
     crate::articles::save_article(
@@ -212,6 +230,7 @@ pub fn save_article(
         &title,
         &theme,
         platform.as_deref().unwrap_or("wechat"),
+        format.as_deref().unwrap_or("markdown"),
         &markdown,
     )
 }
