@@ -125,7 +125,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 海外平台使用**你自己的**开发者应用——本工具不提供云服务，凭据只存本机：
 
-- **X (Twitter)** 与 **LinkedIn**：一键登录已端到端实装（OAuth 2.0 PKCE / code flow + 本地回环回调，令牌存系统钥匙串）。导出文案已是推文/帖子格式。
+- **X (Twitter)** 与 **LinkedIn**：一键登录已端到端实装（OAuth 2.0 PKCE / code flow + 本地回环回调，令牌存系统钥匙串），**并已打通实际发文**：状态行按钮直接把文章的文案导出发到 feed（X 最多 4 图、LinkedIn 1 图），一键同步发文到全部已绑定账号，X 令牌到期自动续期。导出文案已是推文/帖子格式。
 - **Facebook / Instagram**：凭据接口就绪；登录流受 Meta 应用审核与 Instagram 公网图床要求所限（详见 `docs/social-publish-oauth-feasibility.md`）。
 
 各平台的逐步注册与登录教程在顶栏 **?（配置引导）**里——含官方门户直达与各平台费用说明（X API 自 2026-02 起按量计费）。

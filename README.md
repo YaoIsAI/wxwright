@@ -127,7 +127,7 @@ The GUI binary also answers `wxwright-gui.exe mcp serve`, so a standalone GUI in
 
 Overseas platforms use **your own** developer app - the tool ships no cloud service and stores nothing outside your machine:
 
-- **X (Twitter)** and **LinkedIn**: one-click login is implemented end to end (OAuth 2.0 PKCE / code flow over a local loopback callback, tokens in the OS keychain). Caption export is tweet/post formatted already.
+- **X (Twitter)** and **LinkedIn**: one-click login is implemented end to end (OAuth 2.0 PKCE / code flow over a local loopback callback, tokens in the OS keychain), **plus live posting**: the status-row button publishes the article's caption export with fitted local images (X up to four, LinkedIn one), one click posts to every bound account, and X tokens auto-refresh. Caption export is tweet/post formatted already.
 - **Facebook / Instagram**: credential interface ready; their login flows are gated by Meta app review and Instagram's public-URL media requirement (see `docs/social-publish-oauth-feasibility.md`).
 
 Step-by-step app registration guides live behind the **? (Setup guide)** button in the top bar - including official portal links and per-platform costs (X API bills per use since 2026-02).

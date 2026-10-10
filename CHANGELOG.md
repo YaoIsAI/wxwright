@@ -10,6 +10,44 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Added
+- **Theme variants: six content-aware families plus zebra tables.** Roles
+  now declare variants keyed by content shape, resolved at render time:
+  `quote.hero` (short pull-quotes), `paragraph.lead` (first paragraph),
+  `table.dense` (5+ columns tighten), `list.tight` (6+ short items compact),
+  `code.wide` (long lines indent), `figure.portrait` (tall standalone images
+  narrow and centre), plus `table_zebra` (meta switch + `table_zebra_bg`
+  token). `roles.rs` stays the single source of truth; the AI theme prompt
+  teaches the variants and the save path backfills defaults.
+- **Direct-HTML entry, end to end.** An article with `format: html` in its
+  frontmatter bypasses the Markdown template renderer: the body is
+  normalized and validated as-is (`pipeline_html`), the GUI previews and
+  pushes it through the same compliance chain (I-03 image gate included),
+  the CLI takes `convert --input-format html`, and the AI assistant switches
+  its system prompt to teach the compliant inline-style dialect when the
+  open article is HTML. Markdown stays the default; both sources coexist.
+- **One-click sync posting.** The publish-bindings pane gains a 同步发文
+  action: post the saved article to every bound account (X, LinkedIn) in
+  one click, per-platform failures isolated, unbound platforms skipped with
+  guidance.
+- **Sidebar drafts box.** The sidebar splits into 文章 / 草稿箱 tabs: cloud
+  drafts load on demand, a pencil button loads a draft back into the editor
+  for update, one-click delete, and an MP-console shortcut under every
+  drafts state.
+- **Live posting for X and LinkedIn.** The publish bindings pane used to end
+  at token storage; the last mile - actually putting a post on the feed - is
+  now wired end to end. The status-row push button doubles by platform: on
+  WeChat it pushes a draft, on X / LinkedIn it publishes the article's
+  caption export (the same linearisation `convert --platform` produces) with
+  the article's local images fitted to the platform's image profile. X takes
+  up to four images via the v2 media upload (the login scope gains
+  `media.write`; nobody had bound an account before the scope change, so no
+  re-login is forced), LinkedIn takes one via registerUpload + pre-signed
+  PUT. API errors surface their response bodies, not bare status codes.
+- **`wxwright draft delete --media-id <id>`.** A mistaken push could only be
+  cleaned up by hand in the web console; the lifecycle now closes in the CLI
+  the same way it opens.
+
 ### Changed
 - **The theme prompt now demands the variant keys, and the save path
   backfills them from the theme's own palette.** Live generations wrote 30
@@ -25,8 +63,42 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 - **X / LinkedIn posting guidance when unbound.** Hitting Post without a
   binding says exactly that and where to fix it, instead of a generic
   failure.
+- **Every heavy Tauri command now runs off the main thread.** A review pass
+  found eight sync commands doing blocking work on the UI thread (the 3s
+  network probe in `comfy_status`, PDF/DOCX parsing, whole-image decodes per
+  asset-grid cell, the 4-second library poll re-reading every article, file
+  save/read). All are `async` + `spawn_blocking` now - a dead ComfyUI host
+  no longer freezes the window for 3 seconds.
 
 ### Fixed
+- **Five-expert review batch (engine / security / Tauri backend / frontend /
+  release chain).** Highlights: AI illustration used to overwrite edits made
+  while images generated - it now re-reads the file and bails out instead,
+  and article writes are atomic (temp + rename). `strip_frontmatter` no
+  longer swallows the body of an article that opens with a `---` horizontal
+  rule. `<section/onmouseover>` can no longer slip past the markup
+  allowlist, `validate_html` reports event-handler attributes as block
+  violations, and the SVG-kit preview plus poster-rasterization iframes are
+  sandboxed - the path from AI output to Tauri IPC is closed. CLI
+  `draft update` regained the two draft gates (blocking violations +
+  paste-hostile images) it never had, and CLI violation lines fall back to
+  the violation message for platform rules outside the core table. The
+  direct-HTML image gate is one quote-aware implementation
+  (`paste_hostile_html_imgs`) instead of hand-rolled scanners that missed
+  single-quoted `src='data:...'`. X access tokens auto-refresh from the
+  stored refresh_token; LinkedIn expiry surfaces as a re-login instruction
+  instead of a bare 401. Article images resolve only inside the article
+  directory - an absolute src can no longer upload an arbitrary local file
+  to X / LinkedIn. MCP `install` aborts on an unparseable client config
+  instead of resetting it (JSONC configs kept their other servers), and
+  MCP `convert` runs the full pipeline with violations included. Theme ids
+  are filename-safe before `save_user_theme`; malformed chart JSON inside
+  ``` fences stays code. Toast messages are escaped, the violations panel
+  escapes rule ids, and the three remaining format-state gaps
+  (rename/duplicate/import/drag-in) now carry the article's own format.
+  X media uploads sniff the real image type instead of declaring every
+  non-PNG a JPEG, LinkedIn enforces its 5MB limit, and DOCX extraction
+  guards against oversized archives.
 - **Bare chart JSON now renders as a chart - three live shapes, all covered.**
   The AI-quality audit drove the real assistant panel across task classes and
   found the model never wraps a chart spec in the ```chart fence (it teaches
@@ -40,21 +112,18 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   that leaked went from 0 charts to 2 charts with zero leakage; the chat
   system prompt also carries the fence iron rule. Final live regression:
   3/3 deliver a clean chart.
+- **Chart JSON inside fenced code stays code.** `isolate_chart_lines` now
+  tracks ``` fences, so an example spec inside a ```json block keeps its
+  original form instead of being rewritten into a live chart.
 
-### Added
-- **Live posting for X and LinkedIn.** The publish bindings pane used to end
-  at token storage; the last mile - actually putting a post on the feed - is
-  now wired end to end. The status-row push button doubles by platform: on
-  WeChat it pushes a draft, on X / LinkedIn it publishes the article's
-  caption export (the same linearisation `convert --platform` produces) with
-  the article's local images fitted to the platform's image profile. X takes
-  up to four images via the v2 media upload (the login scope gains
-  `media.write`; nobody had bound an account before the scope change, so no
-  re-login is forced), LinkedIn takes one via registerUpload + pre-signed
-  PUT. API errors surface their response bodies, not bare status codes.
-- **`wxwright draft delete --media-id <id>`.** A mistaken push could only be
-  cleaned up by hand in the web console; the lifecycle now closes in the CLI
-  the same way it opens.
+### Security
+- **Hardened the WebView boundary flagged by the security review.** The two
+  AI-content iframes (SVG component preview, poster rasterization) are now
+  sandboxed, event-handler attributes are a block-level HYGIENE violation at
+  the validator, the direct-HTML export path runs the same normalize chain
+  as every other write exit, `export_html` cannot land un-normalized markup
+  on disk, and the release workflow grants `contents: write` to the publish
+  job only. CI declares read-only permissions.
 
 ## [0.11.0] - 2026-09-29
 
@@ -160,8 +229,6 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   `gui/ui/*.js` on all three platforms. Cargo invocations in CI pass
   `--locked` so a stale `Cargo.lock` fails loudly instead of silently
   resolving new versions.
-
-### Added
 - **Theme system v2: role × variant styles (content-aware layouts).** A theme
   could previously give each role exactly one look, so a one-line pull quote
   wore the same box as a three-paragraph citation and the article's opening
@@ -721,6 +788,7 @@ pipeline.
 - `--official-check` prints guidance; the puppeteer run itself lives in CI.
 - clap help text is English; reports are localized (en / zh-CN).
 
-[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/YaoIsAI/wxwright/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/YaoIsAI/wxwright/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/YaoIsAI/wxwright/releases/tag/v0.9.0

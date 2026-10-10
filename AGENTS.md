@@ -40,7 +40,7 @@ PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ## 3. 常用命令 / Commands
 
 ```bash
-cargo test --workspace                       # 全量测试（当前 163 通过 + 6 条 live ignored，必须全绿才能交付）
+cargo test --workspace                       # 全量测试（当前 208 通过 + 7 条 live ignored，必须全绿才能交付）
 cargo test -p wxwright-gui live_theme_generation_smoke -- --ignored --nocapture
                                              # 真实 API 冒烟：AI 生成主题端到端（花 token，需已配 Provider）
 cargo build --release                        # 发布构建（~7 分钟）
@@ -172,6 +172,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 45 | **WebView2 的 CDP `Page.captureScreenshot` 返回空**（0 字节，plain/beyondViewport 均如此） | 截图管线看似成功实则全空文件 | 桌面截图走 PS 窗口捕获（GetWindowRect+CopyFromScreen，1396×919）；网页截图走 Playwright 元素截图 |
 | 46 | **追加/heredoc 代码后必须重跑 `cargo fmt --all -- --check`**（追加 builtin-variants 测试后没跑，fmt --check 三平台齐红一次） | CI 假红一轮 | fmt 在追加**前**跑不算数；任何写文件操作后 gate 前必须再 fmt --check |
 | 47 | **Edit 加了调用但后续 Edit 的 old_string 含该行会把调用删回去**（变体兜底 ensure_default_variants 加了又被还原成死代码，实测主题未被补才暴露） | 函数成死代码，功能静默失效 | 每次功能性 Edit 后 **grep 调用点确认真在链路上**；新功能用 live 实测闭环而非仅单测 |
+| 48 | **GitHub Actions step 级 `env:` 不参与同一 step 的 `if:` 判定**（休眠签名 step 用 `if: env.SIGNING_PFX != ''` + step 级 env，条件恒 false，配了 secret 也静默跳过；叠加 working-directory 指错导致永远找不到安装包——「infrastructure-in-waiting」双缺陷叠加，真到启用那天才会爆） | 配置了 secrets 的发布仍然不带签名，且无任何报错 | 条件里要用的 env 必须放在 **job 级**（workflow 级更宽但会泄漏给全部 step），step 级 env 只供 `run:` 消费；带 working-directory 的查找一律先核对目标路径的基准目录 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
@@ -188,17 +189,26 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   **AI 配图**（jobs kind `illustrate`：文本模型规划锚点插图位 → 云端
   生图 → 按平台画像 fit → 写回文章，工具栏火花按钮）/ **图像跨平台裁剪**
   （`img::fit_to_profile` + `PlatformSpec::image_profile()` + CLI `image fit`）。
-- 测试 194（187 常规 + 7 条 live 冒烟 ignored）；版本 0.11.0（workspace+tauri.conf）。
+- 测试 215（208 常规 + 7 条 live 冒烟 ignored）；版本 0.11.0（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源；`wxwright image fit --platform <id>` 把文章图集裁到目标平台
   主形态（`PlatformSpec::image_profile()`：富文本平台只钳宽、图片平台取首预设 cover）。
+- 直接 HTML 双源模式：文章 frontmatter `format: html` → `pipeline_html`
+  （normalize+validate 直通）；GUI 预览/推草稿/更新草稿同链路，CLI
+  `convert --input-format html`，AI 助手按 articleFormat 切换提示词；HTML 模式
+  图片门禁 = `htmlutil::paste_hostile_html_imgs`（quote-aware，唯一实现，
+  `image_gate_test` 锁定调用数）。
 - 发布绑定接口（social.rs）：X/LinkedIn 一键登录实装（PKCE/code flow + 本地回环监听 8761/8762 +
-  keyring 存储，BYO 无云服务）；Facebook/Instagram 仅凭据接口（登录流受审核墙/图床前置所限，
+  keyring 存储，BYO 无云服务）；**投递层已实装**（X 4 图 media upload + LinkedIn
+  registerUpload/预签名 PUT；`publish_all_bound` 同步发文；X access token 到期自动用
+  refresh_token 续期，LinkedIn 无 refresh grant 过期即提示重登；发文图片只解析文章目录内
+  路径）；Facebook/Instagram 仅凭据接口（登录流受审核墙/图床前置所限，
   可行性见 docs/social-publish-oauth-feasibility.md）；配置引导帮助中心 = 顶栏问号（HELP_CONTENT
-  结构化双语，{zh,en} 对构造性保证双语齐全）。已知未做：Meta/X/LinkedIn API 发布出口（凭据与登录
-  已就绪，投递层未做）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，未在 JS 复刻）；
-  AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）。
+  结构化双语，{zh,en} 对构造性保证双语齐全）。已知未做：Meta/Instagram API 发布出口（凭据
+  接口已就绪，投递层未做）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，
+  未在 JS 复刻）；AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）；Tauri 命令的
+  路径收敛（read/write 任意路径）与 CSP 配置列为安全待办。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist
 
