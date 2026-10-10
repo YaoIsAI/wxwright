@@ -1482,9 +1482,18 @@ ${md.slice(0, 6000)}` : "";
     default: return kind;
   }
 }
-const AI_SYSTEM = () => lang === "zh-CN"
-  ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。需要展示数据时优先使用图表围栏：```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"标题\",\"labels\":[\"标签\"…],\"values\":[数值…],\"unit\":\"单位(可选)\"}\\n```，labels 与 values 数量必须一致，pie 的 values 表示占比。铁律：图表 JSON 必须完整包在 ```chart 围栏里，不要把 JSON 直接写在正文中。"
-  : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables. When presenting data, prefer chart fences: ```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"...\",\"labels\":[...],\"values\":[...],\"unit\":\"(optional)\"}\\n``` — labels and values must match in length; pie values are proportions. Iron rule: the chart JSON must be wrapped COMPLETELY in a ```chart fence, never written bare into the body.";
+const AI_SYSTEM = () => {
+  // HTML-format articles need an HTML-native assistant: replies are spliced
+  // into inline-styled HTML, so teaching Markdown fences would corrupt them.
+  if (typeof articleFormat !== "undefined" && articleFormat === "html") {
+    return lang === "zh-CN"
+      ? "你是一位微信公众号写作助手。当前文章以 HTML 格式编写（内联样式、section/p/span 结构）。你的回复必须是 HTML 片段，与文章现有结构与风格保持一致。合规铁律（引擎会自动复核，但请直接写对）：只用内联 style 属性；禁用 font-family；禁用固定像素宽度（用百分比）；禁用 <script>/<iframe>/<style> 标签；图片只用 https 直链。可用标签：section、p、span、strong、em、b、i、u、s、br、table、thead、tbody、tr、td、th、ul、ol、li、blockquote、h1-h6、figure、figcaption、center。"
+      : "You are a WeChat Official Account writing assistant. The current article is written in HTML (inline styles, section/p/span structure). Your replies must be HTML fragments consistent with the article's existing structure and style. Compliance rules (the engine re-checks, but write them correctly): inline style attributes only; no font-family; no fixed pixel widths (use percentages); no <script>/<iframe>/<style> tags; images via https URLs only. Allowed tags: section, p, span, strong, em, b, i, u, s, br, table, thead, tbody, tr, td, th, ul, ol, li, blockquote, h1-h6, figure, figcaption, center.";
+  }
+  return lang === "zh-CN"
+    ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。需要展示数据时优先使用图表围栏：```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"标题\",\"labels\":[\"标签\"…],\"values\":[数值…],\"unit\":\"单位(可选)\"}\\n```，labels 与 values 数量必须一致，pie 的 values 表示占比。铁律：图表 JSON 必须完整包在 ```chart 围栏里，不要把 JSON 直接写在正文中。"
+    : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables. When presenting data, prefer chart fences: ```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"...\",\"labels\":[...],\"values\":[...],\"unit\":\"(optional)\"}\\n``` — labels and values must match in length; pie values are proportions. Iron rule: the chart JSON must be wrapped COMPLETELY in a ```chart fence, never written bare into the body.";
+};
 
 
 async function aiSend(text) {
