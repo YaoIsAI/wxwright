@@ -734,6 +734,7 @@ async function pollLibrary() {
 setInterval(pollLibrary, 4000);
 window.addEventListener("focus", pollLibrary);
 let loadedTitle = null; // title of the article currently open (library truth)
+let articleFormat = "markdown"; // "markdown" | "html" — source format of the open article
 async function persistCurrent(silent = false) {
   if (!invoke) return;
   const md = $("editor").value;
@@ -780,6 +781,7 @@ async function openArticle(id) {
   const art = await invoke("read_article", { id });
   currentArticleId = art.meta.id;
   loadedTitle = art.meta.title;
+  articleFormat = art.meta.format === "html" ? "html" : "markdown";
   $("editor").value = art.markdown;
   dirty = false;
   $("stat-saved").textContent = t("saved");
@@ -798,6 +800,7 @@ async function newArticle() {
   if (invoke && $("editor").value.trim().length > 0 && dirty) await persistCurrent(true);
   currentArticleId = null;
   loadedTitle = null;
+  articleFormat = "markdown";
   $("editor").value = "# " + (lang === "zh-CN" ? "新文章" : "New article") + "\n\n";
   $("stat-saved").textContent = t("not_saved");
   dirty = false;
