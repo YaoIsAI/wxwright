@@ -711,7 +711,17 @@ fn run_illustrate(app: &AppHandle, job: &Arc<Job>, params: &Value) -> Result<Val
         status(&format!("已插入 {}/{} 张插图", i + 1, slots.len()));
     }
 
-    std::fs::write(&path, &work).map_err(|e| format!("无法写回文章: {}", e))?;
+    // The user edits while images generate (minutes) - overwriting with the
+    // stale snapshot taken before generation would silently discard those
+    // edits. Bail out instead; the generated files stay on disk for a retry.
+    let current = std::fs::read_to_string(&path)
+        .map_err(|e| format!("无法读取文章 {}: {}", path.display(), e))?;
+    if current != md {
+        return Err(
+            "文章在配图期间被修改过，为避免覆盖你的编辑已中止。请保存当前内容后重新配图。".into(),
+        );
+    }
+    crate::articles::write_atomic(&path, &work)?;
     Ok(json!({ "inserted": inserted, "article": path.display().to_string() }))
 }
 

@@ -94,6 +94,21 @@ impl VState {
                 &node_hint,
             );
         }
+        // Payload hygiene: event handlers. The HYGIENE copy promises "no
+        // event handlers", and validate_html is the direct-entry gate (CLI
+        // validate, MCP validate, SvgEmbed vetting) - the pipeline paths are
+        // additionally stripped by the normalizer, but this check is what
+        // makes `<svg onload=...>` fail loudly instead of passing silently.
+        for name in el.attributes().iter().map(|a| a.name()) {
+            let lower = name.to_ascii_lowercase();
+            if lower.starts_with("on") && lower.len() > 2 {
+                self.add(
+                    "HYGIENE",
+                    format!("event handler attribute {} is not allowed", lower),
+                    &node_hint,
+                );
+            }
+        }
         if tag == "font" && el.has_attribute("face") {
             self.add("R-3.1", "<font face> sets a font-family".into(), &node_hint);
         }
@@ -456,7 +471,7 @@ pub fn validate_html(html: &str) -> Vec<Violation> {
     let s_el = shared.clone();
     let s_txt = shared.clone();
     let s_end = shared.clone();
-    let _ = lol_html::rewrite_str(
+    let rewrite = lol_html::rewrite_str(
         html,
         Settings {
             element_content_handlers: vec![element!("*", move |el| {
@@ -485,6 +500,16 @@ pub fn validate_html(html: &str) -> Vec<Violation> {
             ..Settings::default()
         },
     );
+    if let Err(e) = rewrite {
+        // A failed rewrite used to return whatever partial violations had
+        // accumulated, silently turning malformed HTML into "compliant".
+        // Fail loudly instead: unvettable markup must never pass.
+        shared.borrow_mut().add(
+            "HYGIENE",
+            format!("HTML could not be fully validated: {}", e),
+            "<document>",
+        );
+    }
     let violations = shared.borrow().violations.clone();
     violations
 }
@@ -542,5 +567,20 @@ mod tests {
     fn compliant_html_reports_nothing_blocking() {
         let html = "<section style=\"line-height: 1.6;\"><span leaf=\"1\" style=\"color: #333333; line-height: 1.6;\">ok</span></section>";
         assert!(is_compliant(html), "got: {:?}", validate_html(html));
+    }
+
+    /// HYGIENE promises "no event handlers"; validate_html is the gate the
+    /// direct entries rely on (CLI/MCP validate, SvgEmbed), so `<svg
+    /// onload=...>` must fail here even though the normalizer would strip
+    /// it later in pipeline paths.
+    #[test]
+    fn event_handler_attributes_are_block_violations() {
+        let html = "<svg onload=\"alert(1)\"><circle r=\"4\"/></svg>";
+        let v = validate_html(html);
+        assert!(
+            v.iter().any(|x| x.rule_id == "HYGIENE" && x.is_block()),
+            "onload must be a block violation: {v:?}"
+        );
+        assert!(!is_compliant(html));
     }
 }

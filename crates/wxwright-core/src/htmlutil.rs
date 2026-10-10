@@ -160,8 +160,16 @@ pub fn markup_allowed(html: &str, tags: &[&str]) -> bool {
         if !closing {
             let lower = name_part.to_ascii_lowercase();
             // No event handlers: every `on*` attribute is an event handler.
-            for token in lower.split_whitespace().skip(1) {
-                let attr = token.split('=').next().unwrap_or("");
+            // '/' separates the tag name and attributes exactly like
+            // whitespace does in the HTML5 tokenizer - <section/onmouseover=
+            // x()> carries no whitespace at all, so tokenise on both and
+            // treat the first piece as the tag name.
+            let mut pieces = lower
+                .split(|c: char| c.is_whitespace() || c == '/')
+                .filter(|p| !p.is_empty());
+            let _tag = pieces.next();
+            for piece in pieces {
+                let attr = piece.split('=').next().unwrap_or("");
                 if attr.starts_with("on") {
                     return false;
                 }
@@ -181,6 +189,143 @@ pub fn markup_allowed(html: &str, tags: &[&str]) -> bool {
 /// drift apart - the same pattern as `roles::prompt_role_list`.
 pub fn prompt_html_tags() -> String {
     HTML_BLOCK_TAGS.join(", ")
+}
+
+/// Every `<img src="...">` value in the html, parsed with the same
+/// quote-aware scanner as `markup_allowed`, so double-quoted, single-quoted
+/// and unquoted attributes are all seen. The drafts I-03 gate runs on this -
+/// a hand-rolled `split("src=\"")` used to miss `src='data:...'` entirely.
+pub fn img_srcs(html: &str) -> Vec<String> {
+    let bytes = html.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        // Find the end of the tag, honouring quoted attribute values.
+        let mut close = None;
+        let mut quote: Option<u8> = None;
+        let mut j = i + 1;
+        while j < bytes.len() {
+            let b = bytes[j];
+            if let Some(q) = quote {
+                if b == q {
+                    quote = None;
+                }
+            } else if b == b'"' || b == b'\'' {
+                quote = Some(b);
+            } else if b == b'>' {
+                close = Some(j);
+                break;
+            }
+            j += 1;
+        }
+        let close = match close {
+            Some(c) => c,
+            None => {
+                // Unterminated tag: nothing beyond this point can be vetted,
+                // so any image reference out there fails closed instead of
+                // silently escaping the gate.
+                if html[i..].to_ascii_lowercase().contains("<img") {
+                    out.push("<unterminated-tag>".to_string());
+                }
+                break;
+            }
+        };
+        let inner = html[i + 1..close].trim();
+        let name: String = inner
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if name.eq_ignore_ascii_case("img") {
+            if let Some(src) = tag_attr(inner, "src") {
+                out.push(src);
+            }
+            // An unterminated quote inside this tag swallows every following
+            // <img> into one giant pseudo-tag; those images are invisible to
+            // attribute parsing, so fail closed as well.
+            if inner[name.len()..].to_ascii_lowercase().contains("<img") {
+                out.push("<swallowed-tag>".to_string());
+            }
+        }
+        i = close + 1;
+    }
+    out
+}
+
+/// Attribute lookup inside a tag's inner text: a small cursor parser rather
+/// than substring search, so `src`, `SRC`, `src = ` and quoted/unquoted
+/// values are all handled, while `data-src=` never matches.
+fn tag_attr(inner: &str, want: &str) -> Option<String> {
+    let bytes = inner.as_bytes();
+    let mut i = 0usize;
+    // Skip the tag name (and any closing '/').
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'/' {
+        i += 1;
+    }
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let name_start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' {
+            i += 1;
+        }
+        if i == name_start {
+            // Stray character that is neither name nor '=': step over it.
+            i += 1;
+            continue;
+        }
+        let name = inner[name_start..i].to_ascii_lowercase();
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'=' {
+            // Boolean attribute; resume scanning right after the name.
+            continue;
+        }
+        i = j + 1;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let value = if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+            let q = bytes[i];
+            i += 1;
+            let vs = i;
+            while i < bytes.len() && bytes[i] != q {
+                i += 1;
+            }
+            let v = inner[vs..i].to_string();
+            i += 1; // step past the closing quote
+            v
+        } else {
+            let vs = i;
+            while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            inner[vs..i].to_string()
+        };
+        if name == want {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Image sources that cannot render in the MP editor: anything that is not an
+/// https URL. data:/http:/relative and obfuscated sources all fail closed.
+/// This is the single implementation of the I-03 gate for the direct-HTML
+/// entry - all push paths (GUI draft/update, CLI, MCP) must call it rather
+/// than re-deriving the predicate by hand.
+pub fn paste_hostile_html_imgs(html: &str) -> Vec<String> {
+    img_srcs(html)
+        .into_iter()
+        .filter(|s| !s.trim().starts_with("https://"))
+        .collect()
 }
 
 pub fn escape_text(s: &str) -> String {
@@ -512,5 +657,61 @@ mod tests {
             assert!(listed.contains(&t), "missing {t}");
         }
         assert!(!listed.contains(&"img") && !listed.contains(&"a"));
+    }
+
+    /// The I-03 gate's scanner must see every quoting style. The historical
+    /// hand-rolled `split("src=\"")` variant missed single-quoted and
+    /// unquoted attributes, letting `src='data:...'` reach the draft box.
+    #[test]
+    fn img_srcs_sees_all_quoting_styles() {
+        let html = "<img src=\"https://a/1.png\"> <img src='data:image/png;base64,xx'> \
+                    <IMG SRC = https://b/2.png> <img class=\"c\" src=\"http://c/3.png\"> \
+                    <img data-src=\"https://decoy/4.png\">";
+        let srcs = img_srcs(html);
+        assert_eq!(srcs.len(), 4, "got: {srcs:?}");
+        assert!(srcs.contains(&"https://a/1.png".to_string()));
+        assert!(srcs.contains(&"data:image/png;base64,xx".to_string()));
+        assert!(srcs.contains(&"https://b/2.png".to_string()));
+        assert!(srcs.contains(&"http://c/3.png".to_string()));
+        assert!(!srcs.iter().any(|s| s.contains("decoy")), "{srcs:?}");
+    }
+
+    /// Fail closed: only https URLs pass; unterminated tags cannot hide an
+    /// img either (the scan stops, but that tag also cannot be vetted).
+    #[test]
+    fn paste_hostile_html_imgs_fails_closed() {
+        let hostile = paste_hostile_html_imgs(
+            "<img src=\"https://mmbiz.qpic.cn/ok.png\"><img src='data:image/png;base64,AA'>\
+             <img src=http://plain/x.png><img src=\"  https://pad/p.png\">",
+        );
+        assert_eq!(hostile.len(), 2, "got: {hostile:?}");
+        assert!(hostile[0].starts_with("data:"));
+        assert!(hostile[1].starts_with("http://"));
+        assert!(paste_hostile_html_imgs("<img src=\"https://only/ok.png\">").is_empty());
+    }
+
+    /// Fail-open regression: an unterminated quote used to swallow every
+    /// following <img> into one giant tag (only the first src was reported),
+    /// and an unterminated tag stopped the scan entirely - both let a
+    /// data:/http: image slip past the gate unreported.
+    #[test]
+    fn malformed_markup_cannot_hide_imgs_from_the_gate() {
+        let swallowed = paste_hostile_html_imgs("<img src=https://ok <img src=\"data:x\">");
+        assert_eq!(swallowed.len(), 1, "got: {swallowed:?}");
+        let truncated = paste_hostile_html_imgs("<img src=\"https://a\"><img src='data:y");
+        assert_eq!(truncated.len(), 1, "got: {truncated:?}");
+    }
+
+    /// '/' separates attributes in the HTML5 tokenizer, so
+    /// <section/onmouseover=...> is a real event handler on a real tag.
+    #[test]
+    fn slash_separated_event_handlers_are_rejected() {
+        let tags = &["section", "div"];
+        assert!(!markup_allowed(
+            "<section/onmouseover=alert(1)>x</section>",
+            tags
+        ));
+        assert!(!markup_allowed("<div /onload=y()>x</div>", tags));
+        assert!(markup_allowed("<section>ok</section>", tags));
     }
 }

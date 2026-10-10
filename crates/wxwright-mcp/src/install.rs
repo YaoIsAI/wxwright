@@ -123,7 +123,21 @@ fn write_config(
         if std::fs::copy(path, &backup).is_ok() {
             backup_created = true;
         }
-        serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({}))
+        // A config that fails to parse (VS Code allows JSONC comments in
+        // mcp.json) used to be silently replaced with an empty object and
+        // overwritten - deleting every other MCP server the user had. Abort
+        // instead; the .bak copy still tells the user where to look.
+        match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(format!(
+                    "cannot parse {} ({}); fix or rename the file first - \
+                     a backup copy was saved next to it",
+                    path.display(),
+                    e
+                ))
+            }
+        }
     } else {
         serde_json::json!({})
     };

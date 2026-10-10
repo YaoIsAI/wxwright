@@ -145,6 +145,33 @@ pub fn read_article(id: &str) -> Result<Article, String> {
     })
 }
 
+/// Frontmatter stays single-line: a title containing newlines would otherwise
+/// smuggle extra keys (or close the `---` block early) into the file body, and
+/// the round-trip would silently drop theme/platform. Control characters are
+/// stripped outright.
+fn sanitize_title(raw: &str) -> String {
+    let cleaned: String = raw.trim().chars().filter(|c| !c.is_control()).collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        "未命名文章".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+/// Write via a sibling temp file + rename: a crash mid-write leaves the old
+/// article intact instead of a truncated half-file. `fs::rename` replaces an
+/// existing destination on both Unix and Windows.
+pub fn write_atomic(path: &Path, body: &str) -> Result<(), String> {
+    let tmp = path.with_extension("md.tmp");
+    std::fs::write(&tmp, body).map_err(|e| format!("write failed: {}", e))?;
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("rename failed: {}", e));
+    }
+    Ok(())
+}
+
 pub fn save_article(
     id: Option<String>,
     title: &str,
@@ -172,11 +199,7 @@ pub fn save_article(
         existing_created
     };
     let updated = now_stamp();
-    let title = if title.trim().is_empty() {
-        "未命名文章"
-    } else {
-        title.trim()
-    };
+    let title = sanitize_title(title);
     let fmt = if format.eq_ignore_ascii_case("html") {
         "html"
     } else {
@@ -194,7 +217,7 @@ pub fn save_article(
         markdown.trim_start()
     );
     let path = dir.join(format!("{}.md", id));
-    std::fs::write(&path, body).map_err(|e| format!("write failed: {}", e))?;
+    write_atomic(&path, &body)?;
     let platform = if platform.trim().is_empty() {
         "wechat"
     } else {
@@ -202,7 +225,7 @@ pub fn save_article(
     };
     Ok(ArticleMeta {
         id,
-        title: title.to_string(),
+        title,
         created,
         updated,
         theme: theme.to_string(),
@@ -239,6 +262,36 @@ mod tests {
     #[test]
     fn id_sanitized() {
         assert_eq!(sanitize_id("../evil/name"), "evilname");
+    }
+
+    /// A title with embedded newlines used to be written verbatim into the
+    /// frontmatter, where the extra lines parsed as new keys (or closed the
+    /// `---` block early) and the real theme/platform was silently dropped.
+    #[test]
+    fn title_control_chars_cannot_inject_frontmatter() {
+        let t = sanitize_title("正常标题\ntheme: evil\nplatform: xhs");
+        assert!(!t.contains('\n'), "newlines must be stripped: {t:?}");
+        assert_eq!(t, "正常标题theme: evilplatform: xhs");
+        assert_eq!(sanitize_title("   "), "未命名文章");
+        assert_eq!(sanitize_title(""), "未命名文章");
+    }
+
+    /// A plain fs::write leaves a truncated article when a crash hits
+    /// mid-write; the temp+rename path must leave either the old or the new
+    /// content, never a partial file, and must replace existing files on
+    /// Windows too.
+    #[test]
+    fn write_atomic_replaces_and_never_truncates() {
+        let dir = std::env::temp_dir().join(format!("wxw-atomic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("a.md");
+        write_atomic(&path, "old body that is quite long").expect("first write");
+        write_atomic(&path, "new").expect("replace write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, "new");
+        assert!(!dir.join("a.md.tmp").exists(), "temp file must be gone");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

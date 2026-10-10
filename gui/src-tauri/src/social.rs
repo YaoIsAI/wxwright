@@ -464,6 +464,23 @@ fn ureq_body_err(label: &str, e: ureq::Error) -> String {
     }
 }
 
+/// (mime, ext) from magic bytes only: a mislabelled upload (GIF declared as
+/// image/jpeg) turns into a confusing API 4xx, and an unsupported format is
+/// rejected here with a readable message instead.
+fn sniff_image(bytes: &[u8]) -> Result<(&'static str, &'static str), String> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Ok(("image/png", "png"))
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Ok(("image/jpeg", "jpg"))
+    } else if bytes.starts_with(b"GIF8") {
+        Ok(("image/gif", "gif"))
+    } else if bytes.starts_with(b"RIFF") && bytes.len() > 12 && &bytes[8..12] == b"WEBP" {
+        Ok(("image/webp", "webp"))
+    } else {
+        Err("不支持的图片格式（仅支持 PNG/JPEG/GIF/WebP）".into())
+    }
+}
+
 fn x_upload_media(access_token: &str, path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("无法读取图片 {path:?}: {e}"))?;
     if bytes.len() > 5 * 1024 * 1024 {
@@ -472,9 +489,7 @@ fn x_upload_media(access_token: &str, path: &Path) -> Result<String, String> {
             bytes.len() / 1024
         ));
     }
-    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
-    let mime = if is_png { "image/png" } else { "image/jpeg" };
-    let ext = if is_png { "png" } else { "jpg" };
+    let (mime, ext) = sniff_image(&bytes)?;
     let boundary = "wxwright-media-7d3a9c1f";
     let mut body: Vec<u8> = Vec::new();
     body.extend_from_slice(
@@ -552,6 +567,13 @@ fn linkedin_member_urn(access_token: &str) -> Result<String, String> {
 /// asset URN the post references.
 fn linkedin_upload_image(access_token: &str, author: &str, path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("无法读取图片 {path:?}: {e}"))?;
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err(format!(
+            "图片 {path:?} 超过 LinkedIn 的 5MB 限制（{}KB）",
+            bytes.len() / 1024
+        ));
+    }
+    let _ = sniff_image(&bytes)?;
     let agent = crate::net::agent_with_read_timeout(Duration::from_secs(120));
     let register = json!({
         "registerUploadRequest": {
@@ -635,11 +657,74 @@ fn linkedin_create_post(
     }
 }
 
+/// True when the token is expired or expires within the refresh margin.
+/// `0` means "no expiry info" and never triggers a refresh - the API is the
+/// judge for platforms that do not report expiry.
+fn token_stale(expires_at: u64, now: u64) -> bool {
+    expires_at > 0 && expires_at <= now + 300
+}
+
 fn require_binding(platform: &str) -> Result<SocialBinding, String> {
     let b = load_binding(platform)
         .filter(|b| !b.access_token.is_empty())
         .ok_or_else(|| format!("{platform} 尚未绑定：请到 设置 → 发布绑定 完成一键登录"))?;
-    Ok(b)
+    if !token_stale(b.expires_at, now_secs()) {
+        return Ok(b);
+    }
+    match platform {
+        // X hands out ~2h access tokens plus a refresh_token: rotate here so
+        // "post" does not degrade into "re-login" twice a day. Rotation may
+        // hand back a fresh refresh_token, which is persisted.
+        "x" if !b.refresh_token.is_empty() => refresh_x(&b).map_err(|e| {
+            format!("X 登录已过期且自动续期失败（{e}）。请到 设置 → 发布绑定 重新一键登录。")
+        }),
+        // LinkedIn member tokens have no refresh grant; a silent 401 helps
+        // nobody, so expiry surfaces as an explicit re-login instruction.
+        _ => Err(format!(
+            "{platform} 的登录已过期，请到 设置 → 发布绑定 重新一键登录"
+        )),
+    }
+}
+
+fn refresh_x(b: &SocialBinding) -> Result<SocialBinding, String> {
+    let token_url = spec("x").map(|s| s.token_url).unwrap_or("");
+    let mut form: Vec<(&str, &str)> = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", &b.refresh_token),
+        ("client_id", &b.client_id),
+    ];
+    if !b.client_secret.is_empty() {
+        form.push(("client_secret", &b.client_secret));
+    }
+    let agent = crate::net::agent_with_read_timeout(Duration::from_secs(30));
+    let resp = agent
+        .post(token_url)
+        .send_form(&form)
+        .map_err(|e| format!("token refresh failed: {e}"))?;
+    let v: Value = resp
+        .into_json::<Value>()
+        .map_err(|e| format!("bad refresh response: {e}"))?;
+    if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+        return Err(err.to_string());
+    }
+    let access = v["access_token"].as_str().unwrap_or("").to_string();
+    if access.is_empty() {
+        return Err("response had no access_token".into());
+    }
+    let mut out = b.clone();
+    out.access_token = access;
+    if let Some(r) = v["refresh_token"].as_str() {
+        if !r.is_empty() {
+            out.refresh_token = r.to_string();
+        }
+    }
+    let expires_in = v["expires_in"].as_u64().unwrap_or(0);
+    if expires_in > 0 {
+        out.expires_at = now_secs() + expires_in;
+    }
+    out.updated_at = now_secs();
+    save_binding("x", &out)?;
+    Ok(out)
 }
 
 /// Post a caption with local images to the platform's live API. X takes up
@@ -683,6 +768,20 @@ pub fn publish(platform: &str, text: &str, image_paths: &[String]) -> Result<Val
     }
 }
 
+/// Resolve an article image src to a readable file inside the article's own
+/// directory. Absolute paths (`C:/...`) and `..` climbers must never reach
+/// the uploader: article text can come from anywhere (import, AI), and
+/// `base.join()` with an absolute path silently replaces `base`, turning
+/// publish into a one-click local-file exfiltration.
+fn resolve_article_image(base: &Path, src: &str) -> Option<PathBuf> {
+    let canonical = base.join(src).canonicalize().ok()?;
+    let base_canon = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    if !canonical.starts_with(&base_canon) || !canonical.is_file() {
+        return None;
+    }
+    Some(canonical)
+}
+
 /// The article-level entry the GUI calls: caption export (the same
 /// linearisation the export path uses) + the article's local images fitted
 /// to the platform's profile, then `publish`. Temporary fitted files land in
@@ -723,7 +822,11 @@ pub fn publish_article(platform: &str, article_id: &str) -> Result<Value, String
         .take(max)
         .enumerate()
     {
-        let p = base.join(&img.src);
+        let p = resolve_article_image(base, &img.src);
+        let p = match p {
+            Some(p) => p,
+            None => continue,
+        };
         let Ok(bytes) = std::fs::read(&p) else {
             continue;
         };
@@ -897,6 +1000,52 @@ pub fn social_oauth_cancel() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bidirectional, in the spirit of pitfall 34: a stale token must be
+    /// flagged both when already expired and when inside the refresh margin,
+    /// and a fresh one (or one with no expiry info) must never be.
+    #[test]
+    fn token_stale_flags_both_directions() {
+        let now: u64 = 1_800_000_000;
+        assert!(!token_stale(0, now), "no expiry info never refreshes");
+        assert!(!token_stale(now + 301, now), "outside the margin is fresh");
+        assert!(token_stale(now + 300, now), "the margin edge refreshes");
+        assert!(token_stale(now, now), "exact expiry is stale");
+        assert!(token_stale(now - 60, now), "already expired is stale");
+    }
+
+    /// The publish path resolves article images inside the article directory
+    /// only: `..` climbers and absolute paths (which would replace `base`
+    /// outright on Windows) are dropped instead of uploaded.
+    #[test]
+    fn article_images_cannot_escape_the_article_dir() {
+        let dir = std::env::temp_dir().join(format!("wxw-social-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp article dir");
+        let inside = dir.join("ok.png");
+        std::fs::write(&inside, b"png").expect("write inside");
+        let outside_dir =
+            std::env::temp_dir().join(format!("wxw-social-out-{}", std::process::id()));
+        std::fs::create_dir_all(&outside_dir).expect("temp outside dir");
+        let outside = outside_dir.join("secret.png");
+        std::fs::write(&outside, b"secret").expect("write outside");
+
+        assert!(resolve_article_image(&dir, "ok.png").is_some());
+        assert!(resolve_article_image(&dir, "./ok.png").is_some());
+        assert!(
+            resolve_article_image(&dir, "../wxw-social-out/secret.png").is_none(),
+            ".. climber must be dropped"
+        );
+        let abs = outside.to_string_lossy().replace('/', "\\");
+        assert!(
+            resolve_article_image(&dir, &abs).is_none(),
+            "absolute path must be dropped"
+        );
+        assert!(resolve_article_image(&dir, "missing.png").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside_dir);
+    }
 
     /// The weighted budget: CJK costs 2, so a pure-CJK caption must come back
     /// inside the weighted budget, plain-latin text passes through untouched,

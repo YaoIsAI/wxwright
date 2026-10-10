@@ -326,9 +326,22 @@ pub fn list_user_themes() -> Vec<Theme> {
 /// overwritten (regeneration is the common case).
 pub fn save_user_theme(toml_src: &str) -> Result<PathBuf> {
     let theme = parse_theme(toml_src)?;
+    // meta.id becomes a filename: an id carrying path components (AI output
+    // is unconstrained) would write the .toml outside the themes dir.
+    let id = theme.meta.id.trim();
+    let ok = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !ok {
+        return Err(Error::Theme(format!(
+            "theme id {:?} may only contain letters, digits, '-' and '_'",
+            id
+        )));
+    }
     let dir = user_themes_dir();
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{}.toml", theme.meta.id));
+    let path = dir.join(format!("{}.toml", id));
     std::fs::write(
         &path,
         toml_src.trim().to_string()

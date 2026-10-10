@@ -10,7 +10,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   GUI_DIR: gui
@@ -49,7 +49,7 @@ jobs:
         if: matrix.os == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - name: Build CLI
-        run: cargo build --release -p wxwright-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p wxwright-cli --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
@@ -81,6 +81,11 @@ jobs:
             label: linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Job-level (not step-level) env: step `if` cannot see the step's own env
+    # block, so a step-level secret mapping made the sign step's condition
+    # always false - configured secrets would have been silently ignored.
+    env:
+      SIGNING_PFX: ${{ secrets.WINDOWS_PFX_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
@@ -96,15 +101,13 @@ jobs:
           tool: tauri-cli@2
       - name: Build GUI bundles
         working-directory: ${{ env.GUI_DIR }}
-        run: cargo tauri build --bundles ${{ matrix.bundles }}
+        run: cargo tauri build --bundles ${{ matrix.bundles }} -- --locked
       # Signing is dormant until the maintainer adds the two secrets (see
       # docs/code-signing.md): without them the step skips and the release
       # ships unsigned exactly as before - zero-risk infrastructure-in-waiting.
       - name: Sign Windows installer
         if: matrix.label == 'windows' && env.SIGNING_PFX != ''
-        working-directory: ${{ env.GUI_DIR }}
         env:
-          SIGNING_PFX: ${{ secrets.WINDOWS_PFX_BASE64 }}
           SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         shell: pwsh
         run: |
@@ -113,7 +116,9 @@ jobs:
           $signtool = (Get-ChildItem "C:/Program Files (x86)/Windows Kits/10/bin" -Recurse -Filter signtool.exe |
             Where-Object { $_.FullName -match "x64" } | Select-Object -First 1).FullName
           if (-not $signtool) { throw "signtool.exe not found in Windows SDK" }
-          $bundle = Get-ChildItem -Recurse -Filter "*.exe" |
+          # the cargo workspace shares one target dir at the repo root - the
+          # old gui/ working-directory could never see the NSIS bundle
+          $bundle = Get-ChildItem "target/release/bundle" -Recurse -Filter "*.exe" |
             Where-Object { $_.FullName -match "nsis" } |
             Sort-Object Length -Descending | Select-Object -First 1
           if (-not $bundle) { throw "no installer exe found to sign" }
@@ -139,6 +144,9 @@ jobs:
     needs: [build-cli, build-gui]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # only the publish job writes to the repo (creating the Release)
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

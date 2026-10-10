@@ -385,9 +385,13 @@ where
     I: IntoIterator<Item = &'a Violation>,
 {
     for v in violations {
+        // Platform rules (XHS-*) live outside the core RULES table; falling
+        // back to the violation's own message keeps those lines readable
+        // instead of printing an empty description.
         let desc = wxwright_core::rules::rule_info(&v.rule_id)
             .map(|r| r.localized_desc())
-            .unwrap_or_default();
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| v.message.clone());
         let sev = if v.is_block() { "BLOCK" } else { "WARN" };
         out.plain(&format!(
             "  {} {} {} - {}",
@@ -957,6 +961,36 @@ fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Resul
     Ok(if fitted > 0 { 0 } else { 1 })
 }
 
+/// The two draft gates every MP write path shares (pitfall 37): blocking
+/// violations, then paste-hostile images. `draft update` used to have
+/// neither and `draft create` only the first.
+fn draft_gates_pass(out: &Out, result: &PipelineOutput) -> bool {
+    if !result.blocking_violations().is_empty() {
+        out.err("draft blocked: blocking violations");
+        if out.json_mode {
+            out.print_json(&report_payload(result));
+        } else {
+            print_violations_human(out, result);
+        }
+        return false;
+    }
+    let hostile: Vec<String> = result
+        .images
+        .iter()
+        .filter(|i| i.paste_hostile())
+        .map(|i| i.source.clone())
+        .collect();
+    if !hostile.is_empty() {
+        out.err(&format!(
+            "draft blocked: {} image(s) cannot display in the MP editor (need mmbiz or an https URL): {}",
+            hostile.len(),
+            hostile.join("; ")
+        ));
+        return false;
+    }
+    true
+}
+
 fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
     let creds =
         wxwright_mp::load_credentials().ok_or("no credentials; run `wxwright login` first")?;
@@ -975,13 +1009,7 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             let mut opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
             opts.transport = Some(Arc::new(MpClient::new(client_credentials(&client))));
             let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-            if !result.blocking_violations().is_empty() {
-                out.err("draft blocked: blocking violations");
-                if out.json_mode {
-                    out.print_json(&report_payload(&result));
-                } else {
-                    print_violations_human(out, &result);
-                }
+            if !draft_gates_pass(out, &result) {
                 return Ok(1);
             }
             let thumb = match thumb_media_id {
@@ -1019,6 +1047,9 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             let md = strip_frontmatter(&raw_md);
             let opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
             let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+            if !draft_gates_pass(out, &result) {
+                return Ok(1);
+            }
             let article = wxwright_mp::DraftArticle {
                 title: title.clone(),
                 author: String::new(),

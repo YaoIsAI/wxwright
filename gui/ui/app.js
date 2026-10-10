@@ -51,6 +51,7 @@ const I18N = {
     drafts_refresh: "刷新草稿箱",
     drafts_loading: "读取草稿箱…",
     drafts_none: "草稿箱为空。",
+    drafts_admin: "打开公众号后台",
     drafts_delete: "删除",
     drafts_update: "用当前文章更新此草稿",
     drafts_deleted: "草稿已删除",
@@ -199,6 +200,7 @@ const I18N = {
     drafts_refresh: "Refresh drafts",
     drafts_loading: "Loading drafts…",
     drafts_none: "The drafts box is empty.",
+    drafts_admin: "Open MP admin",
     drafts_delete: "Delete",
     drafts_update: "Update this draft from the editor",
     drafts_deleted: "Draft deleted",
@@ -335,7 +337,10 @@ function toast(message, kind = "info", listHtml = "") {
   const host = $("toast-host");
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  el.innerHTML = `<div><div>${message}</div>${listHtml}</div>`;
+  // message is escaped: ~25 call sites pass raw backend error strings that
+  // may carry file paths or content fragments; listHtml stays markup because
+  // its callers build it themselves.
+  el.innerHTML = `<div><div>${escapeHtml(message)}</div>${listHtml}</div>`;
   host.appendChild(el);
   setTimeout(() => el.remove(), kind === "err" ? 8000 : 3600);
 }
@@ -437,7 +442,7 @@ function renderViolationsPanel(violations) {
     .map(
       (v) => `<div class="violation-row">
         <span class="v-badge ${v.severity}">${v.severity === "block" ? "BLOCK" : "WARN"}</span>
-        <span class="v-rule">${v.rule_id}</span>
+        <span class="v-rule">${escapeHtml(v.rule_id)}</span>
         <span class="v-desc">${escapeHtml(v.message)}</span>
         <span class="v-node">${escapeHtml(v.node)}</span>
       </div>`
@@ -565,6 +570,20 @@ function openMpAdmin() {
   else window.open(url, "_blank");
 }
 
+// Rebuilt entry point for openMpAdmin: every drafts-tab render state ends
+// with this row, so the MP console is one click away from the drafts box.
+function draftsAdminRow() {
+  const row = document.createElement("div");
+  row.className = "sd-empty";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-ghost";
+  btn.textContent = t("drafts_admin");
+  btn.addEventListener("click", openMpAdmin);
+  row.appendChild(btn);
+  return row;
+}
+
 async function renderSidebarDrafts() {
   const host = $("drafts-list");
   if (!host) return;
@@ -575,10 +594,15 @@ async function renderSidebarDrafts() {
     return;
   }
   host.innerHTML = `<div class="sd-empty">${t("drafts_loading")}</div>`;
+  host.appendChild(draftsAdminRow());
   try {
     const v = await invoke("wx_draft_list", { offset: 0, count: 20 });
     const items = v.item || [];
-    if (!items.length) { host.innerHTML = `<div class="sd-empty">${t("drafts_none")}</div>`; return; }
+    if (!items.length) {
+      host.innerHTML = `<div class="sd-empty">${t("drafts_none")}</div>`;
+      host.appendChild(draftsAdminRow());
+      return;
+    }
     host.innerHTML = items.map((it) => {
       const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
       const mediaId = escapeHtml(String(it.media_id || ""));
@@ -598,6 +622,7 @@ async function renderSidebarDrafts() {
         </button>
       </div>`;
     }).join("");
+    host.appendChild(draftsAdminRow());
     host.querySelectorAll("[data-del-draft]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const mid = btn.dataset.delDraft;
@@ -699,7 +724,7 @@ async function refreshLibrary() {
       const art = await invoke("read_article", { id: btn.dataset.rename });
       const newTitle = await uiPrompt(t("prompt_rename"), art.meta.title);
       if (newTitle && newTitle.trim() && newTitle !== art.meta.title) {
-        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, platform: art.meta.platform, format: articleFormat, markdown: art.markdown });
+        await invoke("save_article", { id: art.meta.id, title: newTitle.trim(), theme: art.meta.theme, platform: art.meta.platform, format: art.meta.format, markdown: art.markdown });
         toast(t("renamed_ok"), "ok");
         refreshLibrary();
       }
@@ -709,7 +734,7 @@ async function refreshLibrary() {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const art = await invoke("read_article", { id: btn.dataset.dup });
-      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, platform: art.meta.platform, format: articleFormat, markdown: art.markdown });
+      await invoke("save_article", { id: null, title: art.meta.title + (lang === "zh-CN" ? "（副本）" : " (copy)"), theme: art.meta.theme, platform: art.meta.platform, format: art.meta.format, markdown: art.markdown });
       toast(t("duplicated_ok"), "ok");
       refreshLibrary();
     });
@@ -818,7 +843,9 @@ async function importMdFiles() {
     });
     if (!path) return;
     const content = await invoke("read_text_file", { path });
-    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, platform: currentPlatform, format: articleFormat, markdown: content });
+    // Imported .md files are Markdown by definition - never inherit the
+    // open article's format (html), which would misrender them on next open.
+    await invoke("save_article", { id: null, title: autoTitle(content), theme: currentTheme, platform: currentPlatform, format: "markdown", markdown: content });
     toast(t("imported_ok"), "ok");
     refreshLibrary();
   } catch (e) {
@@ -2576,6 +2603,10 @@ async function blobToBase64(blob) {
 }
 async function htmlToPngBlob(html, w, h, scale) {
   const iframe = document.createElement("iframe");
+  // allow-same-origin keeps the parent able to serialize contentDocument;
+  // scripts stay disabled (no allow-scripts), so pasted/AI poster HTML with
+  // event handlers cannot reach window.parent.__TAURI__.
+  iframe.setAttribute("sandbox", "allow-same-origin");
   iframe.style.cssText = `position:fixed;left:-99999px;top:0;width:${w}px;height:${h}px;border:0;`;
   document.body.appendChild(iframe);
   await new Promise((res) => { iframe.onload = res; iframe.srcdoc = html; });
@@ -3070,7 +3101,9 @@ async function refreshModelSelect() {
 
 function renderModelMenu() {
   const menu = $("ai-model-menu");
-  if (!menu.children.length || true) {
+  // Always re-render: the menu is cheap and provider state can change
+  // between opens, so incremental caching only ever served stale entries.
+  if (true) {
     menu.innerHTML = modelMenuState.providers
       .map(
         (pr) => `<div class="mm-item${pr.id === modelMenuState.active ? " active" : ""}" data-id="${escapeHtml(pr.id)}">
@@ -3346,7 +3379,7 @@ function renderSvgKit() {
 
 function renderSvgKitPreview() {
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:18px;display:flex;align-items:center;justify-content:center;background:#fff;}</style></head><body>${currentSvgMarkup()}</body></html>`;
-  $("svgkit-preview").innerHTML = `<iframe srcdoc="${escapeHtml(html)}"></iframe>`;
+  $("svgkit-preview").innerHTML = `<iframe sandbox="" srcdoc="${escapeHtml(html)}"></iframe>`;
 }
 
 /* ------------------------------------------------------ assets panel */
@@ -4199,7 +4232,7 @@ function bindUI() {
         try {
           if (pendingAttachments.length >= 4) { toast(lang === "zh-CN" ? "最多 4 个附件" : "Max 4 attachments", "err"); break; }
           const doc = await invoke("extract_document_text", { path: df });
-          pendingAttachments.push({ kind: "text", name: df.split(/[\/]/).pop(), content: doc.text, truncated: doc.truncated });
+          pendingAttachments.push({ kind: "text", name: df.split(/[\\/]/).pop(), content: doc.text, truncated: doc.truncated });
           renderAttachRow();
           toast(lang === "zh-CN" ? "已加入 AI 附件" : "Added as AI attachment", "ok");
         } catch (e) { toast(String(e), "err"); }
@@ -4211,6 +4244,8 @@ function bindUI() {
           if (dirty) await persistCurrent(true);
           $("editor").value = await invoke("read_text_file", { path: mdFile });
           currentArticleId = null;
+          loadedTitle = null;
+          articleFormat = "markdown";
           dirty = false;
           $("stat-saved").textContent = t("not_saved");
           scheduleConvert();

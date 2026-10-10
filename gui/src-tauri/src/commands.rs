@@ -5,7 +5,7 @@
 use serde::Serialize;
 use wxwright_core::img::ImageMode;
 use wxwright_core::theme::{self, Theme};
-use wxwright_core::{clipboard, convert_markdown, pipeline, wrap_document, ConvertOptions};
+use wxwright_core::{clipboard, pipeline, wrap_document, ConvertOptions};
 
 #[derive(Serialize)]
 pub struct ThemeInfo {
@@ -104,80 +104,105 @@ pub struct CopyResult {
 }
 
 #[tauri::command]
-pub fn copy_rich(markdown: String, theme_id: String) -> CopyResult {
-    let opts = ConvertOptions {
-        theme: load_theme_or_default(&theme_id),
-        image_mode: ImageMode::Keep,
-        base_dir: None,
-        transport: None,
+pub async fn copy_rich(markdown: String, theme_id: String) -> CopyResult {
+    // Pipeline + clipboard round-trip; clipboard::copy_to_clipboard blocks on
+    // the OS clipboard owner and must not run on the main thread.
+    let join_err = |e: String| CopyResult {
+        copied: false,
+        html_flavor: false,
+        reason: Some(format!("task join failed: {e}")),
+        blocking: Vec::new(),
+        paste_hostile_images: Vec::new(),
     };
-    let out = match pipeline(&markdown, &opts) {
-        Ok(o) => o,
-        Err(e) => {
+    tauri::async_runtime::spawn_blocking(move || {
+        let opts = ConvertOptions {
+            theme: load_theme_or_default(&theme_id),
+            image_mode: ImageMode::Keep,
+            base_dir: None,
+            transport: None,
+        };
+        let out = match pipeline(&markdown, &opts) {
+            Ok(o) => o,
+            Err(e) => {
+                return CopyResult {
+                    copied: false,
+                    html_flavor: false,
+                    reason: Some(e.to_string()),
+                    blocking: Vec::new(),
+                    paste_hostile_images: Vec::new(),
+                }
+            }
+        };
+        let blocking: Vec<_> = out.blocking_violations().into_iter().cloned().collect();
+        if !blocking.is_empty() {
             return CopyResult {
+                copied: false,
+                html_flavor: false,
+                reason: Some("blocking violations".into()),
+                blocking,
+                paste_hostile_images: Vec::new(),
+            };
+        }
+        let paste_hostile: Vec<String> = out
+            .images
+            .iter()
+            .filter(|i| i.paste_hostile())
+            .map(|i| i.source.clone())
+            .collect();
+        if !paste_hostile.is_empty() {
+            return CopyResult {
+                copied: false,
+                html_flavor: false,
+                reason: Some("paste-hostile images".into()),
+                blocking: Vec::new(),
+                paste_hostile_images: paste_hostile,
+            };
+        }
+        match clipboard::copy_to_clipboard(&out.html) {
+            Ok(o) => CopyResult {
+                copied: true,
+                html_flavor: o.html_flavor,
+                reason: None,
+                blocking: Vec::new(),
+                paste_hostile_images: Vec::new(),
+            },
+            Err(e) => CopyResult {
                 copied: false,
                 html_flavor: false,
                 reason: Some(e.to_string()),
                 blocking: Vec::new(),
                 paste_hostile_images: Vec::new(),
-            }
+            },
         }
-    };
-    let blocking: Vec<_> = out.blocking_violations().into_iter().cloned().collect();
-    if !blocking.is_empty() {
-        return CopyResult {
-            copied: false,
-            html_flavor: false,
-            reason: Some("blocking violations".into()),
-            blocking,
-            paste_hostile_images: Vec::new(),
-        };
-    }
-    let paste_hostile: Vec<String> = out
-        .images
-        .iter()
-        .filter(|i| i.paste_hostile())
-        .map(|i| i.source.clone())
-        .collect();
-    if !paste_hostile.is_empty() {
-        return CopyResult {
-            copied: false,
-            html_flavor: false,
-            reason: Some("paste-hostile images".into()),
-            blocking: Vec::new(),
-            paste_hostile_images: paste_hostile,
-        };
-    }
-    match clipboard::copy_to_clipboard(&out.html) {
-        Ok(o) => CopyResult {
-            copied: true,
-            html_flavor: o.html_flavor,
-            reason: None,
-            blocking: Vec::new(),
-            paste_hostile_images: Vec::new(),
-        },
-        Err(e) => CopyResult {
-            copied: false,
-            html_flavor: false,
-            reason: Some(e.to_string()),
-            blocking: Vec::new(),
-            paste_hostile_images: Vec::new(),
-        },
-    }
+    })
+    .await
+    .unwrap_or_else(|e| join_err(e.to_string()))
 }
 
 #[tauri::command]
-pub fn export_html(markdown: String, theme_id: String, path: String) -> Result<String, String> {
-    let opts = ConvertOptions {
-        theme: load_theme_or_default(&theme_id),
-        image_mode: ImageMode::Inline,
-        base_dir: None,
-        transport: None,
-    };
-    let out = convert_markdown(&markdown, &opts).map_err(|e| e.to_string())?;
-    let doc = wrap_document(&out.html, opts.theme.canvas());
-    std::fs::write(&path, doc).map_err(|e| format!("write failed: {}", e))?;
-    Ok(path)
+pub async fn export_html(
+    markdown: String,
+    theme_id: String,
+    path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let opts = ConvertOptions {
+            theme: load_theme_or_default(&theme_id),
+            image_mode: ImageMode::Inline,
+            base_dir: None,
+            transport: None,
+        };
+        // pipeline (not convert_markdown): the exported file gets opened in a
+        // real browser, so it must pass the same normalize+validate chain as
+        // every other write exit - convert_markdown skips normalizing and
+        // could land event-handler markup on disk.
+        let out = pipeline(&markdown, &opts).map_err(|e| e.to_string())?;
+        let doc = wrap_document(&out.html, opts.theme.canvas());
+        std::fs::write(&path, doc).map_err(|e| format!("write failed: {}", e))?;
+        Ok(path)
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
@@ -202,8 +227,12 @@ pub fn mcp_install(target: String) -> Result<wxwright_mcp::install::InstallOutco
 use crate::articles::ArticleMeta;
 
 #[tauri::command]
-pub fn list_articles() -> Vec<ArticleMeta> {
-    crate::articles::list_articles()
+pub async fn list_articles() -> Vec<ArticleMeta> {
+    // pollLibrary hits this every 4s; every call re-reads and re-parses the
+    // whole library, so it must never run on the main thread.
+    tauri::async_runtime::spawn_blocking(crate::articles::list_articles)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -212,12 +241,14 @@ pub fn library_dir() -> String {
 }
 
 #[tauri::command]
-pub fn read_article(id: String) -> Result<crate::articles::Article, String> {
-    crate::articles::read_article(&id)
+pub async fn read_article(id: String) -> Result<crate::articles::Article, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::articles::read_article(&id))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn save_article(
+pub async fn save_article(
     id: Option<String>,
     title: String,
     theme: String,
@@ -225,14 +256,18 @@ pub fn save_article(
     format: Option<String>,
     markdown: String,
 ) -> Result<ArticleMeta, String> {
-    crate::articles::save_article(
-        id,
-        &title,
-        &theme,
-        platform.as_deref().unwrap_or("wechat"),
-        format.as_deref().unwrap_or("markdown"),
-        &markdown,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::articles::save_article(
+            id,
+            &title,
+            &theme,
+            platform.as_deref().unwrap_or("wechat"),
+            format.as_deref().unwrap_or("markdown"),
+            &markdown,
+        )
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 // ------------------------------------------------ platform export adapter --
@@ -385,18 +420,28 @@ pub async fn ai_test(id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn list_assets() -> Vec<crate::articles::AssetMeta> {
-    crate::articles::list_assets()
+pub async fn list_assets() -> Vec<crate::articles::AssetMeta> {
+    tauri::async_runtime::spawn_blocking(crate::articles::list_assets)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-pub fn asset_data_uri(path: String) -> Result<String, String> {
-    crate::articles::asset_data_uri(&path)
+pub async fn asset_data_uri(path: String) -> Result<String, String> {
+    // Full image read + base64: large assets belong off the main thread.
+    tauri::async_runtime::spawn_blocking(move || crate::articles::asset_data_uri(&path))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn asset_thumb(path: String, size: Option<u32>) -> Result<String, String> {
-    crate::articles::asset_thumb(&path, size.unwrap_or(320))
+pub async fn asset_thumb(path: String, size: Option<u32>) -> Result<String, String> {
+    // Whole-image decode per grid cell; the asset grid fires one per image.
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::articles::asset_thumb(&path, size.unwrap_or(320))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
@@ -405,20 +450,33 @@ pub fn delete_asset(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn read_binary_file(path: String) -> Result<String, String> {
-    use base64::Engine as _;
-    let bytes = std::fs::read(&path).map_err(|e| format!("read failed: {}", e))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+pub async fn read_binary_file(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use base64::Engine as _;
+        let bytes = std::fs::read(&path).map_err(|e| format!("read failed: {}", e))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn extract_document_text(path: String) -> Result<crate::extract::ExtractedDoc, String> {
-    crate::extract::extract(&path)
+pub async fn extract_document_text(path: String) -> Result<crate::extract::ExtractedDoc, String> {
+    // PDF/DOCX parsing is seconds-scale CPU work on real documents.
+    tauri::async_runtime::spawn_blocking(move || crate::extract::extract(&path))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn comfy_status() -> serde_json::Value {
-    crate::comfy::status()
+pub async fn comfy_status() -> serde_json::Value {
+    // probe() is a 3s-timeout network call: keeping it off the main thread is
+    // the difference between a momentary "offline" badge and a frozen UI.
+    tauri::async_runtime::spawn_blocking(crate::comfy::status)
+        .await
+        .unwrap_or_else(
+            |e| serde_json::json!({ "online": false, "error": format!("task join failed: {e}") }),
+        )
 }
 
 // ------------------------------------------------------ wechat mp binding ---
@@ -555,18 +613,10 @@ pub async fn wx_push_draft(
             ));
         }
         if is_html {
-            // I-03 for the direct-HTML entry: the img pipeline did not run,
-            // so scan the normalized HTML for paste-hostile sources manually.
-            let hostile: Vec<String> = result
-                .html
-                .split("src=\"")
-                .skip(1)
-                .filter_map(|rest| {
-                    let end = rest.find('"')?;
-                    let src = &rest[..end];
-                    if src.starts_with("https://") { None } else { Some(src.to_string()) }
-                })
-                .collect();
+            // I-03 for the direct-HTML entry: the img pipeline did not run.
+            // One implementation in htmlutil (quote-aware) - hand-rolled
+            // split("src=\"") scanners missed single-quoted data: URIs.
+            let hostile = wxwright_core::htmlutil::paste_hostile_html_imgs(&result.html);
             if !hostile.is_empty() {
                 return Err(format!(
                     "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或 https 直链），草稿未推送：{}",
@@ -717,16 +767,10 @@ pub async fn wx_update_draft(
             ));
         }
         if is_html {
-            let hostile: Vec<String> = result
-                .html
-                .split("src=\"")
-                .skip(1)
-                .filter_map(|rest| {
-                    let end = rest.find('"')?;
-                    let src = &rest[..end];
-                    if src.starts_with("https://") { None } else { Some(src.to_string()) }
-                })
-                .collect();
+            // I-03 for the direct-HTML entry: the img pipeline did not run.
+            // One implementation in htmlutil (quote-aware) - hand-rolled
+            // split("src=\"") scanners missed single-quoted data: URIs.
+            let hostile = wxwright_core::htmlutil::paste_hostile_html_imgs(&result.html);
             if !hostile.is_empty() {
                 return Err(format!(
                     "存在 {} 张图片无法在公众号正常显示（需为 mmbiz 或 https 直链），草稿未更新：{}",

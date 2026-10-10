@@ -420,7 +420,11 @@ pub fn render_chart(spec: &ChartSpec) -> String {
             }
             for (i, v) in values.iter().enumerate() {
                 let cx = px0 + slot * (i as f64 + 0.5);
-                let bh = (v / max) * (py1 - py0);
+                // Negative values cannot be drawn upward from the baseline;
+                // clamping to zero keeps the SVG valid (a negative rect
+                // height is an error and silently renders nothing) instead
+                // of blanking the whole chart for one bad data point.
+                let bh = ((v / max) * (py1 - py0)).max(0.0);
                 let color = CHART_PALETTE[i % CHART_PALETTE.len()];
                 out.push_str(&format!(
                     "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"6\" fill=\"{}\"><animate attributeName=\"height\" values=\"0;{:.1}\" dur=\"0.8s\" begin=\"touchstart; click\" fill=\"freeze\"/></rect>",

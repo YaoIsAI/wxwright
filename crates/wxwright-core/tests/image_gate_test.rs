@@ -17,11 +17,16 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "review"]
 
 /// Every call site that must go through the single predicate.
 const REQUIRED_SITES: &[(&str, usize)] = &[
-    ("crates/wxwright-cli/src/main.rs", 1),
+    // CLI copy + draft_gates_pass (shared by draft create/update)
+    ("crates/wxwright-cli/src/main.rs", 2),
     ("crates/wxwright-mcp/src/lib.rs", 2),
     // push draft + update draft: two write paths, one gate each
     ("gui/src-tauri/src/commands.rs", 3),
 ];
+
+/// Call sites of the direct-HTML I-03 gate (format: html drafts): the two
+/// MP write paths in the GUI. A third hand-rolled scan would drift.
+const REQUIRED_HTML_GATE_SITES: &[(&str, usize)] = &[("gui/src-tauri/src/commands.rs", 2)];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -77,6 +82,20 @@ fn every_write_path_uses_the_single_image_gate() {
              a write path probably lost its gate or grew a duplicate"
         );
     }
+    for (rel, expected) in REQUIRED_HTML_GATE_SITES {
+        let src = std::fs::read_to_string(root.join(rel))
+            .unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
+        let found = src
+            .lines()
+            .map(code_only)
+            .filter(|l| l.contains("paste_hostile_html_imgs("))
+            .count();
+        assert_eq!(
+            found, *expected,
+            "{rel} should call paste_hostile_html_imgs() exactly {expected} time(s); \
+             an html-mode write path probably lost its gate or grew a duplicate"
+        );
+    }
 }
 
 #[test]
@@ -103,10 +122,16 @@ fn no_hand_rolled_image_gate_exists() {
             // `source.starts_with("data:")` is deliberately narrower than a
             // bare `starts_with("data:")`: SSE parsing legitimately tests the
             // same prefix on a response line, and flagging that would make the
-            // guard cry wolf.
-            if code.contains("inlined && !") || code.contains("source.starts_with(\"data:\")") {
-                // The definition itself is the one legitimate place.
-                if path.ends_with("img.rs") {
+            // guard cry wolf. `split("src=` is the html-mode variant that
+            // missed single-quoted attributes; the quote-aware scanner in
+            // htmlutil (img_srcs) is the only place allowed to slice srcs.
+            if code.contains("inlined && !")
+                || code.contains("source.starts_with(\"data:\")")
+                || code.contains(".split(\"src=")
+                || code.contains(".split('src=")
+            {
+                // The definitions themselves are the legitimate places.
+                if path.ends_with("img.rs") || path.ends_with("htmlutil.rs") {
                     continue;
                 }
                 offenders.push(format!("{}:{}: {}", path.display(), n + 1, code.trim()));

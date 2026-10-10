@@ -61,6 +61,14 @@ fn extract_docx(bytes: &[u8]) -> Result<String, String> {
         let mut entry = archive
             .by_name("word/document.xml")
             .map_err(|e| format!("DOCX 缺少 document.xml: {}", e))?;
+        // Zip-bomb guard: the declared size is checked before decompressing,
+        // so a hostile document cannot balloon past the context budget.
+        if entry.size() > 64 * 1024 * 1024 {
+            return Err(format!(
+                "DOCX 正文过大（{}MB，上限 64MB）",
+                entry.size() / 1024 / 1024
+            ));
+        }
         entry.read_to_string(&mut xml).map_err(|e| e.to_string())?;
     }
     // Extract <w:t> runs; paragraph breaks on </w:p>.

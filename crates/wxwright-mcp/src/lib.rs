@@ -328,7 +328,9 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
     let theme = get_str("theme").unwrap_or_else(|| "minimal".to_string());
 
     let result = (|| -> Result<Value, String> {
-        let t = theme::load_theme(&theme).map_err(|e| e.to_string())?;
+        // Theme loads lazily: a bad theme argument must not fail tools that
+        // never render (themes_list, draft_list/delete, upload_images).
+        let need_theme = || theme::load_theme(&theme).map_err(|e| e.to_string());
         match name {
             "wxwright_convert" => {
                 let md = get_str("markdown").ok_or("missing argument: markdown")?;
@@ -337,12 +339,15 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     _ => wxwright_core::img::ImageMode::Inline,
                 };
                 let opts = ConvertOptions {
-                    theme: t,
+                    theme: need_theme()?,
                     image_mode: mode,
                     base_dir: None,
                     transport: None,
                 };
-                let out = wxwright_core::convert_markdown(&md, &opts).map_err(|e| e.to_string())?;
+                // pipeline (not convert_markdown): the MCP answer must carry
+                // the same normalize+validate result as the CLI - silently
+                // skipping the validator let R-1.4 style findings vanish.
+                let out = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
                 let mut v = serde_json::to_value(&out).map_err(|e| e.to_string())?;
                 if out.html.len() > 64 * 1024 {
                     v["html_truncated"] = json!(true);
@@ -358,7 +363,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 let html = if let Some(h) = html_arg {
                     h
                 } else if let Some(md) = md {
-                    let opts = ConvertOptions::new(t);
+                    let opts = ConvertOptions::new(need_theme()?);
                     wxwright_core::convert_markdown(&md, &opts)
                         .map_err(|e| e.to_string())?
                         .html
@@ -380,7 +385,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     .get("dry_run")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let opts = ConvertOptions::new(t);
+                let opts = ConvertOptions::new(need_theme()?);
                 let out = pipeline(&md, &opts).map_err(|e| e.to_string())?;
                 let blocking: Vec<_> = out.blocking_violations();
                 if !blocking.is_empty() {
@@ -438,7 +443,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 let creds = wxwright_mp::load_credentials()
                     .ok_or("no credentials configured; run `wxwright login` first")?;
                 let client = std::sync::Arc::new(wxwright_mp::MpClient::new(creds));
-                let mut opts = ConvertOptions::new(t);
+                let mut opts = ConvertOptions::new(need_theme()?);
                 opts.image_mode = wxwright_core::img::ImageMode::Upload;
                 opts.transport = Some(client.clone());
                 let out = pipeline(&md, &opts).map_err(|e| e.to_string())?;
@@ -550,7 +555,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                         "violations": violations,
                     })),
                     None => {
-                        let opts = ConvertOptions::new(t);
+                        let opts = ConvertOptions::new(need_theme()?);
                         let out = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
                         let blocking = out.blocking_violations().len();
                         Ok(json!({

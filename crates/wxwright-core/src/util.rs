@@ -236,23 +236,47 @@ pub fn probe_tcp(host: &str, port: u16, timeout_ms: u64) -> bool {
 
 /// Strip YAML frontmatter from a Markdown document.
 /// Returns (metadata pairs, body). Files without frontmatter pass through.
+///
+/// Strictness matters: a plain article that opens with a `---` horizontal
+/// rule used to have everything up to the NEXT `---` silently swallowed as
+/// fake frontmatter. The closing fence must sit alone on its line and the
+/// header must parse at least one `key: value` pair, otherwise the document
+/// is treated as having no frontmatter at all.
 pub fn strip_frontmatter(md: &str) -> (Vec<(String, String)>, String) {
-    let trimmed = md.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("---") {
-        if let Some(end) = rest.find("\n---") {
-            let header = &rest[..end];
-            let body = rest[end + 4..].trim_start_matches('\n').to_string();
+    let Some(rest) = md.trim_start().strip_prefix("---") else {
+        return (Vec::new(), md.to_string());
+    };
+    // The opening fence must be alone on its line too: "----" or "---text"
+    // is just text.
+    if !rest.is_empty() && !rest.starts_with('\n') {
+        return (Vec::new(), md.to_string());
+    }
+    let after_open = rest.strip_prefix('\n').unwrap_or(rest);
+    let mut offset = 0usize;
+    for line in after_open.split('\n') {
+        if line.trim() == "---" {
+            let header = &after_open[..offset];
             let mut pairs = Vec::new();
-            for line in header.lines() {
-                if let Some((k, v)) = line.split_once(':') {
+            for hl in header.lines() {
+                if let Some((k, v)) = hl.split_once(':') {
                     pairs.push((
                         k.trim().to_string(),
                         v.trim().trim_matches('"').trim_matches('\'').to_string(),
                     ));
                 }
             }
+            // No keys means a pair of horizontal rules around prose, not
+            // frontmatter.
+            if pairs.is_empty() {
+                return (Vec::new(), md.to_string());
+            }
+            let body_start = (offset + line.len() + 1).min(after_open.len());
+            let body = after_open[body_start..]
+                .trim_start_matches('\n')
+                .to_string();
             return (pairs, body);
         }
+        offset += line.len() + 1;
     }
     (Vec::new(), md.to_string())
 }
@@ -269,6 +293,40 @@ mod tests {
         let (pairs2, body2) = strip_frontmatter("no frontmatter here");
         assert!(pairs2.is_empty());
         assert_eq!(body2, "no frontmatter here");
+    }
+
+    /// A plain article that OPENS with `---` (horizontal rule) and contains a
+    /// second `---` further down used to lose everything in between: the
+    /// scanner treated the two rules as frontmatter fences. The whole text
+    /// must survive untouched.
+    #[test]
+    fn horizontal_rules_are_not_frontmatter() {
+        let md = "---\n\n# 标题\n\n正文第一段。\n\n---\n\n正文第二段。\n";
+        let (pairs, body) = strip_frontmatter(md);
+        assert!(pairs.is_empty(), "no keys were present: {pairs:?}");
+        assert_eq!(body, md, "the document must pass through whole");
+    }
+
+    /// The closing fence must sit alone on its line: "--- trailing" is text,
+    /// not a fence, and must not end a frontmatter block.
+    #[test]
+    fn closing_fence_must_be_alone_on_its_line() {
+        let md = "---\ntitle: x\n--- trailing\n\nbody here\n";
+        let (pairs, body) = strip_frontmatter(md);
+        assert!(pairs.is_empty(), "{pairs:?}");
+        assert_eq!(body, md);
+    }
+
+    /// Degenerate frontmatter-only documents (closer is the last line, no
+    /// trailing newline) must not panic and must not lose the pairs.
+    #[test]
+    fn frontmatter_only_document_has_empty_body() {
+        let (pairs, body) = strip_frontmatter("---\ntitle: x\nplatform: wechat\n---");
+        assert_eq!(
+            pairs.iter().find(|(k, _)| k == "platform").unwrap().1,
+            "wechat"
+        );
+        assert_eq!(body, "");
     }
 
     #[test]

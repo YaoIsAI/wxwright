@@ -43,9 +43,15 @@ fn isolate_chart_lines(md: &str) -> String {
         return md.to_string();
     }
     let mut out = String::with_capacity(md.len() + 64);
+    let mut in_fence = false;
     for line in md.lines() {
         let trimmed = line.trim();
-        if looks_like_chart_json(trimmed) {
+        // Fenced code is verbatim content: an example JSON inside ```json is
+        // the author's code, not a chart - rewriting it corrupts the block.
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+        }
+        if !in_fence && looks_like_chart_json(trimmed) {
             out.push('\n');
             out.push_str(trimmed);
             out.push_str("\n\n");
@@ -84,7 +90,6 @@ enum Frame {
     List {
         ordered: bool,
         start: u64,
-        next_index: u64,
         items: Vec<ListItem>,
     },
     Item {
@@ -261,7 +266,6 @@ impl ParserState {
                 self.stack.push(Frame::List {
                     ordered: start.is_some(),
                     start: start.unwrap_or(1),
-                    next_index: start.unwrap_or(1),
                     items: Vec::new(),
                 });
             }
@@ -507,12 +511,8 @@ impl ParserState {
                 if !pending.is_empty() {
                     blocks.insert(0, Block::Paragraph { inlines: pending });
                 }
-                if let Some(Frame::List {
-                    next_index, items, ..
-                }) = self.stack.last_mut()
-                {
+                if let Some(Frame::List { items, .. }) = self.stack.last_mut() {
                     items.push(ListItem { checked, blocks });
-                    *next_index += 1;
                 } else {
                     self.push_block(Block::Paragraph {
                         inlines: Vec::new(),
