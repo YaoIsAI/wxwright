@@ -99,7 +99,46 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: tauri-cli@2
-      - name: Build GUI bundles
+      # macOS: sign the bundle during `cargo tauri build`. With no identity the
+      # bundler skips codesigning entirely (app.rs: `else if let Some(keychain)`),
+      # so the shipped .app had no seal at all - only the linker's ad-hoc blob on
+      # the bare binary. Gatekeeper on Apple Silicon then reports a quarantined,
+      # unsealed bundle as "damaged" with no bypass offered. Identity '-' makes
+      # the bundler run `codesign --force -s -` inside-out: the bundle gets a
+      # real seal (_CodeSignature/CodeResources) and users get the recoverable
+      # "unnotarized developer" dialog instead of "damaged". Full Developer ID
+      # notarization activates by adding the APPLE_* secrets (docs/code-signing.md).
+      - name: Build GUI bundles (macOS, ad-hoc sealed)
+        if: matrix.label == 'macos'
+        working-directory: ${{ env.GUI_DIR }}
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # empty secrets arrive as set-but-empty env vars, which tauri-bundler
+          # treats as configured (var_os() == Some("")); unset them instead
+          [ -n "$APPLE_CERTIFICATE" ] || unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
+          [ -n "$APPLE_ID" ] || unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          # a configured APPLE_ID with a forgotten APPLE_TEAM_ID should fail as
+          # MissingTeamId (clear message), not as an empty-arg notarytool error
+          [ -n "$APPLE_TEAM_ID" ] || unset APPLE_TEAM_ID
+          cargo tauri build --bundles ${{ matrix.bundles }} -- --locked
+          # the cargo workspace shares one target dir at the repo root, while
+          # this step's working-directory is gui/ - anchor to the workspace
+          app="$GITHUB_WORKSPACE/target/release/bundle/macos/wxwright.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          test -f "$app/Contents/_CodeSignature/CodeResources" || {
+            echo "::error::app bundle was not sealed (no _CodeSignature/CodeResources)"
+            exit 1
+          }
+          codesign -dvv "$app" 2>&1 | grep -E "Identifier|Signature size" || true
+      - name: Build GUI bundles (windows/linux)
+        if: matrix.label != 'macos'
         working-directory: ${{ env.GUI_DIR }}
         run: cargo tauri build --bundles ${{ matrix.bundles }} -- --locked
       # Signing is dormant until the maintainer adds the two secrets (see

@@ -33,6 +33,9 @@ gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生�
 gui/ui/                  index.html · app.js(主逻辑,~4100行) · ai-jobs.js(生成任务桥) · pet.js(宠物墨仔) ·
                          brand-logos.js(17厂商+5平台官方矢量,内嵌 path/dataURI) · styles.css · qrcode.jpg
 tools/icongen/           图标生成（1024px 超采样→Lanczos3→8帧 ICO）
+tools/verify-macos-signature.py
+                         离线校验 macOS Mach-O 内嵌签名（CodeDirectory 页哈希
+                         全量比对，无需 Mac；发布前验 CLI 包 / dmg 内二进制）
 dist/                    发布目录（两 exe；gitignore；**发版必须手动同步**）
 PRD.md / CHANGELOG.md / AGENTS.md / docs/
 ```
@@ -173,6 +176,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 46 | **追加/heredoc 代码后必须重跑 `cargo fmt --all -- --check`**（追加 builtin-variants 测试后没跑，fmt --check 三平台齐红一次） | CI 假红一轮 | fmt 在追加**前**跑不算数；任何写文件操作后 gate 前必须再 fmt --check |
 | 47 | **Edit 加了调用但后续 Edit 的 old_string 含该行会把调用删回去**（变体兜底 ensure_default_variants 加了又被还原成死代码，实测主题未被补才暴露） | 函数成死代码，功能静默失效 | 每次功能性 Edit 后 **grep 调用点确认真在链路上**；新功能用 live 实测闭环而非仅单测 |
 | 48 | **GitHub Actions step 级 `env:` 不参与同一 step 的 `if:` 判定**（休眠签名 step 用 `if: env.SIGNING_PFX != ''` + step 级 env，条件恒 false，配了 secret 也静默跳过；叠加 working-directory 指错导致永远找不到安装包——「infrastructure-in-waiting」双缺陷叠加，真到启用那天才会爆） | 配置了 secrets 的发布仍然不带签名，且无任何报错 | 条件里要用的 env 必须放在 **job 级**（workflow 级更宽但会泄漏给全部 step），step 级 env 只供 `run:` 消费；带 working-directory 的查找一律先核对目标路径的基准目录 |
+| 49 | **tauri-bundler 在无 `APPLE_SIGNING_IDENTITY`/`APPLE_CERTIFICATE` 时完全跳过 codesign**（app.rs 是 `else if let Some(keychain)`，不是 ad-hoc 兜底），产物只有链接器在裸二进制上的 ad-hoc blob，bundle 无密封（dmg 里没有 `_CodeSignature/CodeResources`） | Apple Silicon 上被隔离下载的 app 被 Gatekeeper 判「已损坏，无法打开」，无任何绕过按钮；「右键→打开」指引对这种弹窗从来无效（Sequoia 起右键绕过本身也被移除） | macOS 发布 job 必须设 `APPLE_SIGNING_IDENTITY`（无证书用 `-` = ad-hoc，bundler 会 inside-out 密封 bundle）；CI 加 `codesign --verify --deep --strict` + CodeResources 存在性门禁；给用户的指引只能是 `xattr -cr` 或系统设置「仍要打开」。注意空 secret 以空字符串形态进 step env，bundler 的 `var_os()` 把它当已配置——构建前必须 unset（见 release.yml）。验证签名状态可离线做：解 dmg（koly→plist blkx→zlib→HFS+）→ 解析 Mach-O 的 LC_CODE_SIGNATURE → CodeDirectory 页哈希逐一比对 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
@@ -209,6 +213,12 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   接口已就绪，投递层未做）；demo 微信预览为静态 demo-preview.html（方言渲染在 Rust 引擎内，
   未在 JS 复刻）；AI 对话尚未迁移到 jobs.rs（有独立 harness，勿轻动）；Tauri 命令的
   路径收敛（read/write 任意路径）与 CSP 配置列为安全待办。
+- 发布链签名状态（2026-10-16）：Windows 侧休眠 PFX step 不变（Certum 走本地签，
+  见 docs/code-signing.md）；**macOS 侧 release.yml 用 `APPLE_SIGNING_IDENTITY: '-'`
+  让 tauri-bundler 对 bundle 做 ad-hoc 密封 + `codesign --verify` 门禁**（修复 v0.11.0
+  dmg 在 Apple Silicon 报「已损坏」的事故，坑 49）；配 APPLE_* secrets 即升级
+  Developer ID 全公证，流程零改动。macOS 矩阵只有 aarch64 dmg（macos-latest 是
+  ARM runner），x86_64 用户无安装包，列为待办。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist
 

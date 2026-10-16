@@ -41,9 +41,17 @@ Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/r
 | Platform | File |
 |---|---|
 | Windows | `wxwright_0.11.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS | `wxwright_0.11.0_x64.dmg` (Apple silicon; unsigned — right-click → Open on first launch) |
+| macOS | `wxwright_0.11.0_aarch64.dmg` (Apple silicon; not notarized — first launch needs a one-time bypass, see below) |
 | Linux | `wxwright_0.11.0_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
+
+**macOS first launch** (Apple silicon, macOS 11+): the dmg is ad-hoc signed but not notarized, so Gatekeeper blocks it once. After dragging `wxwright.app` to Applications, run in Terminal:
+
+```bash
+xattr -cr /Applications/wxwright.app
+```
+
+then open normally. Alternatives: right-click → Open (macOS ≤ Sonoma), or System Settings → Privacy & Security → "Open Anyway" (Sequoia and later). The old "right-click → Open" advice alone can trigger a "**is damaged**" error on Apple Silicon — use the command above if you see it. Same for the CLI binary: `xattr -d com.apple.quarantine wxwright` after extracting.
 
 ## 30-second start
 
@@ -177,7 +185,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 - Official CLI bridge (`--official-check`) prints guidance and CI instructions; the actual puppeteer run belongs to CI.
 - Rich clipboard HTML flavor is attempted on Windows/macOS/Linux alike; it degrades to plain text only where the clipboard cannot accept HTML (headless).
 - clap built-in help text is English; reports are localized (en / zh-CN).
-- macOS builds are unsigned (Gatekeeper: right-click → Open, or `xattr -cr wxwright.app`).
+- macOS builds are ad-hoc signed, not notarized (Gatekeeper blocks the first launch: `xattr -cr /Applications/wxwright.app`, or "Open Anyway" in System Settings).
 
 ## Release automation
 

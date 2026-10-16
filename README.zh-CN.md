@@ -41,9 +41,17 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 | 平台 | 文件 |
 |---|---|
 | Windows | `wxwright_0.11.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS | `wxwright_0.11.0_x64.dmg`（Apple silicon；未签名——首次打开请右键 → 打开） |
+| macOS | `wxwright_0.11.0_aarch64.dmg`（Apple silicon；未公证——首次打开需一次手动放行，见下） |
 | Linux | `wxwright_0.11.0_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
+
+**macOS 首次打开**（Apple silicon，macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，Gatekeeper 会拦截一次。把 `wxwright.app` 拖入「应用程序」后，在终端执行：
+
+```bash
+xattr -cr /Applications/wxwright.app
+```
+
+之后即可正常打开。也可以：右键 → 打开（macOS ≤ Sonoma），或 系统设置 → 隐私与安全性 → 「仍要打开」（Sequoia 及以后）。若看到「**已损坏，无法打开**」，说明走的是旧指引——右键打开对它无效，请直接用上面的命令。CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。
 
 ## 30 秒上手
 
@@ -147,7 +155,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 - `--official-check` 输出指引与 CI 命令；puppeteer 实际执行在 CI。
 - 剪贴板富文本（text/html）在 Windows/macOS/Linux 三端均尝试写入（arboard 3.6），仅在剪贴板无法接受 HTML 时（如无头 CI）降级纯文本。
 - clap 内置 help 为英文；报告文案已双语（en / zh-CN）。
-- macOS 构建未签名（Gatekeeper：右键 → 打开，或 `xattr -cr wxwright.app`）。
+- macOS 构建为 ad-hoc 签名、未经公证（Gatekeeper 首次拦截：`xattr -cr /Applications/wxwright.app`，或系统设置中「仍要打开」）。
 
 ## 自动发布
 

@@ -71,6 +71,25 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   no longer freezes the window for 3 seconds.
 
 ### Fixed
+- **macOS dmg opened as "damaged" on Apple Silicon (v0.11.0 and earlier).**
+  The release workflow never codesigned the bundle: with no
+  `APPLE_SIGNING_IDENTITY` the tauri bundler skips codesigning entirely, so
+  the shipped .app carried only the linker's automatic ad-hoc blob on the
+  bare executable and no bundle seal (`_CodeSignature/CodeResources` did not
+  exist inside the dmg - verified by disassembling the published v0.11.0
+  aarch64 image and checking the embedded CodeDirectory, whose 3189 page
+  hashes validate, proving the binary itself was intact). Gatekeeper on
+  Apple Silicon reports a quarantined unsealed bundle as "damaged and can't
+  be opened" with no bypass offered - the previous "right-click -> Open"
+  advice never worked for that dialog. The release job now sets
+  `APPLE_SIGNING_IDENTITY` (default `-` = ad-hoc) so the bundler seals the
+  app inside-out at package time, adds a `codesign --verify --deep --strict`
+  plus CodeResources-presence gate to CI, wires dormant `APPLE_*` secret
+  mappings for full Developer ID notarization (empty secrets are unset
+  before the build so tauri-bundler cannot mistake them for configured), and
+  the READMEs replace the broken advice with `xattr -cr` / "Open Anyway"
+  instructions. Full clean double-click launch still requires a Developer ID
+  certificate + notarization (see docs/code-signing.md).
 - **Five-expert review batch (engine / security / Tauri backend / frontend /
   release chain).** Highlights: AI illustration used to overwrite edits made
   while images generated - it now re-reads the file and bails out instead,
