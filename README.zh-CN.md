@@ -62,6 +62,14 @@ xattr -cr /Applications/wxwright.app
 
 CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。签名机制的完整说明见 `docs/code-signing.md`。
 
+**Linux**（x86_64，两种格式任选）：
+
+- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.11.2_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
+- AppImage：`chmod +x wxwright_0.11.2_amd64.AppImage && ./wxwright_0.11.2_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
+- 中文界面需要系统装有 CJK 字体：Ubuntu 桌面版自带；极简版/服务器版先执行 `sudo apt install fonts-noto-cjk`。
+
+平台支持一览：Windows 10/11 x64 · macOS 11+（Apple 芯片与 Intel 芯片各一个 dmg）· Linux x86_64（webkit2gtk-4.1）。
+
 ## 30 秒上手
 
 ```bash

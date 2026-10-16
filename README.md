@@ -62,6 +62,14 @@ Then open normally — no prompt will appear again.
 
 Same for the CLI binary after extraction: `xattr -d com.apple.quarantine wxwright`. The full signing story lives in `docs/code-signing.md`.
 
+**Linux** (x86_64, two formats):
+
+- deb (Debian/Ubuntu family): `sudo apt install ./wxwright_0.11.2_amd64.deb` — dependencies (libwebkit2gtk-4.1-0 / libgtk-3-0) are pulled in by apt automatically. Verified on Ubuntu 24.04: dependency resolution, end-to-end conversion of a Chinese article, and GUI launch all work.
+- AppImage: `chmod +x wxwright_0.11.2_amd64.AppImage && ./wxwright_0.11.2_amd64.AppImage` (no install needed; AppDir structure and embedded binary verified).
+- The Chinese UI needs a CJK font on the system: Ubuntu desktop ships one; on minimal/server installs run `sudo apt install fonts-noto-cjk` first.
+
+Platform support at a glance: Windows 10/11 x64 · macOS 11+ (separate dmgs for Apple silicon and Intel) · Linux x86_64 (webkit2gtk-4.1).
+
 ## 30-second start
 
 ```bash
