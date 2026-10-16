@@ -36,13 +36,13 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.0）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.1）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.11.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS | `wxwright_0.11.0_aarch64.dmg`（Apple silicon；未公证——首次打开需一次手动放行，见下） |
-| Linux | `wxwright_0.11.0_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.11.1_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS | `wxwright_0.11.1_aarch64.dmg`（Apple silicon；未公证——首次打开需一次手动放行，见下） |
+| Linux | `wxwright_0.11.1_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS 首次打开**（Apple silicon，macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，Gatekeeper 会拦截一次。把 `wxwright.app` 拖入「应用程序」后，在终端执行：

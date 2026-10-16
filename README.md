@@ -36,13 +36,13 @@ The AI assistant drafts with you — streaming, stoppable, and every reply offer
 
 ## Download
 
-Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.11.0):
+Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.11.1):
 
 | Platform | File |
 |---|---|
-| Windows | `wxwright_0.11.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS | `wxwright_0.11.0_aarch64.dmg` (Apple silicon; not notarized — first launch needs a one-time bypass, see below) |
-| Linux | `wxwright_0.11.0_amd64.deb` or `.AppImage` |
+| Windows | `wxwright_0.11.1_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
+| macOS | `wxwright_0.11.1_aarch64.dmg` (Apple silicon; not notarized — first launch needs a one-time bypass, see below) |
+| Linux | `wxwright_0.11.1_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS first launch** (Apple silicon, macOS 11+): the dmg is ad-hoc signed but not notarized, so Gatekeeper blocks it once. After dragging `wxwright.app` to Applications, run in Terminal:
