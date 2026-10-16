@@ -193,7 +193,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   **AI 配图**（jobs kind `illustrate`：文本模型规划锚点插图位 → 云端
   生图 → 按平台画像 fit → 写回文章，工具栏火花按钮）/ **图像跨平台裁剪**
   （`img::fit_to_profile` + `PlatformSpec::image_profile()` + CLI `image fit`）。
-- 测试 215（208 常规 + 7 条 live 冒烟 ignored）；版本 0.11.1（workspace+tauri.conf）。
+- 测试 215（208 常规 + 7 条 live 冒烟 ignored）；版本 0.11.2（workspace+tauri.conf）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源；`wxwright image fit --platform <id>` 把文章图集裁到目标平台
@@ -217,8 +217,9 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   见 docs/code-signing.md）；**macOS 侧 release.yml 用 `APPLE_SIGNING_IDENTITY: '-'`
   让 tauri-bundler 对 bundle 做 ad-hoc 密封 + `codesign --verify` 门禁**（修复 v0.11.0
   dmg 在 Apple Silicon 报「已损坏」的事故，坑 49）；配 APPLE_* secrets 即升级
-  Developer ID 全公证，流程零改动。macOS 矩阵只有 aarch64 dmg（macos-latest 是
-  ARM runner），x86_64 用户无安装包，列为待办。
+  Developer ID 全公证，流程零改动。macOS 矩阵现为 aarch64 + x86_64 两条 dmg
+  （Intel 条目在 ARM runner 上交叉编译 `x86_64-apple-darwin`，与 CLI 矩阵同法；
+  产物收集兼容 `target/<triple>/release` 布局），v0.11.2 起 Intel 用户有包。
 
 ## 9. 改动后的必做清单 / Pre-delivery checklist
 

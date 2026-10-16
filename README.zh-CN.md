@@ -36,16 +36,17 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.1）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.2）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.11.1_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS | `wxwright_0.11.1_aarch64.dmg`（Apple silicon；未公证——首次打开需一次手动放行，见下） |
-| Linux | `wxwright_0.11.1_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.11.2_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS（Apple 芯片） | `wxwright_0.11.2_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
+| macOS（Intel 芯片） | `wxwright_0.11.2_x64.dmg`（同样需一次放行，见下） |
+| Linux | `wxwright_0.11.2_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
-**macOS 首次打开**（Apple silicon，macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
+**macOS 首次打开**（macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
 
 **方式一（推荐，终端一条命令）：**
 
@@ -167,7 +168,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.11.1 && git push origin v0.11.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
+打 tag（`git tag v0.11.2 && git push origin v0.11.2`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 

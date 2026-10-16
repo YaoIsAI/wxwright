@@ -10,6 +10,19 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-16
+
+### Added
+- **Intel Mac support: the release now ships an x86_64 dmg next to the
+  Apple silicon one.** The macOS GUI matrix gains a `x86_64-apple-darwin`
+  entry cross-compiled on the ARM runner (the same pattern the CLI matrix
+  has used since the first release - macOS runners no longer have an Intel
+  image). The cross-built bundle passes through the identical ad-hoc
+  sealing and `codesign --verify` + CodeResources gate as the aarch64 one,
+  and the artifact collector picks bundles from both `target/release` and
+  `target/<triple>/release`. Intel users had no installer at all before
+  this.
+
 ## [0.11.1] - 2026-10-16
 
 ### Added
@@ -809,7 +822,8 @@ pipeline.
 - `--official-check` prints guidance; the puppeteer run itself lives in CI.
 - clap help text is English; reports are localized (en / zh-CN).
 
-[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/YaoIsAI/wxwright/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/YaoIsAI/wxwright/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/YaoIsAI/wxwright/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/YaoIsAI/wxwright/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/YaoIsAI/wxwright/compare/v0.9.0...v0.10.0

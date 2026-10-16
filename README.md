@@ -36,16 +36,17 @@ The AI assistant drafts with you — streaming, stoppable, and every reply offer
 
 ## Download
 
-Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.11.1):
+Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.11.2):
 
 | Platform | File |
 |---|---|
-| Windows | `wxwright_0.11.1_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS | `wxwright_0.11.1_aarch64.dmg` (Apple silicon; not notarized — first launch needs a one-time bypass, see below) |
-| Linux | `wxwright_0.11.1_amd64.deb` or `.AppImage` |
+| Windows | `wxwright_0.11.2_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
+| macOS (Apple silicon) | `wxwright_0.11.2_aarch64.dmg` (not notarized — first launch needs a one-time bypass, see below) |
+| macOS (Intel) | `wxwright_0.11.2_x64.dmg` (same one-time bypass, see below) |
+| Linux | `wxwright_0.11.2_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
-**macOS first launch** (Apple silicon, macOS 11+): the dmg is ad-hoc signed but not notarized, so the first launch is blocked by Gatekeeper with "Apple could not verify that wxwright does not contain malware". After dragging `wxwright.app` to Applications, use either of these — **each needs to be done once**:
+**macOS first launch** (macOS 11+): the dmg is ad-hoc signed but not notarized, so the first launch is blocked by Gatekeeper with "Apple could not verify that wxwright does not contain malware". After dragging `wxwright.app` to Applications, use either of these — **each needs to be done once**:
 
 **Method 1 (recommended, one Terminal command):**
 
@@ -197,7 +198,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 
 ## Release automation
 
-Tag a version (`git tag v0.11.1 && git push origin v0.11.1`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
+Tag a version (`git tag v0.11.2 && git push origin v0.11.2`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
 
 ## Author
 

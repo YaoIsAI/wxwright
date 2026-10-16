@@ -64,8 +64,9 @@ CI 里有 `codesign --verify --deep --strict` + CodeResources 存在性门禁，
 4. 注意空 secret 会以「空字符串」形态出现在 step 环境里，tauri-bundler 的
    `var_os()` 会把它当成已配置——step 脚本里的 unset 守卫行不能删
 
-Intel Mac 注意：当前矩阵只出 aarch64 dmg（macos-latest 是 ARM runner），x86_64
-用户没有安装包；要覆盖需加 `x86_64-apple-darwin` target 或 universal2。
+Intel Mac：矩阵已含 `x86_64-apple-darwin` 条目（在 ARM runner 上交叉编译，
+与 CLI 矩阵同法），产物为 `wxwright_<ver>_x64.dmg`，密封与门禁和 aarch64
+条目完全一致（v0.11.2 起）。备选方案 universal2（单包双架构）暂未启用。
 
 ## 建议路径
 
