@@ -192,12 +192,20 @@ jobs:
           # host builds land in target/release/bundle; cross builds with a
           # --target triple land in target/<triple>/release/bundle (none exist
           # on runners that did not cross-compile, so skip missing dirs)
-          for d in target/release/bundle target/*/*/release/bundle; do
+          for d in target/release/bundle target/*/release/bundle; do
             [ -d "$d" ] || continue
             find "$d" -type f \
               \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" \) \
               -exec cp {} dist-artifacts/ \;
           done
+          # a collection step that finds nothing must fail loudly - the one
+          # time this silently produced an empty upload, an entire release
+          # shipped without its macOS dmg while every job stayed green
+          ls dist-artifacts | grep -q . || {
+            echo "::error::no bundles were collected - check the bundle paths above"
+            exit 1
+          }
+          ls -l dist-artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: wxwright-gui-${{ matrix.label }}
