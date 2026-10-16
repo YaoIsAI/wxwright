@@ -178,7 +178,7 @@ pub enum Block {
         html: String,
     },
     /// Data chart rendered as compliant inline SVG (bar/line/pie), from a
-    /// ```chart fenced block (JSON spec). AI can emit these directly.
+    /// `chart` fenced block (JSON spec). AI can emit these directly.
     Chart {
         spec: ChartSpec,
     },
