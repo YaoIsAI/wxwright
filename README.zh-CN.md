@@ -45,13 +45,21 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 | Linux | `wxwright_0.11.1_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
-**macOS 首次打开**（Apple silicon，macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，Gatekeeper 会拦截一次。把 `wxwright.app` 拖入「应用程序」后，在终端执行：
+**macOS 首次打开**（Apple silicon，macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
+
+**方式一（推荐，终端一条命令）：**
 
 ```bash
 xattr -cr /Applications/wxwright.app
 ```
 
-之后即可正常打开。也可以：右键 → 打开（macOS ≤ Sonoma），或 系统设置 → 隐私与安全性 → 「仍要打开」（Sequoia 及以后）。若看到「**已损坏，无法打开**」，说明走的是旧指引——右键打开对它无效，请直接用上面的命令。CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。
+之后双击正常打开，不再有任何提示。
+
+**方式二（不用终端）：** 先试着打开一次 wxwright（会被拦），然后打开 系统设置 → 隐私与安全性，滚动到「安全性」一节，在 wxwright 的提示旁点 **「仍要打开」**，Touch ID 或密码认证后，弹窗里再点 **「打开」**。这个放行同样永久生效。
+
+> 注意：**右键 → 打开** 在 Apple Silicon 上对这个拦截不可靠，macOS Sequoia 起已彻底移除该通道——遇到拦截请直接用上面两种方式。
+
+CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。签名机制的完整说明见 `docs/code-signing.md`。
 
 ## 30 秒上手
 
@@ -159,7 +167,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.10.1 && git push origin v0.10.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。详见 `docs/release-automation.md`。
+打 tag（`git tag v0.11.1 && git push origin v0.11.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 

@@ -45,13 +45,21 @@ Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/r
 | Linux | `wxwright_0.11.1_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
-**macOS first launch** (Apple silicon, macOS 11+): the dmg is ad-hoc signed but not notarized, so Gatekeeper blocks it once. After dragging `wxwright.app` to Applications, run in Terminal:
+**macOS first launch** (Apple silicon, macOS 11+): the dmg is ad-hoc signed but not notarized, so the first launch is blocked by Gatekeeper with "Apple could not verify that wxwright does not contain malware". After dragging `wxwright.app` to Applications, use either of these — **each needs to be done once**:
+
+**Method 1 (recommended, one Terminal command):**
 
 ```bash
 xattr -cr /Applications/wxwright.app
 ```
 
-then open normally. Alternatives: right-click → Open (macOS ≤ Sonoma), or System Settings → Privacy & Security → "Open Anyway" (Sequoia and later). The old "right-click → Open" advice alone can trigger a "**is damaged**" error on Apple Silicon — use the command above if you see it. Same for the CLI binary: `xattr -d com.apple.quarantine wxwright` after extracting.
+Then open normally — no prompt will appear again.
+
+**Method 2 (no Terminal):** try to open wxwright once (it gets blocked), then open System Settings → Privacy & Security, scroll to the "Security" section, click **Open Anyway** next to the wxwright notice, authenticate with Touch ID or your password, then click **Open** in the popup. This approval also sticks permanently.
+
+> Note: **right-click → Open** is unreliable against this gate on Apple Silicon and was removed entirely in macOS Sequoia — when blocked, just use one of the two methods above.
+
+Same for the CLI binary after extraction: `xattr -d com.apple.quarantine wxwright`. The full signing story lives in `docs/code-signing.md`.
 
 ## 30-second start
 
@@ -189,7 +197,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 
 ## Release automation
 
-Tag a version (`git tag v0.10.1 && git push origin v0.10.1`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for signing/notarization setup.
+Tag a version (`git tag v0.11.1 && git push origin v0.11.1`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
 
 ## Author
 
