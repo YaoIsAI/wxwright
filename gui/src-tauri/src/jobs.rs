@@ -484,7 +484,7 @@ fn run_chat_task<R: tauri::Runtime>(
     job: &Arc<Job>,
     kind: &str,
     params: &Value,
-    finish: impl Fn(&str, &Vec<String>) -> Result<Value, String>,
+    finish: impl Fn(&str, &str, &Vec<String>) -> Result<Value, String>,
 ) -> Result<Value, String> {
     let spec = spec(kind);
     let system = (spec.system)();
@@ -504,7 +504,7 @@ fn run_chat_task<R: tauri::Runtime>(
         match (spec.extract)(&content)
             .and_then(|artifact| (spec.validate)(&artifact).map(|warnings| (artifact, warnings)))
         {
-            Ok((artifact, warnings)) => return finish(&artifact, &warnings),
+            Ok((artifact, warnings)) => return finish(&artifact, &content, &warnings),
             Err(e) => {
                 last_err = e;
                 emit(
@@ -524,14 +524,18 @@ fn run_chat_task<R: tauri::Runtime>(
 fn run_job(app: AppHandle, job: Arc<Job>, kind: String, params: Value) {
     let started = Instant::now();
     let result: Result<Value, String> = match kind.as_str() {
-        "theme" => run_chat_task(&app, &job, "theme", &params, |artifact, warnings| {
+        "theme" => run_chat_task(&app, &job, "theme", &params, |artifact, _raw, warnings| {
             crate::ai::save_theme_artifact(artifact)
                 .map(|t| json!({ "id": t["id"], "name": t["name"], "name_zh": t["name_zh"], "file": t["file"], "warnings": warnings }))
         }),
-        "svg" => run_chat_task(&app, &job, "svg", &params, |artifact, _w| {
-            Ok(json!(artifact))
+        "svg" => run_chat_task(&app, &job, "svg", &params, |artifact, raw, _w| {
+            let fields: Vec<Value> = crate::ai::extract_svg_params(raw)
+                .into_iter()
+                .map(|(key, label, value)| json!({ "key": key, "label": label, "value": value }))
+                .collect();
+            Ok(json!({ "svg": artifact, "fields": fields }))
         }),
-        "poster" => run_chat_task(&app, &job, "poster", &params, |artifact, _w| {
+        "poster" => run_chat_task(&app, &job, "poster", &params, |artifact, _raw, _w| {
             Ok(json!(artifact))
         }),
         "illustrate" => run_illustrate(&app, &job, &params),

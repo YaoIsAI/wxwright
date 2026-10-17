@@ -205,6 +205,17 @@ body { display: flex; flex-direction: column; }
 }
 .editor:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
+.editor-empty-hint {
+  position: absolute;
+  top: 44px; left: 32px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-tertiary);
+  pointer-events: none;
+  z-index: 2;
+}
+.editor-empty-hint .icon { width: 14px; height: 14px; color: var(--accent); }
+.editor-empty-hint .linklike { pointer-events: auto; font-size: 13px; }
+
 .editor-status {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 4px;
@@ -803,6 +814,12 @@ body { display: flex; flex-direction: column; }
   cursor: pointer; padding: 2px 4px; font-size: 12px;
 }
 .k-del:hover { color: var(--err); }
+.k-pin {
+  border: none; background: none; color: var(--text-tertiary);
+  cursor: pointer; padding: 2px 4px; font-size: 13px; line-height: 1;
+}
+.k-pin:hover { color: var(--accent); }
+.k-pin.pinned { color: var(--accent); }
 
 .k-body { border-top: 1px dashed var(--border); padding: 10px 8px 8px; }
 

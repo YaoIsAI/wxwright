@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=26" />
+  <link rel="stylesheet" href="styles.css?v=27" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -223,6 +223,11 @@
 
     <section class="pane pane-editor">
       <textarea id="editor" class="editor" spellcheck="false" placeholder="Markdown..."></textarea>
+      <div id="editor-empty-hint" class="editor-empty-hint" hidden>
+        <svg class="icon"><use href="#i-spark"/></svg>
+        <span data-i18n="editor_empty_hint">从这里开始写作，或</span>
+        <button type="button" id="hint-open-kit" class="linklike" data-i18n="editor_empty_kit_link">插入一个互动组件试试</button>
+      </div>
       <div class="editor-status">
         <span id="stat-chars">0</span>
         <span class="dot"></span>
@@ -838,6 +843,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=48"></script>
+  <script src="app.js?v=49"></script>
 </body>
 </html>

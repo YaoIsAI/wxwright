@@ -10,6 +10,25 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Changed
+- **The toolbar SVG kit entry is removed; the sidebar Components tab is the
+  single surface.** The button only expanded the sidebar onto the tab - one
+  library, one entry point.
+
+### Added
+- **Empty-editor hint links to the kit.** With a blank editor the pane shows
+  "start writing, or try inserting an interactive component" - one click opens
+  the Components tab (discoverability after the entry consolidation).
+- **AI-generated components are parameterized.** The SVG prompt now asks the
+  model for a one-line params table after the snippet; each editable text /
+  color / image slot becomes a real form field (color picker, upload, AI image
+  fill) in the accordion editor, edits persist and flow into the inserted
+  markup. Components without a table keep the fixed-snippet behavior.
+- **Pin and recent-use ordering for custom components.** Custom cards can be
+  pinned to the top; the rest sort by most recently used, then newest.
+- **Insert undo.** The insert toast carries an Undo action that truncates the
+  editor back to the pre-insert state.
+
 ## [0.12.0] - 2026-10-17
 
 ### Added

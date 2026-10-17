@@ -93,6 +93,8 @@ const I18N = {
     copied_text: "已复制到剪贴板", mcp_installed: (p) => `已写入：${p}`,
     provider_saved: "Provider 已保存", connected: "连接成功：",
     first_run_hint: "提示：右上角机器人图标可一键把 wxwright 接入 Claude / Cursor 等 AI Agent",
+    editor_empty_hint: "从这里开始写作，或",
+    editor_empty_kit_link: "插入一个互动组件试试",
     demo_mode: "浏览器演示模式（无本地后端）",
     theme_ai_title: "AI 生成主题", theme_ai_hint: "描述你想要的主题风格，AI 会生成全新配色与排版，并自动通过公众号官方规范校验（font-family 禁用、对比度约束）。生成结果保存为用户主题，CLI 也能使用。",
     generate: "生成主题", theme_generating: "生成中，约需 10-30 秒...",
@@ -155,7 +157,7 @@ const I18N = {
     fit_hint: "导出后自动进入素材库",
     csize_cover: "1080 × 460（头图 2.35:1）", csize_square: "1080 × 1080（次图 1:1）",
     csize_small: "500 × 500（小方图）", csize_wide: "1280 × 720（横图 16:9）", csize_tall: "1080 × 1440（竖图 3:4）",
-    svgkit_gen: "AI 生成组件", kit_insert: "一键插入文章",
+    svgkit_gen: "AI 生成组件", kit_insert: "一键插入文章", undo: "撤销",
     imgset: "导出图组", imgset_done: (n) => `图组已导出 ${n} 张到素材库`,
     job_stopped: "已停止",
   },
@@ -243,6 +245,8 @@ const I18N = {
     copied_text: "Copied to clipboard", mcp_installed: (p) => `Written: ${p}`,
     provider_saved: "Provider saved", connected: "Connected: ",
     first_run_hint: "Tip: the robot icon top-right connects wxwright to Claude / Cursor in one click",
+    editor_empty_hint: "Start writing here, or",
+    editor_empty_kit_link: "try inserting an interactive component",
     demo_mode: "Browser demo mode (no local backend)",
     theme_ai_title: "AI theme generator", theme_ai_hint: "Describe the style; the AI generates a brand-new palette and typography, automatically validated against the official MP rules. Saved as a user theme (usable from the CLI too).",
     generate: "Generate", theme_generating: "Generating, 10-30s...",
@@ -305,7 +309,7 @@ const I18N = {
     fit_hint: "Exports land in the asset library",
     csize_cover: "1080 × 460 (cover 2.35:1)", csize_square: "1080 × 1080 (square 1:1)",
     csize_small: "500 × 500 (small square)", csize_wide: "1280 × 720 (wide 16:9)", csize_tall: "1080 × 1440 (tall 3:4)",
-    svgkit_gen: "Generate component", kit_insert: "Quick insert",
+    svgkit_gen: "Generate component", kit_insert: "Quick insert", undo: "Undo",
     imgset: "Export image set", imgset_done: (n) => `${n} image(s) exported to the asset library`,
     job_stopped: "Stopped",
   },
@@ -345,6 +349,26 @@ function toast(message, kind = "info", listHtml = "") {
   el.innerHTML = `<div><div>${escapeHtml(message)}</div>${listHtml}</div>`;
   host.appendChild(el);
   setTimeout(() => el.remove(), kind === "err" ? 8000 : 3600);
+}
+function toastWithUndo(message) {
+  const host = $("toast-host");
+  const el = document.createElement("div");
+  el.className = "toast ok";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "linklike";
+  btn.textContent = t("undo");
+  btn.addEventListener("click", () => {
+    undoKitInsert();
+    el.remove();
+  });
+  const msg = document.createElement("div");
+  msg.textContent = message;
+  const row = document.createElement("div");
+  row.append(msg, btn);
+  el.appendChild(row);
+  host.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
 }
 async function copyPlain(text) {
   try {
@@ -420,6 +444,11 @@ function updateStats(stats, violations) {
   $("stat-words").textContent = `${t("words")} ${stats.words}`;
   $("stat-images").textContent = `${t("images")} ${stats.images}`;
   updateRuleChip(violations || []);
+  updateEditorEmptyHint();
+}
+function updateEditorEmptyHint() {
+  const hint = document.getElementById("editor-empty-hint");
+  if (hint) hint.hidden = $("editor").value.trim().length > 0;
 }
 function updateRuleChip(violations) {
   const chip = $("rule-chip");
@@ -479,6 +508,7 @@ async function convertNow() {
     $("stat-words").textContent = `${t("words")} ${demoWords}`;
     $("stat-images").textContent = `${t("images")} ${demoImgs}`;
     $("status-text").textContent = t("ready");
+    updateEditorEmptyHint();
     return;
   }
   try {
@@ -3295,13 +3325,24 @@ function svgKitEntries() {
     cat: kit.cat || "text",
     customIndex: -1,
   }));
-  const custom = svgKitCustom.map((c, i) => ({
-    key: "c" + i,
-    name: c.name,
-    desc: lang === "zh-CN" ? "AI 生成的固定片段，插入后可微调" : "AI-generated snippet; fine-tune after insert",
-    cat: "mine",
-    customIndex: i,
-  }));
+  // pinned first, then most recently used, then newest
+  const order = svgKitCustom.map((c, i) => i).sort((a, b) => {
+    const A = svgKitCustom[a], B = svgKitCustom[b];
+    if (!!B.pinned !== !!A.pinned) return B.pinned ? 1 : -1;
+    return (B.usedAt || B.createdAt || 0) - (A.usedAt || A.createdAt || 0);
+  });
+  const custom = order.map((i) => {
+    const c = svgKitCustom[i];
+    return {
+      key: "c" + i,
+      name: c.name,
+      desc: c.fields && c.fields.length
+        ? (lang === "zh-CN" ? "AI 生成，参数可编辑" : "AI-generated; fields editable")
+        : (lang === "zh-CN" ? "AI 生成的固定片段，插入后可微调" : "AI-generated snippet; fine-tune after insert"),
+      cat: "mine",
+      customIndex: i,
+    };
+  });
   return built.concat(custom);
 }
 
@@ -3328,10 +3369,16 @@ function svgKitSanitizeThumb(svg) {
 }
 
 function svgKitThumbMarkup(entry) {
-  if (entry.customIndex >= 0) return svgKitSanitizeThumb(svgKitCustom[entry.customIndex].svg);
+  if (entry.customIndex >= 0) {
+    const c = svgKitCustom[entry.customIndex];
+    const markup = c.fields && c.fields.length ? applySvgParams(c.svg, c.params || {}, c.fields) : c.svg;
+    return svgKitSanitizeThumb(markup);
+  }
   const kit = SVG_KIT[entry.key];
   return kit ? svgKitSanitizeThumb(kit.build({ ...kit.params })) : "";
 }
+
+let lastInsertUndo = null; // { len } - editor length before the last kit insert
 
 function insertSvgMarkup() {
   const svg = currentSvgMarkup();
@@ -3339,14 +3386,31 @@ function insertSvgMarkup() {
   // Block-level embed: append as a standalone block at the end (cursor
   // insertion would nest it inside lists/code and break the classification)
   const ed = $("editor");
+  lastInsertUndo = { len: ed.value.length };
   ed.value = ed.value.replace(/\s*$/, "") + "\n\n" + svg + "\n";
   ed.selectionStart = ed.selectionEnd = ed.value.length;
+  markKitUsed();
   dirty = true;
   $("stat-saved").textContent = t("not_saved");
   if (window.Mozai) Mozai.typing();
   scheduleConvert();
-  toast(lang === "zh-CN" ? "组件已插入（引擎已复核合规）" : "Inserted (re-validated by the engine)", "ok");
+  toastWithUndo(lang === "zh-CN" ? "组件已插入（引擎已复核合规）" : "Inserted (re-validated by the engine)");
   if (window.Mozai) Mozai.celebrate();
+}
+
+// Revert the last kit insert: truncate the editor back to the recorded
+// pre-insert length. Only valid while nothing else has edited the buffer.
+function undoKitInsert() {
+  if (!lastInsertUndo) return;
+  const ed = $("editor");
+  if (ed.value.length < lastInsertUndo.len) { lastInsertUndo = null; return; }
+  ed.value = ed.value.slice(0, lastInsertUndo.len).replace(/\s*$/, "") + "\n";
+  ed.selectionStart = ed.selectionEnd = ed.value.length;
+  lastInsertUndo = null;
+  dirty = true;
+  $("stat-saved").textContent = t("not_saved");
+  scheduleConvert();
+  toast(lang === "zh-CN" ? "已撤销插入" : "Insert undone", "ok");
 }
 
 async function svgKitAiImage(paramKey, row) {
@@ -3371,10 +3435,29 @@ async function svgKitAiImage(paramKey, row) {
 function currentSvgMarkup() {
   if (svgKitKey.startsWith("c")) {
     const idx = parseInt(svgKitKey.slice(1));
-    return svgKitCustom[idx] ? svgKitCustom[idx].svg : "";
+    const c = svgKitCustom[idx];
+    if (!c) return "";
+    if (Array.isArray(c.fields) && c.fields.length) return applySvgParams(c.svg, c.params || {}, c.fields);
+    return c.svg;
   }
   const kit = SVG_KIT[svgKitKey];
   return kit ? kit.build(svgKitParams) : "";
+}
+
+// Substitute editable params back into an AI component's markup: each field's
+// original value in the snippet is replaced by the current one. Image params
+// carry data URIs; text params are XML-escaped.
+function applySvgParams(svg, params, fields) {
+  let out = svg;
+  for (const [key, , original] of fields || []) {
+    const val = params ? params[key] : undefined;
+    if (val === undefined || val === null || val === "") continue;
+    const esc = String(val).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const from = String(original || "");
+    if (!from) continue;
+    out = out.split(from).join(esc);
+  }
+  return out;
 }
 
 async function svgKitAiGenerate() {
@@ -3387,11 +3470,20 @@ async function svgKitAiGenerate() {
   try {
     const job = await AIJobs.run("svg", { description: desc }, { button: $("svgkit-ai-generate") });
     if (job.stopped) { $("svgkit-ai-status").textContent = t("job_stopped"); return; }
-    const svg = job.result;
-    svgKitCustom.unshift({ id: "c" + Date.now(), name: desc.slice(0, 14), svg });
+    const res = job.result || {};
+    const svg = res.svg || job.result;
+    const fields = Array.isArray(res.fields) ? res.fields : [];
+    svgKitCustom.unshift({
+      id: "c" + Date.now(),
+      name: desc.slice(0, 14),
+      svg,
+      createdAt: Date.now(),
+      fields: fields.map((f) => [String(f.key), String(f.label || f.key), String(f.value ?? "")]),
+      params: Object.fromEntries(fields.map((f) => [String(f.key), String(f.value ?? "")])),
+    });
     saveCustomSvg();
     svgKitKey = "c0";
-    svgKitParams = {};
+    svgKitParams = { ...(svgKitCustom[0].params || {}) };
     svgKitCat = "mine";
     renderSvgKit();
     toast(lang === "zh-CN" ? "组件已生成，预览后即可插入" : "Component generated", "ok");
@@ -3458,6 +3550,15 @@ function renderSvgKit() {
     quick.innerHTML = '<svg class="icon"><use href="#i-plus"/></svg>';
     actions.appendChild(quick);
     if (entry.customIndex >= 0) {
+      const pin = document.createElement("button");
+      pin.type = "button";
+      pin.className = "k-pin" + (svgKitCustom[entry.customIndex].pinned ? " pinned" : "");
+      pin.dataset.pin = String(entry.customIndex);
+      pin.title = svgKitCustom[entry.customIndex].pinned
+        ? (lang === "zh-CN" ? "取消置顶" : "Unpin")
+        : (lang === "zh-CN" ? "置顶收藏" : "Pin to top");
+      pin.textContent = svgKitCustom[entry.customIndex].pinned ? "PIN" : "pin";
+      actions.appendChild(pin);
       const del = document.createElement("button");
       del.type = "button";
       del.className = "k-del";
@@ -3487,7 +3588,9 @@ function renderSvgKit() {
   let kit;
   if (isCustom) {
     const idx = parseInt(svgKitKey.slice(1));
-    kit = { fields: [] };
+    const c = svgKitCustom[idx] || {};
+    kit = { fields: Array.isArray(c.fields) ? c.fields : [] };
+    if (!svgKitParams || !Object.keys(svgKitParams).length) svgKitParams = { ...(c.params || {}) };
   } else {
     kit = SVG_KIT[svgKitKey] || SVG_KIT.blink;
     svgKitParams = { ...kit.params, ...svgKitParams };
@@ -3495,13 +3598,15 @@ function renderSvgKit() {
   const descView = $("svgkit-desc-view");
   if (descView) {
     descView.textContent = isCustom
-      ? (lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting.")
+      ? (kit.fields.length
+        ? (lang === "zh-CN" ? "AI 生成组件：改下面的参数即可定制，插入后引擎复核合规。" : "AI component: tweak the fields below; the engine re-validates on insert.")
+        : (lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting."))
       : kit.desc();
   }
   const form = $("svgkit-params");
   if (!form) return;
   form.innerHTML = "";
-  if (isCustom) {
+  if (isCustom && !kit.fields.length) {
     form.innerHTML = `<div class="section-hint" style="margin:0;">${lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting."}</div>`;
   } else {
     for (const [key, label] of kit.fields) {
@@ -3551,6 +3656,7 @@ function renderSvgKit() {
     form.querySelectorAll("input[data-param]").forEach((inp) => {
       inp.addEventListener("input", () => {
         svgKitParams[inp.dataset.param] = inp.value;
+        persistCustomParams();
         renderSvgKitPreview();
       });
     });
@@ -3559,6 +3665,7 @@ function renderSvgKit() {
         svgKitParams[pick.dataset.colorpick] = pick.value;
         const twin = form.querySelector(`input[data-param="${pick.dataset.colorpick}"]`);
         if (twin) twin.value = pick.value;
+        persistCustomParams();
         renderSvgKitPreview();
       });
     });
@@ -3573,6 +3680,7 @@ function renderSvgKit() {
           const r = new FileReader();
           r.onload = () => {
             svgKitParams[btn.dataset.imgpick] = String(r.result);
+            persistCustomParams();
             renderSvgKit();
           };
           r.readAsDataURL(f);
@@ -3602,6 +3710,27 @@ function renderSvgKit() {
     });
   }
   renderSvgKitPreview();
+}
+
+// Stamp usedAt on the selected AI component so recent-use ordering works.
+function markKitUsed() {
+  if (!svgKitKey.startsWith("c")) return;
+  const idx = parseInt(svgKitKey.slice(1));
+  if (svgKitCustom[idx]) {
+    svgKitCustom[idx].usedAt = Date.now();
+    saveCustomSvg();
+  }
+}
+
+// Persist the current params back into the selected AI component so edits
+// survive re-render and app restarts.
+function persistCustomParams() {
+  if (!svgKitKey.startsWith("c")) return;
+  const idx = parseInt(svgKitKey.slice(1));
+  if (svgKitCustom[idx]) {
+    svgKitCustom[idx].params = { ...svgKitParams };
+    saveCustomSvg();
+  }
 }
 
 function renderSvgKitPreview() {
@@ -4419,9 +4548,24 @@ function bindUI() {
   if (mStart) mStart.addEventListener("click", comfyStart);
 
   /* svg kit sidebar panel */
+  const hintKit = document.getElementById("hint-open-kit");
+  if (hintKit) hintKit.addEventListener("click", () => {
+    $("sidebar").classList.remove("collapsed");
+    setSidebarTab("components");
+  });
   $("svgkit-list").addEventListener("click", (e) => {
     const quick = e.target.closest(".k-quick");
     if (quick) { insertSvgMarkup(); return; }
+    const pin = e.target.closest(".k-pin");
+    if (pin) {
+      const idx = parseInt(pin.dataset.pin);
+      if (svgKitCustom[idx]) {
+        svgKitCustom[idx].pinned = !svgKitCustom[idx].pinned;
+        saveCustomSvg();
+        renderSvgKit();
+      }
+      return;
+    }
     const del = e.target.closest(".k-del");
     if (del) {
       svgKitCustom.splice(parseInt(del.dataset.del), 1);
@@ -4434,7 +4578,9 @@ function bindUI() {
     const head = e.target.closest(".k-head");
     if (head && head.dataset.key && head.dataset.key !== svgKitKey) {
       svgKitKey = head.dataset.key;
-      svgKitParams = head.dataset.key.startsWith("c") ? {} : { ...SVG_KIT[head.dataset.key].params };
+      svgKitParams = head.dataset.key.startsWith("c")
+        ? { ...(svgKitCustom[parseInt(head.dataset.key.slice(1))]?.params || {}) }
+        : { ...SVG_KIT[head.dataset.key].params };
       renderSvgKit();
     }
   });

@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use wxwright_core::{pipeline, theme, ConvertOptions};
 
@@ -1040,7 +1041,11 @@ pub(crate) const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组�
 4. 文字用 <text>；图片只能内嵌 data URI（<image href=\"data:image/...\">）；严禁 foreignObject；
 5. 不使用 font-family；颜色避开纯黑（Dark Mode 下 SVG 不转换，建议浅背景深色字）；
 6. 交互逻辑要简单可靠：点击渐显/切换/描边/进度点亮等，不要依赖复杂状态机。
-7. 多步时序用 begin 偏移实现（如揭示类先翻盖再升图：第二步写 begin=\"touchstart; click+0.4s\"）；位移揭示用 <g> 包裹 + <animateTransform type=\"translate\">，翻盖用 type=\"rotate\" 绕固定点旋转。";
+7. 多步时序用 begin 偏移实现（如揭示类先翻盖再升图：第二步写 begin=\"touchstart; click+0.4s\"）；位移揭示用 <g> 包裹 + <animateTransform type=\"translate\">，翻盖用 type=\"rotate\" 绕固定点旋转。
+
+片段之后另起一行输出一行 JSON 参数表（一行、无围栏、无注释），让用户插入后可改文字/颜色/图片：
+{\"params\":[{\"key\":\"title\",\"label\":\"标题\",\"value\":\"组件里的标题文字\"},{\"key\":\"color\",\"label\":\"强调色\",\"value\":\"#RRGGBB\"}]}
+规则：key 用小写英文；可编辑的文字各给一项（value 填片段里的原文）；颜色类 key 以 color 结尾；图片位 key 以 image 结尾且 value 留空字符串；最多 8 项；没有可编辑内容就输出 {\"params\":[]}。";
 
 pub(crate) fn extract_svg_snippet(text: &str) -> Result<String, String> {
     let t = text.trim();
@@ -1057,6 +1062,50 @@ pub(crate) fn extract_svg_snippet(text: &str) -> Result<String, String> {
         Some(e) if e > start => Ok(t[start..e].to_string()),
         _ => Err("AI 输出的 SVG 片段不完整".into()),
     }
+}
+
+/// Parse the trailing one-line params table the SVG prompt asks for:
+/// {"params":[{"key":"title","label":"标题","value":"..."}]}
+/// Returns (key, label, value) triples; empty when absent or malformed
+/// (params are an enhancement, never a gate).
+pub(crate) fn extract_svg_params(text: &str) -> Vec<(String, String, String)> {
+    let t = text.trim();
+    let Some(rel) = t.rfind("{\"params\"") else {
+        return Vec::new();
+    };
+    let Some(end) = t[rel..].find('}') else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&t[rel..rel + end + 1]) else {
+        return Vec::new();
+    };
+    v.get("params")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let key = it.get("key")?.as_str()?.trim().to_lowercase();
+                    if key.is_empty() || key.len() > 24 {
+                        return None;
+                    }
+                    let label = it
+                        .get("label")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or(&key)
+                        .chars()
+                        .take(24)
+                        .collect::<String>();
+                    let value = it
+                        .get("value")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some((key, label, value))
+                })
+                .take(8)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) fn validate_svg_snippet(snippet: &str) -> Result<(), String> {
