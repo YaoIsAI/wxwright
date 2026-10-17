@@ -11,6 +11,11 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Changed
+- **WeChat developer-config guidance updated for the platform migration.**
+  WeChat moved the API IP whitelist / AppSecret from the MP console (基本配置)
+  to the WeChat Developer Platform (developers.weixin.qq.com, 我的业务 →
+  公众号/服务号 → 基础信息 → 开发密钥). The help center, the inline 40164
+  hint and the tutorial now point there.
 - **The toolbar SVG kit entry is removed; the sidebar Components tab is the
   single surface.** The button only expanded the sidebar onto the tab - one
   library, one entry point.
@@ -31,6 +36,10 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   pinned to the top; the rest sort by most recently used, then newest.
 - **Insert undo.** The insert toast carries an Undo action that truncates the
   editor back to the pre-insert state.
+- **ComfyUI settings gain browse actions.** The Checkpoint model field gets a
+  "Fetch models" button that reads the live /object_info list from the running
+  ComfyUI into a typeahead datalist; the launcher path gets a native file
+  picker (bat/cmd/exe/ps1/py/sh).
 
 ## [0.12.0] - 2026-10-17
 

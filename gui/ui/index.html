@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=28" />
+  <link rel="stylesheet" href="styles.css?v=29" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -480,8 +480,19 @@
             <p class="section-hint" data-i18n="comfy_section_hint">检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。</p>
             <div class="form-grid">
               <label class="span2"><span data-i18n="comfy_url_label">ComfyUI 地址</span><input id="comfy-url" placeholder="http://127.0.0.1:8188" /></label>
-              <label class="span2"><span data-i18n="comfy_model_label">Checkpoint 模型</span><input id="comfy-model" placeholder="v1-5-pruned-emaonly.safetensors" /></label>
-              <label class="span2"><span data-i18n="comfy_launch_label">启动程序路径（用于一键启动）</span><input id="comfy-launch-path" placeholder="D:\\ComfyUI\\run_nvidia_gpu.bat" /></label>
+              <label class="span2"><span data-i18n="comfy_model_label">Checkpoint 模型</span>
+                <span class="input-btn-row">
+                  <input id="comfy-model" list="comfy-model-list" placeholder="v1-5-pruned-emaonly.safetensors" />
+                  <datalist id="comfy-model-list"></datalist>
+                  <button type="button" id="comfy-model-browse" class="btn btn-ghost" data-i18n="comfy_browse_models">获取模型列表</button>
+                </span>
+              </label>
+              <label class="span2"><span data-i18n="comfy_launch_label">启动程序路径（用于一键启动）</span>
+                <span class="input-btn-row">
+                  <input id="comfy-launch-path" placeholder="D:\\ComfyUI\\run_nvidia_gpu.bat" />
+                  <button type="button" id="comfy-launch-browse" class="btn btn-ghost" data-i18n="comfy_browse">浏览</button>
+                </span>
+              </label>
             </div>
             <div class="form-actions">
               <span id="comfy-chip" class="ai-provider-chip"></span>
@@ -843,6 +854,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=50"></script>
+  <script src="app.js?v=51"></script>
 </body>
 </html>

@@ -48,6 +48,7 @@ pub fn run() {
             commands::extract_document_text,
             commands::read_binary_file,
             commands::comfy_status,
+            commands::comfy_list_models,
             commands::comfy_save_config,
             commands::comfy_launch,
             commands::wx_bind_status,

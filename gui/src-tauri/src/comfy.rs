@@ -175,6 +175,37 @@ pub fn probe(url: &str) -> bool {
     }
 }
 
+/// Query /object_info for the checkpoint list ComfyUI can actually load
+/// (CheckpointLoaderSimple.ckpt_name), so the settings page can offer a
+/// browser instead of asking the user to type exact filenames.
+pub fn list_models(url: &str) -> Result<Vec<String>, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(5))
+        .build();
+    let resp = agent
+        .get(&format!("{}/object_info", url.trim_end_matches('/')))
+        .call()
+        .map_err(|e| format!("无法连接 ComfyUI（{url}）：{e}"))?;
+    let mut body = String::new();
+    resp.into_reader()
+        .read_to_string(&mut body)
+        .map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let names = v
+        .pointer("/CheckpointLoaderSimple/input/required/ckpt_name/0")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if names.is_empty() {
+        return Err("ComfyUI 未返回模型列表（models/checkpoints 目录为空或版本过旧）".into());
+    }
+    Ok(names)
+}
+
 fn agent_long() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(5))

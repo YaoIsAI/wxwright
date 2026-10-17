@@ -135,6 +135,8 @@ const I18N = {
     comfy_section_hint: "检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。",
     comfy_url_label: "ComfyUI 地址", comfy_model_label: "Checkpoint 模型",
     comfy_launch_label: "启动程序路径（用于一键启动）", comfy_start: "一键启动",
+    comfy_browse_models: "获取模型列表", comfy_browse: "浏览",
+    comfy_models_ok: (n) => `已拉取 ${n} 个模型，点击输入框即可选择`, comfy_models_none: "未拉取到模型，请确认 ComfyUI 在线且已放好模型",
     about_line1: "wxwright 0.12.0 · by AI瑶（微信公众号：码聋）",
     about_line2: "写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。",
     chip_jp: "日系手账", chip_jp_desc: "日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺",
@@ -287,6 +289,8 @@ const I18N = {
     comfy_section_hint: "With a local ComfyUI detected, the AI drawing button drives local Stable Diffusion txt2img / img2img; results land in the asset library.",
     comfy_url_label: "ComfyUI URL", comfy_model_label: "Checkpoint model",
     comfy_launch_label: "Launcher path (for one-click start)", comfy_start: "Start",
+    comfy_browse_models: "Fetch models", comfy_browse: "Browse",
+    comfy_models_ok: (n) => `Fetched ${n} models - click the input to pick one`, comfy_models_none: "No models returned; check that ComfyUI is online and has checkpoints",
     about_line1: "wxwright 0.12.0 - by AI Yao (MP: MaLong)",
     about_line2: "Mozai the writing pet lives in the bottom-left status bar - go pet it.",
     chip_jp: "Journal", chip_jp_desc: "Japanese journal style: cream paper, caramel accent, rounded note cards",
@@ -924,17 +928,18 @@ const HELP_CONTENT = [
       en: "Once bound, articles can be pushed straight into the MP drafts box with dialect typesetting and mmbiz image rehosting. Credentials stay in the local keychain.",
     },
     steps: [
-      { zh: "登录公众号后台（下方入口），需要你是管理员或运营者身份。",
-        en: "Sign in to the Official Account admin (link below) - you need an admin/operator role." },
-      { zh: "左侧「设置与开发」→「基本配置」：申请成为开发者后即可看到 AppID 与 AppSecret。",
-        en: "Settings and Development, Basic configuration: after applying as a developer you can view the AppID and AppSecret." },
+      { zh: "登录微信开发者平台（下方入口），需要你是管理员或开发者身份（运营者看不到开发配置）。",
+        en: "Sign in to the WeChat Developer Platform (link below) - you need an admin/developer role (operators cannot see dev config)." },
+      { zh: "「我的业务」→ 公众号/服务号 → 你的账号 →「基础信息」→「开发密钥」：查看 AppID 与 AppSecret（原公众平台「基本配置」已整体迁到这里）。",
+        en: "My Business, Official/Service Account, your account, Basic info, Dev keys: view the AppID and AppSecret (the old MP Basic configuration has fully moved here)." },
       { zh: "把 AppID / AppSecret 填进 设置 → 公众号 API → 绑定。Secret 只进钥匙串。",
         en: "Fill the AppID / AppSecret into Settings, WeChat MP API, then Bind. The secret goes to the keychain only." },
-      { zh: "如遇 IP 白名单报错：在公众号后台「基本配置 → IP 白名单」里加上本机出口 IP。",
-        en: "If you hit an IP whitelist error: add your machine's outbound IP under Basic configuration, IP whitelist." },
+      { zh: "如遇 IP 白名单报错（40164）：在同一处「开发密钥 → API IP 白名单」加上本机出口 IP（报错信息里 invalid ip 后面的那个）。",
+        en: "If you hit an IP whitelist error (40164): add your machine's outbound IP (the one after 'invalid ip' in the message) under Dev keys, API IP whitelist." },
     ],
     links: [
-      { label: { zh: "微信公众平台后台", en: "WeChat MP admin" }, url: "https://mp.weixin.qq.com" },
+      { label: { zh: "微信开发者平台", en: "WeChat Developer Platform" }, url: "https://developers.weixin.qq.com" },
+      { label: { zh: "微信公众平台后台（内容运营）", en: "WeChat MP admin (content ops)" }, url: "https://mp.weixin.qq.com" },
     ],
     note: {
       zh: "注意：AppSecret 重置后旧值立即失效；群发（publish）类接口另有频次与资质要求，工具默认只推草稿。",
@@ -4552,6 +4557,31 @@ function bindUI() {
   $("comfy-generate").addEventListener("click", comfyGenerate);
   const mStart = document.getElementById("comfy-start-modal");
   if (mStart) mStart.addEventListener("click", comfyStart);
+  $("comfy-model-browse").addEventListener("click", async () => {
+    if (!invoke) { toast(t("demo_mode"), "err"); return; }
+    try {
+      const models = await invoke("comfy_list_models", { url: $("comfy-url").value.trim() });
+      $("comfy-model-list").innerHTML = models
+        .map((m) => `<option value="${escapeHtml(m)}"></option>`)
+        .join("");
+      toast(models.length ? t("comfy_models_ok", models.length) : t("comfy_models_none"), models.length ? "ok" : "err");
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  });
+  $("comfy-launch-browse").addEventListener("click", async () => {
+    if (!(window.__TAURI__ && window.__TAURI__.dialog)) { toast(t("demo_mode"), "err"); return; }
+    try {
+      const { open } = window.__TAURI__.dialog;
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "Launcher", extensions: ["bat", "cmd", "exe", "ps1", "py", "sh"] }],
+      });
+      if (path) $("comfy-launch-path").value = path;
+    } catch (e) {
+      toast(String(e), "err");
+    }
+  });
 
   /* svg kit sidebar panel */
   const hintKit = document.getElementById("hint-open-kit");

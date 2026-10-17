@@ -234,6 +234,10 @@ body { display: flex; flex-direction: column; }
 }
 .linklike:hover { background: var(--accent-soft); }
 
+.input-btn-row { display: flex; gap: 6px; width: 100%; }
+.input-btn-row input { flex: 1 1 auto; min-width: 0; }
+.input-btn-row .btn { flex: 0 0 auto; font-size: 12px; padding: 6px 10px; }
+
 /* rule chip: inline compliance badge in the stats row (PRD review moved here) */
 .rule-chip {
   display: inline-flex; align-items: center; gap: 5px;

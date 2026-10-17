@@ -479,6 +479,14 @@ pub async fn comfy_status() -> serde_json::Value {
         )
 }
 
+#[tauri::command]
+pub async fn comfy_list_models(url: String) -> Result<Vec<String>, String> {
+    // /object_info can be a multi-MB payload on real installs: blocking IO.
+    tauri::async_runtime::spawn_blocking(move || crate::comfy::list_models(&url))
+        .await
+        .map_err(|e| format!("task join failed: {e}"))?
+}
+
 // ------------------------------------------------------ wechat mp binding ---
 #[tauri::command]
 pub fn wx_bind_status() -> serde_json::Value {
@@ -668,7 +676,7 @@ pub async fn wx_push_draft(
                         .collect::<Vec<_>>()
                         .join(" | ");
                     let hint = if warnings.contains("whitelist") || warnings.contains("40164") {
-                        "。检测到 IP 白名单拦截：请到公众号后台「设置与开发 → 基本配置 → IP 白名单」添加本机出口 IP 后重试"
+                        "。检测到 IP 白名单拦截：请到微信开发者平台（developers.weixin.qq.com）「我的业务 → 公众号/服务号 → 基础信息 → 开发密钥 → API IP 白名单」添加本机出口 IP 后重试（原公众平台「基本配置」已迁移至此）"
                     } else {
                         ""
                     };
