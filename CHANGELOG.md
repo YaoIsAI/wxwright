@@ -14,6 +14,9 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 - **The toolbar SVG kit entry is removed; the sidebar Components tab is the
   single surface.** The button only expanded the sidebar onto the tab - one
   library, one entry point.
+- **Kit cards use a vertical layout.** The thumbnail spans the full card
+  width on top; name, actions and description sit below it. The previous
+  left/right layout squeezed long descriptions beside a fixed 72px thumb.
 
 ### Added
 - **Empty-editor hint links to the kit.** With a blank editor the pane shows

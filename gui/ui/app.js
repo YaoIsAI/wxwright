@@ -3523,6 +3523,9 @@ function renderSvgKit() {
     const head = document.createElement("div");
     head.className = "k-head";
     head.dataset.key = entry.key;
+    // vertical layout: full-width thumbnail on top, meta row below - long
+    // descriptions get the whole card width instead of squeezing beside a
+    // fixed 72px thumb (the old left/right layout clipped and misrendered)
     const thumb = document.createElement("div");
     thumb.className = "k-thumb";
     thumb.innerHTML = svgKitThumbMarkup(entry);
@@ -3537,10 +3540,6 @@ function renderSvgKit() {
       badge.textContent = "AI";
       nameRow.appendChild(badge);
     }
-    const descRow = document.createElement("div");
-    descRow.className = "k-desc";
-    descRow.textContent = entry.desc;
-    meta.append(nameRow, descRow);
     const actions = document.createElement("div");
     actions.className = "k-actions";
     const quick = document.createElement("button");
@@ -3566,7 +3565,14 @@ function renderSvgKit() {
       del.textContent = lang === "zh-CN" ? "删除" : "Delete";
       actions.appendChild(del);
     }
-    head.append(thumb, meta, actions);
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "k-name-row";
+    nameWrap.append(nameRow, actions);
+    const descRow = document.createElement("div");
+    descRow.className = "k-desc";
+    descRow.textContent = entry.desc;
+    meta.append(nameWrap, descRow);
+    head.append(thumb, meta);
     card.appendChild(head);
     if (entry.key === svgKitKey) {
       const body = document.createElement("div");
