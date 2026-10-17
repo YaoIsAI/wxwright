@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=26" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -195,6 +195,7 @@
         <div class="sidebar-tabs">
           <button class="stab active" data-stab="articles" data-i18n="stab_articles">文章</button>
           <button class="stab" data-stab="drafts" data-i18n="stab_drafts">草稿箱</button>
+          <button class="stab" data-stab="components" data-i18n="stab_components">组件</button>
         </div>
         <span class="spacer"></span>
         <button id="btn-import" class="btn btn-ghost btn-icon" data-i18n-title="import_md" title="导入 .md 文件">
@@ -209,6 +210,17 @@
       </div>
       <div class="sidebar-list" id="article-list"></div>
       <div class="sidebar-list" id="drafts-list" hidden></div>
+      <div class="kit-panel" id="kit-panel" hidden>
+        <div class="kit-ai">
+          <input id="svgkit-desc" placeholder="描述想要的互动效果，例如：点击后头像放大并显示一句祝福语" data-i18n-placeholder="svg_desc_ph" />
+          <button id="svgkit-ai-generate" class="btn btn-primary" data-i18n-title="svgkit_gen" title="AI 生成组件">
+            <svg class="icon"><use href="#i-spark"/></svg>
+          </button>
+        </div>
+        <div id="svgkit-ai-status" class="section-hint"></div>
+        <div class="svgkit-cats" id="svgkit-cats"></div>
+        <div class="kit-list" id="svgkit-list"></div>
+      </div>
       <div class="sidebar-foot" id="library-path" title=""></div>
     </aside>
 
@@ -809,44 +821,6 @@
     </div>
   </div>
 
-  <!-- -------------------------------------------------- svg kit modal -->
-  <div id="modal-svgkit" class="modal-overlay" hidden>
-    <div class="modal modal-lg">
-      <div class="modal-head">
-        <span>SVG 互动组件库</span>
-        <button class="btn btn-ghost btn-icon modal-close" data-close="modal-svgkit">
-          <svg class="icon"><use href="#i-x"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <p class="section-hint" data-i18n="svgkit_hint">组件在公众号里由读者「点击 / 触摸」触发动画（自动满足官方 R-1.7 规则）。选组件、改文字与颜色、看右侧实时预览，然后插入文章；插入后引擎会再做一次合规校验。也可以直接让 AI 按描述生成全新组件，或上传自定义图片参与互动。</p>
-        <div class="svgkit-ai">
-          <input id="svgkit-desc" placeholder="描述想要的互动效果，例如：点击后头像放大并显示一句祝福语" data-i18n-placeholder="svg_desc_ph" />
-          <button id="svgkit-ai-generate" class="btn btn-primary">
-            <svg class="icon"><use href="#i-spark"/></svg>
-            <span>AI 生成</span>
-          </button>
-        </div>
-        <div id="svgkit-ai-status" class="section-hint" style="margin: 0 0 10px;"></div>
-        <div class="svgkit-layout">
-          <div class="svgkit-list" id="svgkit-list"></div>
-          <div class="svgkit-editor">
-            <div class="svgkit-preview" id="svgkit-preview"></div>
-            <div id="svgkit-params" class="svgkit-params"></div>
-            <div class="form-actions">
-              <span class="section-hint" style="margin: 0;" id="svgkit-desc-view"></span>
-              <span class="spacer"></span>
-              <button id="svgkit-insert" class="btn btn-primary">
-                <svg class="icon"><use href="#i-plus"/></svg>
-                <span data-i18n="insert_article">插入文章</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ------------------------------------------------------- help modal -->
   <div id="modal-help" class="modal-overlay" hidden>
     <div class="modal modal-lg">
@@ -867,6 +841,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>

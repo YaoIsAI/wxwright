@@ -10,6 +10,27 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-17
+
+### Added
+- **The SVG interactive kit becomes a persistent sidebar tab.** The article
+  library gains a Components tab: thumbnail cards (real SVG mini-previews)
+  grouped by category chips (guide / text / image / motion / mine), one-click
+  quick insert per card, and an accordion editor with the live animated
+  preview, parameter form and insert action. The kit popup is retired - the
+  toolbar button now expands the sidebar onto the tab. Custom thumbnails are
+  sanitized (script-capable nodes, inline handlers, ids stripped) before they
+  touch the app DOM.
+- **Two classic animated components: slide card and envelope reveal.** The
+  slide card sends its cover sliding away on tap to uncover the content
+  layer; the envelope flips its flap open and raises the long image out of
+  the pocket - both sequenced SMIL (R-1.7 `begin="touchstart; click"`,
+  fill=freeze), no scripts, no external assets.
+- **AI image generation fills component image slots.** Every image parameter
+  now has upload and AI-generate actions; the generated image comes back as
+  a data URI and fills the slot. The AI component prompt additionally teaches
+  multi-step sequencing (offset begins, translate/rotate groups).
+
 ## [0.11.2] - 2026-10-16
 
 ### Added

@@ -178,11 +178,13 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 48 | **GitHub Actions step 级 `env:` 不参与同一 step 的 `if:` 判定**（休眠签名 step 用 `if: env.SIGNING_PFX != ''` + step 级 env，条件恒 false，配了 secret 也静默跳过；叠加 working-directory 指错导致永远找不到安装包——「infrastructure-in-waiting」双缺陷叠加，真到启用那天才会爆） | 配置了 secrets 的发布仍然不带签名，且无任何报错 | 条件里要用的 env 必须放在 **job 级**（workflow 级更宽但会泄漏给全部 step），step 级 env 只供 `run:` 消费；带 working-directory 的查找一律先核对目标路径的基准目录 |
 | 49 | **tauri-bundler 在无 `APPLE_SIGNING_IDENTITY`/`APPLE_CERTIFICATE` 时完全跳过 codesign**（app.rs 是 `else if let Some(keychain)`，不是 ad-hoc 兜底），产物只有链接器在裸二进制上的 ad-hoc blob，bundle 无密封（dmg 里没有 `_CodeSignature/CodeResources`） | Apple Silicon 上被隔离下载的 app 被 Gatekeeper 判「已损坏，无法打开」，无任何绕过按钮；「右键→打开」指引对这种弹窗从来无效（Sequoia 起右键绕过本身也被移除） | macOS 发布 job 必须设 `APPLE_SIGNING_IDENTITY`（无证书用 `-` = ad-hoc，bundler 会 inside-out 密封 bundle）；CI 加 `codesign --verify --deep --strict` + CodeResources 存在性门禁；给用户的指引只能是 `xattr -cr` 或系统设置「仍要打开」。注意空 secret 以空字符串形态进 step env，bundler 的 `var_os()` 把它当已配置——构建前必须 unset（见 release.yml）。验证签名状态可离线做：解 dmg（koly→plist blkx→zlib→HFS+）→ 解析 Mach-O 的 LC_CODE_SIGNATURE → CodeDirectory 页哈希逐一比对 |
 | 50 | **产物收集步骤 glob 手误多写一层（`target/*/*/release/bundle`，实际是 `target/<triple>/release/bundle`）且 `[ -d ] \|\| continue` 把「一个目录都没匹配到」静默吞掉**（v0.11.2 首发实测：x64.dmg 已产出并密封在 runner 上，收集 0 个文件，upload-artifact 只发 warning，job 全绿，Release 缺一个资产） | 构建成功但产物丢失，Release 残缺，而 CI 没有任何红 | 收集/拷贝类步骤**末尾必须断言非空**（`ls dist-artifacts \| grep -q . \|\| exit 1`，见 release.yml），并 `ls -l` 留证据；嵌套 glob 落笔前对照真实输出路径逐段核对；upload-artifact 的「No files were found」只是 warning，不能当失败信号 |
+| 51 | **styles.css 里 svgkit 样式块整段重复出现两次**（历史追加事故，两段逐字相同；后者静默覆盖前者，改前不改后=改了白改） | 样式「改了没生效」或删除后残留一半，排查时间翻倍 | 大段 CSS 追加前先 `grep -c '段首注释\|特征类名'` 查重；删除功能时对类名做全文件 grep 而不是凭记忆只删一处；本次 v0.12.0 侧边栏化时清理 |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
-  SVG 组件库（6 组件+AI 生成+传图+取色器）/ AI 绘图双源（ComfyUI+云端）/ 真机样机（iPhone15Pro/Pixel8+深浅色）/
+  SVG 组件库（侧边栏「组件」tab：8 组件+分类筛选+缩略卡一键插入+手风琴调参+AI 生成+传图/AI 生图占位+取色器；弹窗已退役）/
+  AI 绘图双源（ComfyUI+云端）/ 真机样机（iPhone15Pro/Pixel8+深浅色）/
   宠物墨仔 / 合规徽标 / 渠道预览像素级分平台壳（wechat 方言 / xhs 笔记详情 / zhihu 文章页 /
   facebook 卡片 / instagram 帖子 / X 帖子 / linkedin 卡片，各按真实字号比例配色实现）/
   i18n / Agent 面板 / 公众号 API 绑定（GUI 推草稿按钮直通草稿箱）/ chart 图表引擎 /

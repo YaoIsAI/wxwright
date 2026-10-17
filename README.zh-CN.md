@@ -36,14 +36,14 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.11.2）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.12.0）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.11.2_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS（Apple 芯片） | `wxwright_0.11.2_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
-| macOS（Intel 芯片） | `wxwright_0.11.2_x64.dmg`（同样需一次放行，见下） |
-| Linux | `wxwright_0.11.2_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.12.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS（Apple 芯片） | `wxwright_0.12.0_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
+| macOS（Intel 芯片） | `wxwright_0.12.0_x64.dmg`（同样需一次放行，见下） |
+| Linux | `wxwright_0.12.0_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS 首次打开**（macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
@@ -64,8 +64,8 @@ CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。签�
 
 **Linux**（x86_64，两种格式任选）：
 
-- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.11.2_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
-- AppImage：`chmod +x wxwright_0.11.2_amd64.AppImage && ./wxwright_0.11.2_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
+- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.12.0_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
+- AppImage：`chmod +x wxwright_0.12.0_amd64.AppImage && ./wxwright_0.12.0_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
 - 中文界面需要系统装有 CJK 字体：Ubuntu 桌面版自带；极简版/服务器版先执行 `sudo apt install fonts-noto-cjk`。
 
 平台支持一览：Windows 10/11 x64 · macOS 11+（Apple 芯片与 Intel 芯片各一个 dmg）· Linux x86_64（webkit2gtk-4.1）。
@@ -137,6 +137,7 @@ GUI 里还有 **AI 主题生成**：一句话描述风格（例如「赛博朋�
 - **Agent 接入面板**（机器人图标）：一键写入 Claude Desktop / Cursor / VS Code / OpenCode 的 MCP 配置、一键复制 Agent 卡片、CLI 速查表。同一引擎，同一合规约束。
 - **AI 主题生成**：描述风格，得到通过官方规范校验的全新主题，CLI 与 GUI 共用。
 - **海报工坊**：HTML -> PNG 本地光栅化（SVG foreignObject，完全离线），内置公众号标准封面尺寸；支持 AI 生成海报；一键导出插入文章。
+- **SVG 互动组件库（侧边栏）**：文章库新增「组件」tab，8 个经典点击动效组件常驻在手边——滑动卡片、信封出长图、渐显金句、A/B 切换、进度点亮等，缩略卡片一键插入、手风琴展开调参 + 实时动画预览、分类筛选；可让 AI 按描述生成全新组件，图片占位支持上传或 AI 生图直填。SMIL 动画遵循官方 R-1.7 点击规则，插入时引擎再次合规校验。
 - **真实手机样机**：iPhone 15 Pro（灵动岛、实体侧键、Home 条）与 Pixel 8（打孔摄像头）按真实硬件绘制，样机下方双按钮切换，深浅色切换在旁；预览保持真实逻辑分辨率并自适应缩放。
 - **素材库**：海报导出、AI 绘图、粘贴截图、拖入图片统一进入网格化管理（`文档\wxwright\assets`）：缩略图浏览、一键插入文章、删除。
 - **ComfyUI 本地 AI 绘图**：自动检测本机 ComfyUI（默认 `127.0.0.1:8188`，设置中可改）。检测到即可调用本地 Stable Diffusion 文生图 / 图生图（队列 + 轮询 + 取图），产物直接进素材库与文章。零云端、零密钥。
@@ -176,7 +177,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.11.2 && git push origin v0.11.2`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
+打 tag（`git tag v0.12.0 && git push origin v0.12.0`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 

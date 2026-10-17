@@ -1039,7 +1039,8 @@ pub(crate) const SVG_EXPERT_SYSTEM: &str = "你是微信公众号 SVG 互动组�
 3. 可用 fill=freeze 做点击后状态保持；宽度用 viewBox + style=\"width: 100%\"；
 4. 文字用 <text>；图片只能内嵌 data URI（<image href=\"data:image/...\">）；严禁 foreignObject；
 5. 不使用 font-family；颜色避开纯黑（Dark Mode 下 SVG 不转换，建议浅背景深色字）；
-6. 交互逻辑要简单可靠：点击渐显/切换/描边/进度点亮等，不要依赖复杂状态机。";
+6. 交互逻辑要简单可靠：点击渐显/切换/描边/进度点亮等，不要依赖复杂状态机。
+7. 多步时序用 begin 偏移实现（如揭示类先翻盖再升图：第二步写 begin=\"touchstart; click+0.4s\"）；位移揭示用 <g> 包裹 + <animateTransform type=\"translate\">，翻盖用 type=\"rotate\" 绕固定点旋转。";
 
 pub(crate) fn extract_svg_snippet(text: &str) -> Result<String, String> {
     let t = text.trim();

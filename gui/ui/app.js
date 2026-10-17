@@ -13,6 +13,7 @@ const I18N = {
     library: "文章库",
     stab_articles: "文章",
     stab_drafts: "草稿箱",
+    stab_components: "组件",
     drafts_hint_other: "当前平台的云端草稿箱暂未接入；公众号平台的草稿箱在此查看。", theme: "主题", copy: "复制富文本", ai: "AI 助手",
     ready: "就绪", converting: "转换中...", not_saved: "未保存", saved: "已保存",
     save: "保存", empty_library: "还没有文章\n点击右上角 + 新建",
@@ -132,7 +133,7 @@ const I18N = {
     comfy_section_hint: "检测到本机 ComfyUI 后，「AI 绘图」按钮即可调用本地 Stable Diffusion 文生图 / 图生图，产物直接进入素材库。",
     comfy_url_label: "ComfyUI 地址", comfy_model_label: "Checkpoint 模型",
     comfy_launch_label: "启动程序路径（用于一键启动）", comfy_start: "一键启动",
-    about_line1: "wxwright 0.11.2 · by AI瑶（微信公众号：码聋）",
+    about_line1: "wxwright 0.12.0 · by AI瑶（微信公众号：码聋）",
     about_line2: "写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。",
     chip_jp: "日系手账", chip_jp_desc: "日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺",
     chip_cyber: "赛博科技", chip_cyber_desc: "赛博科技感，深色代码面板，霓虹青蓝强调色，等宽律动",
@@ -154,7 +155,7 @@ const I18N = {
     fit_hint: "导出后自动进入素材库",
     csize_cover: "1080 × 460（头图 2.35:1）", csize_square: "1080 × 1080（次图 1:1）",
     csize_small: "500 × 500（小方图）", csize_wide: "1280 × 720（横图 16:9）", csize_tall: "1080 × 1440（竖图 3:4）",
-    svgkit_hint: "组件在公众号里由读者「点击 / 触摸」触发动画（自动满足官方 R-1.7 规则）。选组件、改文字与颜色、看右侧实时预览，然后插入文章；插入后引擎会再做一次合规校验。也可以直接让 AI 按描述生成全新组件，或上传自定义图片参与互动。",
+    svgkit_gen: "AI 生成组件", kit_insert: "一键插入文章",
     imgset: "导出图组", imgset_done: (n) => `图组已导出 ${n} 张到素材库`,
     job_stopped: "已停止",
   },
@@ -162,6 +163,7 @@ const I18N = {
     library: "Library",
     stab_articles: "Articles",
     stab_drafts: "Drafts",
+    stab_components: "Components",
     drafts_hint_other: "No cloud drafts box for this platform yet; the WeChat MP drafts box shows here.", theme: "Theme", copy: "Copy rich text", ai: "AI",
     ready: "Ready", converting: "Converting...", not_saved: "unsaved", saved: "saved",
     save: "Save", empty_library: "No articles yet.\nClick + to create.",
@@ -281,7 +283,7 @@ const I18N = {
     comfy_section_hint: "With a local ComfyUI detected, the AI drawing button drives local Stable Diffusion txt2img / img2img; results land in the asset library.",
     comfy_url_label: "ComfyUI URL", comfy_model_label: "Checkpoint model",
     comfy_launch_label: "Launcher path (for one-click start)", comfy_start: "Start",
-    about_line1: "wxwright 0.11.2 - by AI Yao (MP: MaLong)",
+    about_line1: "wxwright 0.12.0 - by AI Yao (MP: MaLong)",
     about_line2: "Mozai the writing pet lives in the bottom-left status bar - go pet it.",
     chip_jp: "Journal", chip_jp_desc: "Japanese journal style: cream paper, caramel accent, rounded note cards",
     chip_cyber: "Cyber", chip_cyber_desc: "Cyber tech style: dark code panels, neon cyan-blue accent, mono rhythm",
@@ -303,7 +305,7 @@ const I18N = {
     fit_hint: "Exports land in the asset library",
     csize_cover: "1080 × 460 (cover 2.35:1)", csize_square: "1080 × 1080 (square 1:1)",
     csize_small: "500 × 500 (small square)", csize_wide: "1280 × 720 (wide 16:9)", csize_tall: "1080 × 1440 (tall 3:4)",
-    svgkit_hint: "Components animate on reader tap inside MP (auto-compliant with rule R-1.7). Pick one, tweak text/colours, watch the live preview, then insert; the engine re-validates on insert. You can also let AI generate a brand-new component or upload a custom image.",
+    svgkit_gen: "Generate component", kit_insert: "Quick insert",
     imgset: "Export image set", imgset_done: (n) => `${n} image(s) exported to the asset library`,
     job_stopped: "Stopped",
   },
@@ -561,7 +563,10 @@ function setSidebarTab(tab) {
   $("article-list").hidden = tab !== "articles";
   $("drafts-list").hidden = tab !== "drafts";
   $("library-search").hidden = tab !== "articles";
+  $("kit-panel").hidden = tab !== "components";
+  $("library-path").hidden = tab === "components";
   if (tab === "drafts") renderSidebarDrafts();
+  if (tab === "components") renderSvgKit();
 }
 
 function openMpAdmin() {
@@ -3154,6 +3159,7 @@ function saveCustomSvg() {
 
 const SVG_KIT = {
   blink: {
+    cat: "guide",
     name: () => (lang === "zh-CN" ? "闪烁引导按钮" : "Blinking CTA"),
     desc: () => (lang === "zh-CN" ? "读者点击/触摸时按钮闪烁两次，常用于引导关注与点击。" : "Blinks twice on tap; use for CTAs."),
     params: { text: "点击查看", color: "#2F6CEA", textColor: "#FFFFFF" },
@@ -3165,6 +3171,7 @@ const SVG_KIT = {
     build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="240" height="56" viewBox="0 0 240 56" style="display: inline-block;"><rect x="2" y="2" width="236" height="52" rx="26" fill="${p.color}"><animate attributeName="opacity" values="1;0.45;1" dur="1.1s" begin="touchstart; click" repeatCount="2"/></rect><text x="120" y="35" text-anchor="middle" font-size="20" font-weight="600" fill="${p.textColor}">${escapeHtml(p.text)}</text></svg></section>`,
   },
   fade: {
+    cat: "text",
     name: () => (lang === "zh-CN" ? "渐显金句" : "Fade-in slogan"),
     desc: () => (lang === "zh-CN" ? "点击后金句渐显，适合做章节金句与强调。" : "Fades the line in on tap."),
     params: { text: "写作是把噪音调成静音。", color: "#1F2328" },
@@ -3175,6 +3182,7 @@ const SVG_KIT = {
     build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" width="640" height="120" viewBox="0 0 640 120" style="width: 100%; max-width: 640px;"><text x="320" y="70" text-anchor="middle" font-size="30" font-weight="700" fill="${p.color}" opacity="1">${escapeHtml(p.text)}<animate attributeName="opacity" values="0;1" dur="1.2s" begin="touchstart; click" fill="freeze"/></text></svg></section>`,
   },
   expand: {
+    cat: "motion",
     name: () => (lang === "zh-CN" ? "点击展开卡" : "Tap-to-reveal card"),
     desc: () => (lang === "zh-CN" ? "点击卡片后描边逐渐画出，暗示有隐藏内容。" : "Stroke draws itself on tap."),
     params: { title: "点我看详情", body: "这段内容在微信里点击卡片即可看到描边动画。", color: "#2F6CEA" },
@@ -3186,6 +3194,7 @@ const SVG_KIT = {
     build: (p) => `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 140" style="width: 100%; display: block;"><rect x="2" y="2" width="673" height="136" rx="14" fill="#F7F8FA" stroke="${p.color}" stroke-width="3" stroke-dasharray="2000" stroke-dashoffset="0"><animate attributeName="stroke-dashoffset" values="2000;0" dur="1.4s" begin="touchstart; click" fill="freeze"/></rect><text x="30" y="62" font-size="24" font-weight="600" fill="#1F2328">${escapeHtml(p.title)}</text><text x="30" y="100" font-size="17" fill="#57606A">${escapeHtml(p.body)}</text></svg></section>`,
   },
   swap: {
+    cat: "text",
     name: () => (lang === "zh-CN" ? "点击切换 (A/B)" : "A/B tap swap"),
     desc: () => (lang === "zh-CN" ? "点击在两句话之间切换，适合做对比、投票感或反转梗。" : "Swap between two lines on tap."),
     params: { textA: "写公众号最难的是什么？", textB: "是点击之后你看到了答案。", color: "#2F6CEA" },
@@ -3197,6 +3206,7 @@ const SVG_KIT = {
     build: (p) => `<section style="margin: 16px 0; text-align: center;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 150" style="width: 100%; max-width: 677px;"><rect x="1" y="1" width="675" height="148" rx="12" fill="${p.color}" opacity="0.06"/><text x="338" y="70" text-anchor="middle" font-size="24" font-weight="600" fill="${p.color}">${escapeHtml(p.textA)}<animate attributeName="opacity" values="1;0" dur="0.4s" begin="touchstart; click" fill="freeze"/></text><text x="338" y="70" text-anchor="middle" font-size="24" font-weight="600" fill="#1F2328" opacity="0">${escapeHtml(p.textB)}<animate attributeName="opacity" values="0;1" dur="0.4s" begin="touchstart; click" fill="freeze"/></text><text x="338" y="126" text-anchor="middle" font-size="14" fill="#8B949E">点击切换</text></svg></section>`,
   },
   countdown: {
+    cat: "motion",
     name: () => (lang === "zh-CN" ? "点击点亮进度条" : "Tap-to-fill bar"),
     desc: () => (lang === "zh-CN" ? "点击后进度条从 0 涨到 100%，适合进度、完成度、投票结果。" : "Bar fills up on tap."),
     params: { label: "本期阅读完成率", color: "#2F6CEA" },
@@ -3207,6 +3217,7 @@ const SVG_KIT = {
     build: (p) => `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 677 110" style="width: 100%; display: block;"><text x="2" y="34" font-size="18" font-weight="600" fill="#1F2328">${escapeHtml(p.label)}</text><rect x="2" y="54" width="673" height="18" rx="9" fill="#E4E7EC"/><rect x="2" y="54" width="673" height="18" rx="9" fill="${p.color}"><animate attributeName="width" values="0;640" dur="1.6s" begin="touchstart; click" fill="freeze"/></rect><text x="2" y="98" font-size="14" fill="#8B949E">点击查看</text></svg></section>`,
   },
   picfade: {
+    cat: "image",
     name: () => (lang === "zh-CN" ? "图片渐显卡（可传图）" : "Image fade card"),
     desc: () => (lang === "zh-CN" ? "上传一张图，点击后在公众号里渐显并带文案条——图文互动的基础组件。" : "Upload an image; it fades in with a caption on tap."),
     params: { image: "", text: "点击查看图片", color: "#2F6CEA" },
@@ -3224,10 +3235,138 @@ const SVG_KIT = {
       return `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 677 430" style="width: 100%; display: block;"><defs><clipPath id="${uid}"><rect x="8" y="8" width="661" height="360" rx="12"/></clipPath></defs>${imgTag}<text x="8" y="404" font-size="18" font-weight="600" fill="${p.color}">${escapeHtml(p.text)}</text></svg></section>`;
     },
   },
+  slide: {
+    cat: "motion",
+    name: () => (lang === "zh-CN" ? "滑动卡片" : "Slide card"),
+    desc: () => (lang === "zh-CN" ? "读者点击后封面整张横向滑走，露出下面的内容卡——剧透、彩蛋、前后对比的经典手法。" : "The cover slides away on tap to reveal the card beneath."),
+    params: { coverImage: "", title: "滑走之后", body: "这是被封面挡住的内容层。适合放剧透、彩蛋、活动细则或前后对比。", color: "#2F6CEA" },
+    fields: [
+      ["coverImage", "封面图（上传或 AI 生成）"],
+      ["title", "内容卡标题"],
+      ["body", "内容卡正文"],
+      ["color", "强调色"],
+    ],
+    build: (p) => {
+      const uid = "sc" + Math.abs([...(p.title + p.color)].reduce((a, c) => a + c.charCodeAt(0), 11)) + Date.now().toString(36).slice(-4);
+      const cover = p.coverImage
+        ? `<image href="${p.coverImage}" xlink:href="${p.coverImage}" x="2" y="2" width="673" height="356" preserveAspectRatio="xMidYMid slice"/>`
+        : `<rect x="2" y="2" width="673" height="356" fill="${p.color}" opacity="0.12"/><text x="338" y="188" text-anchor="middle" font-size="20" fill="${p.color}">${escapeHtml(lang === "zh-CN" ? "上传或 AI 生成封面图" : "Upload or generate a cover")}</text>`;
+      return `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 677 360" style="width: 100%; display: block;"><defs><clipPath id="${uid}"><rect x="2" y="2" width="673" height="356" rx="14"/></clipPath></defs><g clip-path="url(#${uid})"><rect x="2" y="2" width="673" height="356" fill="#F7F8FA"/><text x="36" y="168" font-size="26" font-weight="700" fill="${p.color}">${escapeHtml(p.title)}</text><text x="36" y="212" font-size="17" fill="#57606A">${escapeHtml(p.body)}</text></g><g clip-path="url(#${uid})">${cover}<rect x="2" y="292" width="176" height="40" rx="20" fill="#1F2328" opacity="0.72"/><text x="90" y="318" text-anchor="middle" font-size="17" fill="#FFFFFF">${escapeHtml(lang === "zh-CN" ? "点我滑开" : "Tap to slide")}</text><animateTransform attributeName="transform" type="translate" values="0 0; -677 0" dur="0.7s" begin="touchstart; click" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.22 0.8 0.36 1"/></g></svg></section>`;
+    },
+  },
+  envelope: {
+    cat: "motion",
+    name: () => (lang === "zh-CN" ? "信封出长图" : "Envelope reveal"),
+    desc: () => (lang === "zh-CN" ? "点击后信封盖翻开，长图从信封里缓缓升起——节日祝福、邀请函、长图剧透的经典开场。" : "The flap opens and a tall image rises out of the envelope."),
+    params: { longImage: "", color: "#C0392B", hint: "点击拆开信封" },
+    fields: [
+      ["longImage", "长图（上传或 AI 生成）"],
+      ["color", "信封配色"],
+      ["hint", "提示文字"],
+    ],
+    build: (p) => {
+      const uid = "ev" + Math.abs([...(p.hint + p.color)].reduce((a, c) => a + c.charCodeAt(0), 13)) + Date.now().toString(36).slice(-4);
+      const letter = p.longImage
+        ? `<image href="${p.longImage}" xlink:href="${p.longImage}" x="113" y="24" width="451" height="470" preserveAspectRatio="xMidYMid slice"/>`
+        : `<rect x="113" y="24" width="451" height="470" rx="10" fill="#FFFFFF" stroke="${p.color}" stroke-width="2"/><text x="338" y="250" text-anchor="middle" font-size="19" fill="${p.color}">${escapeHtml(lang === "zh-CN" ? "上传或 AI 生成一张长图" : "Upload or generate a tall image")}</text>`;
+      return `<section style="margin: 16px 0;"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 677 560" style="width: 100%; display: block;"><defs><clipPath id="${uid}"><rect x="93" y="14" width="491" height="500" rx="12"/></clipPath></defs><g clip-path="url(#${uid})">${letter}<animateTransform attributeName="transform" type="translate" values="0 500; 0 0" dur="1.2s" begin="touchstart; click+0.35s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.22 0.8 0.36 1"/></g><g><path d="M93 336 L338 216 L583 336 Z" fill="${p.color}" opacity="0.92"/><circle cx="338" cy="300" r="24" fill="${p.color}"/><circle cx="338" cy="300" r="15" fill="#FFFFFF" opacity="0.35"/><animateTransform attributeName="transform" type="rotate" values="0 338 336; -180 338 336" dur="0.5s" begin="touchstart; click" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.6 1"/></g><rect x="93" y="336" width="491" height="178" rx="12" fill="${p.color}"/><path d="M93 336 L338 456 L583 336" fill="none" stroke="#FFFFFF" stroke-width="3" opacity="0.35"/><text x="338" y="546" text-anchor="middle" font-size="16" fill="#57606A">${escapeHtml(p.hint)}<animate attributeName="opacity" values="1;0" dur="0.3s" begin="touchstart; click" fill="freeze"/></text></svg></section>`;
+    },
+  },
 };
 
 let svgKitKey = "blink";
 let svgKitParams = {};
+let svgKitCat = "all";
+
+const KIT_CATS = [
+  ["all", () => (lang === "zh-CN" ? "全部" : "All")],
+  ["guide", () => (lang === "zh-CN" ? "引导" : "Guide")],
+  ["text", () => (lang === "zh-CN" ? "文字" : "Text")],
+  ["image", () => (lang === "zh-CN" ? "图片" : "Image")],
+  ["motion", () => (lang === "zh-CN" ? "动效" : "Motion")],
+  ["mine", () => (lang === "zh-CN" ? "我的" : "Mine")],
+];
+
+function svgKitEntries() {
+  const built = Object.entries(SVG_KIT).map(([key, kit]) => ({
+    key,
+    name: kit.name(),
+    desc: kit.desc(),
+    cat: kit.cat || "text",
+    customIndex: -1,
+  }));
+  const custom = svgKitCustom.map((c, i) => ({
+    key: "c" + i,
+    name: c.name,
+    desc: lang === "zh-CN" ? "AI 生成的固定片段，插入后可微调" : "AI-generated snippet; fine-tune after insert",
+    cat: "mine",
+    customIndex: i,
+  }));
+  return built.concat(custom);
+}
+
+function svgKitSanitizeThumb(svg) {
+  // Thumbs render straight into the app DOM (unlike the sandboxed preview
+  // iframe), so strip script-capable nodes and inline handlers first. AI
+  // snippets are engine-validated, but localStorage is user-editable.
+  if (!svg) return "";
+  try {
+    const doc = new DOMParser().parseFromString(`<div>${svg}</div>`, "text/html");
+    const root = doc.querySelector("div");
+    root.querySelectorAll("script,iframe,object,embed,link,meta,foreignObject").forEach((el) => el.remove());
+    for (const el of root.querySelectorAll("*")) {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on") || name === "id") el.removeAttribute(attr.name);
+        else if ((name === "href" || name === "xlink:href") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+      }
+    }
+    return root.innerHTML;
+  } catch (e) {
+    return escapeHtml(svg);
+  }
+}
+
+function svgKitThumbMarkup(entry) {
+  if (entry.customIndex >= 0) return svgKitSanitizeThumb(svgKitCustom[entry.customIndex].svg);
+  const kit = SVG_KIT[entry.key];
+  return kit ? svgKitSanitizeThumb(kit.build({ ...kit.params })) : "";
+}
+
+function insertSvgMarkup() {
+  const svg = currentSvgMarkup();
+  if (!svg) { toast(lang === "zh-CN" ? "当前组件为空" : "Nothing to insert", "err"); return; }
+  // Block-level embed: append as a standalone block at the end (cursor
+  // insertion would nest it inside lists/code and break the classification)
+  const ed = $("editor");
+  ed.value = ed.value.replace(/\s*$/, "") + "\n\n" + svg + "\n";
+  ed.selectionStart = ed.selectionEnd = ed.value.length;
+  dirty = true;
+  $("stat-saved").textContent = t("not_saved");
+  if (window.Mozai) Mozai.typing();
+  scheduleConvert();
+  toast(lang === "zh-CN" ? "组件已插入（引擎已复核合规）" : "Inserted (re-validated by the engine)", "ok");
+  if (window.Mozai) Mozai.celebrate();
+}
+
+async function svgKitAiImage(paramKey, row) {
+  const promptInput = row.querySelector("input");
+  const prompt = promptInput.value.trim();
+  if (!prompt) { promptInput.focus(); return; }
+  const btn = row.querySelector("button");
+  try {
+    const job = await AIJobs.run("image", { prompt, width: 1024, height: 1024 }, { button: btn });
+    if (job.stopped) return;
+    const paths = (job.result && job.result.paths) || [];
+    if (!paths.length) throw new Error(lang === "zh-CN" ? "生成失败：未返回图片" : "Generation returned no image");
+    const uri = await invoke("asset_data_uri", { path: paths[0] });
+    svgKitParams[paramKey] = String(uri);
+    renderSvgKit();
+    toast(lang === "zh-CN" ? "图片已填入组件" : "Image filled into the component", "ok");
+  } catch (e) {
+    toast(String((e && e.message) || e), "err");
+  }
+}
 
 function currentSvgMarkup() {
   if (svgKitKey.startsWith("c")) {
@@ -3253,6 +3392,7 @@ async function svgKitAiGenerate() {
     saveCustomSvg();
     svgKitKey = "c0";
     svgKitParams = {};
+    svgKitCat = "mine";
     renderSvgKit();
     toast(lang === "zh-CN" ? "组件已生成，预览后即可插入" : "Component generated", "ok");
     if (window.Mozai) Mozai.celebrate();
@@ -3265,35 +3405,83 @@ async function svgKitAiGenerate() {
 }
 
 function renderSvgKit() {
+  const cats = $("svgkit-cats");
+  if (!cats) return;
+  cats.innerHTML = "";
+  for (const [id, label] of KIT_CATS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label();
+    if (svgKitCat === id) b.className = "active";
+    b.addEventListener("click", () => { svgKitCat = id; renderSvgKit(); });
+    cats.appendChild(b);
+  }
   const list = $("svgkit-list");
   list.innerHTML = "";
-  const mkItem = (key, name, desc, badge, delIdx) => {
-    const item = document.createElement("div");
-    item.className = "svgkit-item" + (key === svgKitKey ? " active" : "");
-    item.innerHTML = `<span class="k-name">${escapeHtml(name)}${badge ? `<span class="k-badge">${badge}</span>` : ""}</span><span class="k-desc">${escapeHtml(desc)}</span>${delIdx !== null ? `<button type="button" class="k-del" data-del="${delIdx}">删除</button>` : ""}`;
-    item.addEventListener("click", (e) => {
-      if (e.target.closest(".k-del")) return;
-      svgKitKey = key;
-      svgKitParams = key.startsWith("c") ? {} : { ...SVG_KIT[key].params };
-      renderSvgKit();
-    });
-    list.appendChild(item);
-  };
-  for (const key of Object.keys(SVG_KIT)) {
-    mkItem(key, SVG_KIT[key].name(), SVG_KIT[key].desc(), null, null);
+  const entries = svgKitEntries().filter((en) => svgKitCat === "all" || en.cat === svgKitCat);
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "kit-empty";
+    empty.textContent = lang === "zh-CN" ? "该分类暂无组件" : "No components in this category";
+    list.appendChild(empty);
   }
-  svgKitCustom.forEach((c, i) => {
-    mkItem("c" + i, c.name, lang === "zh-CN" ? "AI 生成的自定义组件" : "AI-generated custom", "AI", i);
-  });
-  list.querySelectorAll("[data-del]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      svgKitCustom.splice(parseInt(btn.dataset.del), 1);
-      saveCustomSvg();
-      if (svgKitKey.startsWith("c")) svgKitKey = "blink";
-      renderSvgKit();
-    });
-  });
+  for (const entry of entries) {
+    const card = document.createElement("div");
+    card.className = "svgkit-card" + (entry.key === svgKitKey ? " active" : "");
+    const head = document.createElement("div");
+    head.className = "k-head";
+    head.dataset.key = entry.key;
+    const thumb = document.createElement("div");
+    thumb.className = "k-thumb";
+    thumb.innerHTML = svgKitThumbMarkup(entry);
+    const meta = document.createElement("div");
+    meta.className = "k-meta";
+    const nameRow = document.createElement("div");
+    nameRow.className = "k-name";
+    nameRow.append(entry.name);
+    if (entry.customIndex >= 0) {
+      const badge = document.createElement("span");
+      badge.className = "k-badge";
+      badge.textContent = "AI";
+      nameRow.appendChild(badge);
+    }
+    const descRow = document.createElement("div");
+    descRow.className = "k-desc";
+    descRow.textContent = entry.desc;
+    meta.append(nameRow, descRow);
+    const actions = document.createElement("div");
+    actions.className = "k-actions";
+    const quick = document.createElement("button");
+    quick.type = "button";
+    quick.className = "btn btn-ghost btn-icon k-quick";
+    quick.title = t("kit_insert");
+    quick.innerHTML = '<svg class="icon"><use href="#i-plus"/></svg>';
+    actions.appendChild(quick);
+    if (entry.customIndex >= 0) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "k-del";
+      del.dataset.del = String(entry.customIndex);
+      del.textContent = lang === "zh-CN" ? "删除" : "Delete";
+      actions.appendChild(del);
+    }
+    head.append(thumb, meta, actions);
+    card.appendChild(head);
+    if (entry.key === svgKitKey) {
+      const body = document.createElement("div");
+      body.className = "k-body";
+      body.innerHTML = `
+        <div class="svgkit-preview" id="svgkit-preview"></div>
+        <div id="svgkit-params" class="svgkit-params"></div>
+        <div class="form-actions"><span class="section-hint" id="svgkit-desc-view" style="margin: 0;"></span></div>
+        <button id="svgkit-insert" class="btn btn-primary">
+          <svg class="icon"><use href="#i-plus"/></svg>
+          <span>${escapeHtml(t("insert_article"))}</span>
+        </button>`;
+      card.appendChild(body);
+    }
+    list.appendChild(card);
+  }
 
   const isCustom = svgKitKey.startsWith("c");
   let kit;
@@ -3311,19 +3499,38 @@ function renderSvgKit() {
       : kit.desc();
   }
   const form = $("svgkit-params");
+  if (!form) return;
   form.innerHTML = "";
   if (isCustom) {
     form.innerHTML = `<div class="section-hint" style="margin:0;">${lang === "zh-CN" ? "AI 生成组件为固定片段，可在插入后于编辑器中微调文字。" : "AI components are fixed snippets; fine-tune text in the editor after inserting."}</div>`;
   } else {
     for (const [key, label] of kit.fields) {
       const wrap = document.createElement("label");
-      wrap.className = key.includes("Color") || key === "color" ? "" : "span2";
-      if (key === "image") {
-        wrap.innerHTML = `<span>${label}</span>
-          <div class="form-actions" style="margin-top: 0;">
-            <input data-param="${key}" readonly placeholder="${lang === "zh-CN" ? "尚未上传" : "no image yet"}" style="flex: 1;" />
-            <button type="button" class="btn btn-ghost" data-imgpick="${key}">${lang === "zh-CN" ? "上传图片" : "Upload"}</button>
-          </div>`;
+      wrap.className = key === "color" || key.toLowerCase().endsWith("color") ? "" : "span2";
+      if (key === "image" || key.toLowerCase().endsWith("image")) {
+        wrap.innerHTML = `<span>${label}</span>`;
+        if (svgKitParams[key]) {
+          const thumbImg = document.createElement("img");
+          thumbImg.className = "kit-img-thumb";
+          thumbImg.alt = "";
+          thumbImg.src = String(svgKitParams[key]);
+          wrap.appendChild(thumbImg);
+        }
+        const row = document.createElement("div");
+        row.className = "kit-img-row";
+        row.innerHTML = `
+          <input data-param="${key}" readonly placeholder="${lang === "zh-CN" ? "尚未上传" : "no image yet"}" />
+          <button type="button" class="btn btn-ghost" data-imgpick="${key}">${lang === "zh-CN" ? "上传" : "Upload"}</button>
+          <button type="button" class="btn btn-ghost" data-aiimg-toggle="${key}">${lang === "zh-CN" ? "AI 生成" : "AI"}</button>`;
+        wrap.appendChild(row);
+        const aiRow = document.createElement("div");
+        aiRow.className = "kit-aiimg";
+        aiRow.hidden = true;
+        aiRow.dataset.aiimgRow = key;
+        aiRow.innerHTML = `
+          <input data-aiimg-prompt="${key}" placeholder="${lang === "zh-CN" ? "描述这张图片，例如：水墨风远山信纸" : "Describe the image"}" />
+          <button type="button" class="btn btn-primary" data-aiimg-run="${key}">${lang === "zh-CN" ? "生成" : "Go"}</button>`;
+        wrap.appendChild(aiRow);
         form.appendChild(wrap);
       } else {
         const isColor = key === "color" || key.toLowerCase().endsWith("color");
@@ -3373,13 +3580,35 @@ function renderSvgKit() {
         inpEl.click();
       });
     });
+    form.querySelectorAll("button[data-aiimg-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const row = form.querySelector(`[data-aiimg-row="${btn.dataset.aiimgToggle}"]`);
+        if (row) row.hidden = !row.hidden;
+      });
+    });
+    form.querySelectorAll("button[data-aiimg-run]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const row = form.querySelector(`[data-aiimg-row="${btn.dataset.aiimgRun}"]`);
+        if (row) svgKitAiImage(btn.dataset.aiimgRun, row);
+      });
+    });
+    form.querySelectorAll("input[data-aiimg-prompt]").forEach((inp) => {
+      inp.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const row = form.querySelector(`[data-aiimg-row="${inp.dataset.aiimgPrompt}"]`);
+        if (row) svgKitAiImage(inp.dataset.aiimgPrompt, row);
+      });
+    });
   }
   renderSvgKitPreview();
 }
 
 function renderSvgKitPreview() {
+  const preview = $("svgkit-preview");
+  if (!preview) return;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:18px;display:flex;align-items:center;justify-content:center;background:#fff;}</style></head><body>${currentSvgMarkup()}</body></html>`;
-  $("svgkit-preview").innerHTML = `<iframe sandbox="" srcdoc="${escapeHtml(html)}"></iframe>`;
+  preview.innerHTML = `<iframe sandbox="" srcdoc="${escapeHtml(html)}"></iframe>`;
 }
 
 /* ------------------------------------------------------ assets panel */
@@ -4189,23 +4418,29 @@ function bindUI() {
   const mStart = document.getElementById("comfy-start-modal");
   if (mStart) mStart.addEventListener("click", comfyStart);
 
-  /* svg kit modal */
-  $("btn-svgkit").addEventListener("click", () => { openModal("modal-svgkit"); renderSvgKit(); });
-  $("svgkit-insert").addEventListener("click", () => {
-    const svg = currentSvgMarkup();
-    if (!svg) { toast(lang === "zh-CN" ? "当前组件为空" : "Nothing to insert", "err"); return; }
-    // Block-level embed: append as a standalone block at the end (cursor
-    // insertion would nest it inside lists/code and break the classification)
-    const ed = $("editor");
-    ed.value = ed.value.replace(/\s*$/, "") + "\n\n" + svg + "\n";
-    ed.selectionStart = ed.selectionEnd = ed.value.length;
-    dirty = true;
-    $("stat-saved").textContent = t("not_saved");
-    if (window.Mozai) Mozai.typing();
-    scheduleConvert();
-    closeModal("modal-svgkit");
-    toast(lang === "zh-CN" ? "组件已插入（引擎已复核合规）" : "Inserted (re-validated by the engine)", "ok");
-    if (window.Mozai) Mozai.celebrate();
+  /* svg kit sidebar panel */
+  $("btn-svgkit").addEventListener("click", () => {
+    $("sidebar").classList.remove("collapsed");
+    setSidebarTab("components");
+  });
+  $("svgkit-list").addEventListener("click", (e) => {
+    const quick = e.target.closest(".k-quick");
+    if (quick) { insertSvgMarkup(); return; }
+    const del = e.target.closest(".k-del");
+    if (del) {
+      svgKitCustom.splice(parseInt(del.dataset.del), 1);
+      saveCustomSvg();
+      if (svgKitKey.startsWith("c")) svgKitKey = "blink";
+      renderSvgKit();
+      return;
+    }
+    if (e.target.closest("#svgkit-insert")) { insertSvgMarkup(); return; }
+    const head = e.target.closest(".k-head");
+    if (head && head.dataset.key && head.dataset.key !== svgKitKey) {
+      svgKitKey = head.dataset.key;
+      svgKitParams = head.dataset.key.startsWith("c") ? {} : { ...SVG_KIT[head.dataset.key].params };
+      renderSvgKit();
+    }
   });
   $("svgkit-ai-generate").addEventListener("click", svgKitAiGenerate);
 
@@ -4280,6 +4515,7 @@ function bindUI() {
     refreshCopyButton();
     renderPublishBindings();
     updatePushDraftButton();
+    if (sidebarTab === "components") renderSvgKit();
     if (!$("modal-help").hidden) renderHelp();
     convertNow();
   });
