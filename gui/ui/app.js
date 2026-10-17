@@ -120,7 +120,7 @@ const I18N = {
     copied_caption: "文案已复制，去小红书 App 粘贴", copied_md: "Markdown 已复制",
     platform_title: "目标平台：切换后预览、规则与导出联动",
     theme_ai_btn: "AI 生成主题", export_title: "导出 HTML",
-    comfy_title: "AI 绘图（ComfyUI 本地）", svgkit_title: "SVG 互动组件库",
+    comfy_title: "AI 绘图（ComfyUI 本地）",
     assets_title: "素材库", ai_assistant_btn: "AI 助手", agent_title: "Agent 接入",
     import_md: "导入 .md 文件", new_article: "新建文章",
     validate_title: "校验公众号规范",
@@ -270,7 +270,7 @@ const I18N = {
     copied_caption: "Caption copied - paste it into the note editor", copied_md: "Markdown copied",
     platform_title: "Target platform: preview, rules and export follow it",
     theme_ai_btn: "AI theme generator", export_title: "Export HTML",
-    comfy_title: "AI drawing (local ComfyUI)", svgkit_title: "SVG interactive kit",
+    comfy_title: "AI drawing (local ComfyUI)",
     assets_title: "Assets", ai_assistant_btn: "AI assistant", agent_title: "Agent integration",
     import_md: "Import .md", new_article: "New article",
     validate_title: "Check MP compliance",
@@ -4419,10 +4419,6 @@ function bindUI() {
   if (mStart) mStart.addEventListener("click", comfyStart);
 
   /* svg kit sidebar panel */
-  $("btn-svgkit").addEventListener("click", () => {
-    $("sidebar").classList.remove("collapsed");
-    setSidebarTab("components");
-  });
   $("svgkit-list").addEventListener("click", (e) => {
     const quick = e.target.closest(".k-quick");
     if (quick) { insertSvgMarkup(); return; }
