@@ -36,14 +36,14 @@ The AI assistant drafts with you — streaming, stoppable, and every reply offer
 
 ## Download
 
-Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.12.0):
+Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.12.1):
 
 | Platform | File |
 |---|---|
-| Windows | `wxwright_0.12.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS (Apple silicon) | `wxwright_0.12.0_aarch64.dmg` (not notarized — first launch needs a one-time bypass, see below) |
-| macOS (Intel) | `wxwright_0.12.0_x64.dmg` (same one-time bypass, see below) |
-| Linux | `wxwright_0.12.0_amd64.deb` or `.AppImage` |
+| Windows | `wxwright_0.12.1_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
+| macOS (Apple silicon) | `wxwright_0.12.1_aarch64.dmg` (not notarized — first launch needs a one-time bypass, see below) |
+| macOS (Intel) | `wxwright_0.12.1_x64.dmg` (same one-time bypass, see below) |
+| Linux | `wxwright_0.12.1_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS first launch** (macOS 11+): the dmg is ad-hoc signed but not notarized, so the first launch is blocked by Gatekeeper with "Apple could not verify that wxwright does not contain malware". After dragging `wxwright.app` to Applications, use either of these — **each needs to be done once**:
@@ -64,8 +64,8 @@ Same for the CLI binary after extraction: `xattr -d com.apple.quarantine wxwrigh
 
 **Linux** (x86_64, two formats):
 
-- deb (Debian/Ubuntu family): `sudo apt install ./wxwright_0.12.0_amd64.deb` — dependencies (libwebkit2gtk-4.1-0 / libgtk-3-0) are pulled in by apt automatically. Verified on Ubuntu 24.04: dependency resolution, end-to-end conversion of a Chinese article, and GUI launch all work.
-- AppImage: `chmod +x wxwright_0.12.0_amd64.AppImage && ./wxwright_0.12.0_amd64.AppImage` (no install needed; AppDir structure and embedded binary verified).
+- deb (Debian/Ubuntu family): `sudo apt install ./wxwright_0.12.1_amd64.deb` — dependencies (libwebkit2gtk-4.1-0 / libgtk-3-0) are pulled in by apt automatically. Verified on Ubuntu 24.04: dependency resolution, end-to-end conversion of a Chinese article, and GUI launch all work.
+- AppImage: `chmod +x wxwright_0.12.1_amd64.AppImage && ./wxwright_0.12.1_amd64.AppImage` (no install needed; AppDir structure and embedded binary verified).
 - The Chinese UI needs a CJK font on the system: Ubuntu desktop ships one; on minimal/server installs run `sudo apt install fonts-noto-cjk` first.
 
 Platform support at a glance: Windows 10/11 x64 · macOS 11+ (separate dmgs for Apple silicon and Intel) · Linux x86_64 (webkit2gtk-4.1).
@@ -139,10 +139,11 @@ The GUI adds an **AI theme generator**: describe a style ("deep-space cyberpunk,
 - **Agent integration panel** (robot icon): one-click MCP install into Claude Desktop / Cursor / VS Code / OpenCode, one-click copy of the agent card, CLI cheat sheet. Same engine, same compliance.
 - **AI theme generator**: describe a style, get a brand-new theme validated against the official rules and saved for CLI + GUI.
 - **Poster Studio**: HTML -> PNG locally (SVG foreignObject, offline) with all standard MP cover sizes; AI can generate the poster HTML; export-and-insert into the article.
-- **Interactive SVG kit (sidebar)**: the article library's Components tab keeps 8 classic tap-to-animate WeChat SVG components at hand - slide card, envelope reveal, fade-in slogan, A/B swap, progress fill and more - as thumbnail cards with one-click insert, an accordion editor with live animated preview, and category filters. AI generates brand-new components from a description, and image slots take an upload or an AI-generated picture. SMIL animations follow the official R-1.7 tap rule; the engine re-validates on insert.
+- **Interactive SVG kit (sidebar)**: the article library's Components tab keeps 8 classic tap-to-animate WeChat SVG components at hand - slide card, envelope reveal, fade-in slogan, A/B swap, progress fill and more - as full-width thumbnail cards with one-click insert (undoable), an accordion editor with live animated preview, category filters, pin-to-top and recent-use ordering. AI generates brand-new components that ship with a parameter table (tweak the text / colors / image slots into a new variant), and image slots take an upload or an AI-generated picture; a blank editor links straight into the kit. SMIL animations follow the official R-1.7 tap rule; the engine re-validates on insert.
 - **Realistic device frames**: iPhone 15 Pro (Dynamic Island, physical side keys, home indicator) and Pixel 8 (punch-hole) rendered as true hardware with an under-device switcher; dark/light toggle sits next to it. The preview scales to fit while keeping the real logical resolution.
 - **Asset library**: posters, AI paintings, pasted screenshots and dropped images all land in one managed grid (`Documents/wxwright/assets`) - thumbnail browse, one-click insert into the article, delete.
-- **ComfyUI integration (local AI painting)**: wxwright auto-detects a locally running ComfyUI (default `127.0.0.1:8188`, configurable in Settings). When present, the wand button drives its API for text-to-image and image-to-image (SD workflows, queue + history polling), and outputs flow straight into the asset library and the article. No cloud, no keys.
+- **ComfyUI integration (local AI painting)**: wxwright auto-detects a locally running ComfyUI (default `127.0.0.1:8188`, configurable in Settings). When present, the wand button drives its API for text-to-image and image-to-image (SD workflows, queue + history polling), and outputs flow straight into the asset library and the article. The checkpoint name pulls the live model list for click-to-pick, and the launcher path gets a native file picker. No cloud, no keys.
+- **Multiple WeChat accounts, one-click switching**: bind any number of Official Accounts (optional label; nickname + logo avatar are fetched automatically), and switch the active account from the avatar next to the push button - draft pushes, image uploads and the drafts box all follow it. Each account's secret lives in its own keychain slot.
 - **Compliance badge** lives in the stats row (colored block/warn counts); the violations list is a static panel that never overlaps the AI drawer.
 - **One-click draft-box push** (WeChat): the status row's Push-draft button renders the article with its theme, uploads local images to mmbiz, gates on blocking violations and files it into the MP drafts box.
 - **Writing pet**: 墨仔 (Mozai) - an actual sitting cat with whiskers, blinking eyes and a curled tail. Bounces while you type, sleeps after 45s, hearts on click, party easter egg on triple-clicking the logo. Clicking 码聋 in the status bar pops the WeChat QR code.
@@ -207,7 +208,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 
 ## Release automation
 
-Tag a version (`git tag v0.12.0 && git push origin v0.12.0`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release (dispatch)", run it with the version number - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
+Tag a version (`git tag v0.12.1 && git push origin v0.12.1`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release (dispatch)", run it with the version number - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
 
 ## Author
 

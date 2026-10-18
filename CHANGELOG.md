@@ -8,7 +8,7 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
-## [Unreleased]
+## [0.12.1] - 2026-10-18
 
 ### Added
 - **Accounts show nickname + avatar, not raw appids.** The switcher, the
