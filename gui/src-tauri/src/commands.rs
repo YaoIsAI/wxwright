@@ -504,7 +504,7 @@ pub fn wx_bind_status() -> serde_json::Value {
     serde_json::json!({
         "bound": !accounts.is_empty(),
         "appid": active.map(|a| wxwright_mp::mask(&a.appid)).unwrap_or_default(),
-        "label": active.map(|a| display_name(a)).unwrap_or_default(),
+        "label": active.map(&display_name).unwrap_or_default(),
         "accounts": accounts
             .iter()
             .map(|a| serde_json::json!({
