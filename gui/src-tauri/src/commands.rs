@@ -470,9 +470,10 @@ pub async fn extract_document_text(path: String) -> Result<crate::extract::Extra
 
 #[tauri::command]
 pub async fn comfy_status() -> serde_json::Value {
-    // probe() is a 3s-timeout network call: keeping it off the main thread is
-    // the difference between a momentary "offline" badge and a frozen UI.
-    tauri::async_runtime::spawn_blocking(crate::comfy::status)
+    // probe() is a network call: keeping it off the main thread is the
+    // difference between a momentary "offline" badge and a frozen UI.
+    // The fast variant bounds an unreachable host to ~1s.
+    tauri::async_runtime::spawn_blocking(crate::comfy::status_fast)
         .await
         .unwrap_or_else(
             |e| serde_json::json!({ "online": false, "error": format!("task join failed: {e}") }),

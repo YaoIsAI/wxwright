@@ -30,6 +30,7 @@ pub fn render_document(doc: &[Block], theme: &Theme, img: &ImgPipeline) -> Rende
         links: RefCell::new(LinksState::default()),
         toc_items,
         lead_seen: Cell::new(false),
+        style_cache: RefCell::new(HashMap::new()),
     };
     let mut body = render_blocks(doc, &ctx, &BodyCtx::root());
     if theme.link_style() == LinkStyle::Footnote {
@@ -54,6 +55,12 @@ struct Ctx<'a> {
     /// paragraph the document renders is the article's opening - everything
     /// after it renders as a base paragraph.
     lead_seen: Cell<bool>,
+    /// Memoized `css_variant` results, keyed by (defaults slice pointer, role,
+    /// over key). A call site always passes the same static defaults slice, so
+    /// equal keys mean equal output for this theme; role/over are content
+    /// keys so dynamically built variant names (`format!("quote.{}", v)`)
+    /// stay correct across allocations.
+    style_cache: RefCell<HashMap<(usize, String, String), String>>,
 }
 
 /// Styling context for a nesting scope (root / quote / card / list item).
@@ -75,25 +82,31 @@ impl BodyCtx {
 }
 
 /// Compose a style string: token-expanded defaults, overlaid by the theme's
-/// role overrides.
-fn css(theme: &Theme, role: &str, defaults: &[(&str, &str)]) -> String {
-    css_variant(theme, role, None, defaults)
+/// role overrides. Memoized per document render - the same call site with the
+/// same role and variant always produces the same string.
+fn css(ctx: &Ctx, role: &str, defaults: &[(&str, &str)]) -> String {
+    css_variant(ctx, role, None, defaults)
 }
 
 /// `css` with a content-variant layer: `blocks[role]` is overlaid by
 /// `blocks[over_key]` (e.g. "quote.hero" over "quote"), per property, in that
 /// order - the variant always wins over the base role.
-fn css_variant(
-    theme: &Theme,
-    role: &str,
-    over_key: Option<&str>,
-    defaults: &[(&str, &str)],
-) -> String {
+fn css_variant(ctx: &Ctx, role: &str, over_key: Option<&str>, defaults: &[(&str, &str)]) -> String {
+    let key = (
+        defaults.as_ptr() as usize,
+        role.to_string(),
+        over_key.unwrap_or("").to_string(),
+    );
+    if let Some(hit) = ctx.style_cache.borrow().get(&key) {
+        return hit.clone();
+    }
     let decls: Vec<(String, String)> = defaults
         .iter()
-        .map(|(p, v)| (p.to_string(), expand(v, theme)))
+        .map(|(p, v)| (p.to_string(), expand(v, ctx.theme)))
         .collect();
-    apply_role_overrides(theme, role, over_key, decls)
+    let out = apply_role_overrides(ctx.theme, role, over_key, decls);
+    ctx.style_cache.borrow_mut().insert(key, out.clone());
+    out
 }
 
 /// Same contract as `css`, for defaults computed at runtime (theme colours,
@@ -475,11 +488,7 @@ fn base_leaf(ctx: &Ctx, scope: &BodyCtx, role: &str) -> String {
     if !scope.leaf.is_empty() {
         return scope.leaf.clone();
     }
-    css(
-        ctx.theme,
-        &format!("{}_leaf", role),
-        paragraph_leaf_defaults(),
-    )
+    css(ctx, &format!("{}_leaf", role), paragraph_leaf_defaults())
 }
 
 fn render_heading(
@@ -542,8 +551,8 @@ fn render_heading(
             ],
         ),
     };
-    let mut sec_style = css(ctx.theme, &role, sec_defaults);
-    let leaf_style = css(ctx.theme, &format!("{}_leaf", role), leaf_defaults);
+    let mut sec_style = css(ctx, &role, sec_defaults);
+    let leaf_style = css(ctx, &format!("{}_leaf", role), leaf_defaults);
     if center {
         sec_style.push_str("; text-align: center;");
     }
@@ -567,7 +576,7 @@ fn render_paragraph(inlines: &[Inline], ctx: &Ctx, scope: &BodyCtx) -> String {
     let scope = if lead {
         leaf_scope = BodyCtx {
             leaf: css_variant(
-                ctx.theme,
+                ctx,
                 "paragraph_leaf",
                 Some("paragraph.lead_leaf"),
                 paragraph_leaf_defaults(),
@@ -850,7 +859,7 @@ fn render_standalone_image(
         .is_some_and(|r| r >= 1.4);
     let container = if portrait {
         css_variant(
-            ctx.theme,
+            ctx,
             "figure",
             Some("figure.portrait"),
             &[
@@ -861,7 +870,7 @@ fn render_standalone_image(
         )
     } else {
         css_variant(
-            ctx.theme,
+            ctx,
             "figure",
             None,
             &[("margin", "20px 0"), ("text-align", "center")],
@@ -870,7 +879,7 @@ fn render_standalone_image(
     let mut out = section(&container, &render_img_tag_resolved(img, &resolved, ctx));
     if let Some(cap) = caption {
         let style = css(
-            ctx.theme,
+            ctx,
             "figure_caption",
             &[
                 ("margin-top", "8px"),
@@ -885,7 +894,7 @@ fn render_standalone_image(
             ctx,
             &BodyCtx {
                 leaf: css(
-                    ctx.theme,
+                    ctx,
                     "figure_caption_leaf",
                     &[("font-size", "13px"), ("color", "{text_tertiary}")],
                 ),
@@ -958,7 +967,7 @@ fn render_code(lang: Option<&str>, code: &str, ctx: &Ctx) -> String {
     let wide = code.lines().any(|l| l.chars().count() > 100);
     section(
         &css_variant(
-            ctx.theme,
+            ctx,
             "code",
             wide.then_some("code.wide"),
             &[
@@ -1004,7 +1013,7 @@ fn render_quote(blocks: &[Block], ctx: &Ctx) -> String {
     let variant = quote_variant(blocks);
     let scope = BodyCtx {
         leaf: css_variant(
-            ctx.theme,
+            ctx,
             "quote_leaf",
             variant.map(|v| format!("quote.{}_leaf", v)).as_deref(),
             &[
@@ -1018,7 +1027,7 @@ fn render_quote(blocks: &[Block], ctx: &Ctx) -> String {
     let inner = render_blocks(blocks, ctx, &scope);
     section(
         &css_variant(
-            ctx.theme,
+            ctx,
             "quote",
             variant.map(|v| format!("quote.{}", v)).as_deref(),
             &[
@@ -1190,7 +1199,7 @@ fn render_list_item(
 
     // Content: first paragraph inline with marker, further blocks below.
     let base = css_variant(
-        ctx.theme,
+        ctx,
         "list_item_leaf",
         tight.then_some("list_item.tight_leaf"),
         &[
@@ -1325,14 +1334,14 @@ fn render_table(
         let dense = ncols >= 5;
         if head {
             css_variant(
-                ctx.theme,
+                ctx,
                 "table_head_leaf",
                 dense.then_some("table_head.dense_leaf"),
                 &[("font-weight", "600"), ("color", "{text}")],
             )
         } else {
             css_variant(
-                ctx.theme,
+                ctx,
                 "table_cell_leaf",
                 dense.then_some("table_cell.dense_leaf"),
                 &[("color", "{text}")],
@@ -1403,7 +1412,7 @@ fn render_table(
 
     section(
         &css_variant(
-            ctx.theme,
+            ctx,
             "table",
             (ncols >= 5).then_some("table.dense"),
             &[("margin", "20px 0"), ("overflow-x", "auto")],
@@ -1418,7 +1427,7 @@ fn render_table(
 fn render_rule(ctx: &Ctx) -> String {
     section(
         &css(
-            ctx.theme,
+            ctx,
             "rule",
             &[
                 ("margin", "28px 0"),
@@ -1435,7 +1444,7 @@ fn render_toc(ctx: &Ctx) -> String {
     let mut items = String::new();
     let mut seq = 0;
     let item_leaf = css(
-        ctx.theme,
+        ctx,
         "toc_item_leaf",
         &[
             ("font-size", "14px"),
@@ -1464,7 +1473,7 @@ fn render_toc(ctx: &Ctx) -> String {
     }
     section(
         &css(
-            ctx.theme,
+            ctx,
             "toc",
             &[
                 ("margin", "20px 0"),
@@ -1480,7 +1489,7 @@ fn render_toc(ctx: &Ctx) -> String {
                 "margin-bottom: 8px;",
                 &leaf(
                     &css(
-                        ctx.theme,
+                        ctx,
                         "toc_heading",
                         &[
                             ("font-size", "13px"),
@@ -1501,7 +1510,7 @@ fn render_toc(ctx: &Ctx) -> String {
 fn render_formula(latex: &str, ctx: &Ctx) -> String {
     section(
         &css(
-            ctx.theme,
+            ctx,
             "formula",
             &[
                 ("margin", "16px 0"),
@@ -1513,7 +1522,7 @@ fn render_formula(latex: &str, ctx: &Ctx) -> String {
         ),
         &leaf(
             &css(
-                ctx.theme,
+                ctx,
                 "formula_leaf",
                 &[
                     ("color", "{text}"),

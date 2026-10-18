@@ -151,20 +151,37 @@ pub fn save_config(url: &str, model: &str, launch_path: &str) -> Result<Value, S
 }
 
 pub fn status() -> Value {
+    status_with_probe(probe)
+}
+
+/// Status-badge variant: an unreachable host should flip the badge in ~1s,
+/// not hold the answer for the full 3s probe window.
+pub fn status_fast() -> Value {
+    status_with_probe(probe_fast)
+}
+
+fn status_with_probe(p: fn(&str) -> bool) -> Value {
     let (url, model, launch_path) = comfy_settings_full();
     json!({
         "url": url,
         "model": model,
         "launch_path": launch_path,
-        "online": probe(&url),
+        "online": p(&url),
     })
 }
 
 /// Any HTTP response (including 4xx) proves the ComfyUI HTTP path works.
 pub fn probe(url: &str) -> bool {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(3))
-        .build();
+    probe_timeout(url, Duration::from_secs(3))
+}
+
+/// Fast variant for status badges; launch polling keeps the full 3s probe.
+pub fn probe_fast(url: &str) -> bool {
+    probe_timeout(url, Duration::from_secs(1))
+}
+
+fn probe_timeout(url: &str, timeout: Duration) -> bool {
+    let agent = ureq::AgentBuilder::new().timeout(timeout).build();
     match agent
         .get(&format!("{}/system_stats", url.trim_end_matches('/')))
         .call()

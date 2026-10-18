@@ -7,6 +7,10 @@ const $ = (id) => document.getElementById(id);
 const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
 const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
+/// GUI version - the single frontend source of truth (about lines + status
+/// bar). Bump together with Cargo.toml and tauri.conf.json.
+const GUI_VERSION = "0.13.0";
+
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
   "zh-CN": {
@@ -32,6 +36,7 @@ const I18N = {
     pub_cancel_login: "取消登录", pub_flow_off: "登录流即将支持（见配置引导）",
     pub_login_ok: "登录成功，令牌已存入本机钥匙串", pub_unbound_ok: "已解绑",
     push_draft: "推草稿", push_draft_title: "推送到公众号草稿箱（需已绑定公众号 API）",
+    title_ph: "标题（发布时显示，公众号上限 64 字）",
     push_draft_ok: (id) => `草稿已创建：${id}，到公众号后台「草稿箱」查看`,
     ai_tool_call: (n) => `已调用工具 ${n}`,
     ai_tool_note: (n) => `正在调用 ${n}…`,
@@ -133,6 +138,7 @@ const I18N = {
     attach_title: "上传附件（文档 PDF/DOCX/HTML/TXT/MD + 图片走视觉模型）",
     model_select_title: "切换模型", send_title: "发送", dark_toggle: "深色 / 浅色",
     pet_title: "墨仔（点击摸摸，双击换形态）",
+    note_history: "通知历史", note_empty: "暂无通知",
     vendor_preset: "预设厂商（选择后自动填充）", vendor_preset_ph: "— 选择厂商自动填充 —",
     logo_ph: "留空使用内置品牌标", upload_logo: "上传图标", clear: "清除",
     comfy_section_title: "ComfyUI（本地 AI 绘图）",
@@ -141,7 +147,7 @@ const I18N = {
     comfy_launch_label: "启动程序路径（用于一键启动）", comfy_start: "一键启动",
     comfy_browse_models: "获取模型列表", comfy_browse: "浏览",
     comfy_models_ok: (n) => `已拉取 ${n} 个模型，点击输入框即可选择`, comfy_models_none: "未拉取到模型，请确认 ComfyUI 在线且已放好模型",
-    about_line1: "wxwright 0.12.2 · by AI瑶（微信公众号：码聋）",
+    about_line1: `wxwright ${GUI_VERSION} · by AI瑶（微信公众号：码聋）`,
     about_line2: "写作小宠物「墨仔」住在左下角状态栏，记得去摸摸它。",
     chip_jp: "日系手账", chip_jp_desc: "日系手账风，奶油色底，橙棕强调色，圆角便签卡片，温柔文艺",
     chip_cyber: "赛博科技", chip_cyber_desc: "赛博科技感，深色代码面板，霓虹青蓝强调色，等宽律动",
@@ -190,6 +196,7 @@ const I18N = {
     pub_cancel_login: "Cancel login", pub_flow_off: "Login flow coming soon (see the setup guide)",
     pub_login_ok: "Signed in; token stored in the OS keychain", pub_unbound_ok: "Unbound",
     push_draft: "Push draft", push_draft_title: "Push to the MP drafts box (requires the MP API binding)",
+    title_ph: "Title (shown when published, MP limit 64 chars)",
     push_draft_ok: (id) => `Draft created: ${id} - review it in the MP admin drafts box`,
     ai_tool_call: (n) => `Called tool ${n}`,
     ai_tool_note: (n) => `Calling ${n}…`,
@@ -299,8 +306,9 @@ const I18N = {
     comfy_launch_label: "Launcher path (for one-click start)", comfy_start: "Start",
     comfy_browse_models: "Fetch models", comfy_browse: "Browse",
     comfy_models_ok: (n) => `Fetched ${n} models - click the input to pick one`, comfy_models_none: "No models returned; check that ComfyUI is online and has checkpoints",
-    about_line1: "wxwright 0.12.2 - by AI Yao (MP: MaLong)",
+    about_line1: `wxwright ${GUI_VERSION} - by AI Yao (MP: MaLong)`,
     about_line2: "Mozai the writing pet lives in the bottom-left status bar - go pet it.",
+    note_history: "Notifications", note_empty: "Nothing yet",
     chip_jp: "Journal", chip_jp_desc: "Japanese journal style: cream paper, caramel accent, rounded note cards",
     chip_cyber: "Cyber", chip_cyber_desc: "Cyber tech style: dark code panels, neon cyan-blue accent, mono rhythm",
     chip_mag: "Magazine", chip_mag_desc: "Vintage magazine style: warm paper, vermilion accent, centered headlines",
@@ -351,36 +359,58 @@ function t(key, ...args) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+/* Notifications live in the status bar (centered): the latest message with a
+   colored dot, click for the timestamped history. The old floating toast
+   covered the dark-mode toggle under the device frame. */
+const noteHistory = []; // {time, kind, html} newest first, capped
+let noteTimer = 0;
 function toast(message, kind = "info", listHtml = "") {
-  const host = $("toast-host");
-  const el = document.createElement("div");
-  el.className = `toast ${kind}`;
   // message is escaped: ~25 call sites pass raw backend error strings that
   // may carry file paths or content fragments; listHtml stays markup because
   // its callers build it themselves.
-  el.innerHTML = `<div><div>${escapeHtml(message)}</div>${listHtml}</div>`;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), kind === "err" ? 8000 : 3600);
+  const html = `<div>${escapeHtml(message)}</div>${listHtml}`;
+  noteHistory.unshift({ time: new Date().toTimeString().slice(0, 8), kind, html });
+  if (noteHistory.length > 50) noteHistory.pop();
+  const note = $("status-note");
+  const textEl = $("status-note-text");
+  const undoBtn = $("status-note-undo");
+  if (!note || !textEl) return;
+  note.hidden = false;
+  note.classList.remove("ok", "err");
+  if (kind === "ok" || kind === "err") note.classList.add(kind);
+  textEl.textContent = message;
+  if (undoBtn) {
+    undoBtn.hidden = true;
+    undoBtn.onclick = null;
+  }
+  clearTimeout(noteTimer);
+  // err keeps its red dot until the next notification (failures must not
+  // fade silently); ok/info dots return to neutral after a few seconds.
+  noteTimer = setTimeout(() => note.classList.remove("ok", "err"), kind === "err" ? 30000 : 6000);
 }
 function toastWithUndo(message) {
-  const host = $("toast-host");
-  const el = document.createElement("div");
-  el.className = "toast ok";
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "linklike";
-  btn.textContent = t("undo");
-  btn.addEventListener("click", () => {
+  toast(message, "ok");
+  const undoBtn = $("status-note-undo");
+  if (!undoBtn) return;
+  undoBtn.hidden = false;
+  undoBtn.textContent = t("undo");
+  undoBtn.onclick = () => {
     undoKitInsert();
-    el.remove();
-  });
-  const msg = document.createElement("div");
-  msg.textContent = message;
-  const row = document.createElement("div");
-  row.append(msg, btn);
-  el.appendChild(row);
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 6000);
+    undoBtn.hidden = true;
+    undoBtn.onclick = null;
+  };
+}
+function renderNoteHistory() {
+  const list = $("note-list");
+  if (!noteHistory.length) {
+    list.innerHTML = `<div class="note-empty">${t("note_empty")}</div>`;
+    return;
+  }
+  list.innerHTML = noteHistory
+    .map(
+      (n) => `<div class="note-row ${n.kind}"><span class="note-time">${n.time}</span><div class="note-body">${n.html}</div></div>`
+    )
+    .join("");
 }
 async function copyPlain(text) {
   try {
@@ -503,7 +533,7 @@ async function convertNow() {
         : renderChannelShell(currentPlatform, {
             mode: "note",
             platform: currentPlatform,
-            title: loadedTitle || autoTitle(md),
+            title: currentTitle(),
             caption: demoCaptionFromMd(md),
             images: [],
           });
@@ -539,37 +569,34 @@ async function convertNow() {
     lastResult = res;
     // channel preview: same article, the target platform's own layout
     if (currentPlatform !== "wechat") {
-      try {
-        const model = await invoke("platform_preview", {
-          platform: currentPlatform,
-          title: loadedTitle || autoTitle(md),
-          markdown: md,
-          themeId: currentTheme,
-        });
-        $("preview").srcdoc = model.mode === "note"
+      // preview + rule verdict race side by side: one wait instead of two
+      const args = {
+        platform: currentPlatform,
+        title: currentTitle(),
+        markdown: md,
+      };
+      const [model, pv] = await Promise.all([
+        invoke("platform_preview", { ...args, themeId: currentTheme }).catch(() => null),
+        invoke("platform_validate", { ...args, images: res.stats.images || 0 }).catch(() => null),
+      ]);
+      $("preview").srcdoc = model
+        ? (model.mode === "note"
           ? renderChannelShell(model.platform, model)
-          : zhihuArticleShell(model.html);
-      } catch (e) {
-        $("preview").srcdoc = wrapPreviewHtml(res.html); // fall back to dialect
+          : zhihuArticleShell(model.html))
+        : wrapPreviewHtml(res.html); // fall back to dialect
+      updateStats(res.stats, res.violations);
+      if (pv) {
+        // platform rule table replaces the dialect verdict for non-WeChat targets
+        updateRuleChip(pv.violations || []);
+        if (!$("violations-panel").hidden) renderViolationsPanel(pv.violations || []);
       }
     } else {
       $("preview").srcdoc = wrapPreviewHtml(res.html);
+      updateStats(res.stats, res.violations);
     }
-    updateStats(res.stats, res.violations);
-    if (currentPlatform !== "wechat") {
-      // platform rule table replaces the dialect verdict for non-WeChat targets
-      try {
-        const pv = await invoke("platform_validate", {
-          platform: currentPlatform,
-          title: loadedTitle || autoTitle(md),
-          markdown: md,
-          images: res.stats.images || 0,
-        });
-        updateRuleChip(pv.violations || []);
-        if (!$("violations-panel").hidden) renderViolationsPanel(pv.violations || []);
-      } catch (e) { /* keep dialect verdict on failure */ }
+    if (currentPlatform === "wechat" && !$("violations-panel").hidden) {
+      renderViolationsPanel(res.violations);
     }
-    if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
     $("status-text").textContent = t("ready");
   } catch (e) {
     $("status-text").textContent = String(e);
@@ -578,7 +605,7 @@ async function convertNow() {
 function scheduleConvert() {
   $("status-text").textContent = t("converting");
   clearTimeout(convertTimer);
-  convertTimer = setTimeout(convertNow, 220);
+  convertTimer = setTimeout(convertNow, 180);
 }
 
 async function loadThemesText() {
@@ -695,7 +722,7 @@ async function renderSidebarDrafts() {
           if (!currentArticleId) { toast(t("syncpost_need_save"), "err"); btn.disabled = false; return; }
           const r = await invoke("wx_update_draft", {
             mediaId: mid,
-            title: loadedTitle || autoTitle(md),
+            title: currentTitle(),
             markdown: md,
             themeId: currentTheme,
             coverImagePath: null,
@@ -716,6 +743,22 @@ async function renderSidebarDrafts() {
 function autoTitle(md) {
   const m = md.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : (lang === "zh-CN" ? "未命名文章" : "Untitled");
+}
+/// The article's publish title: the dedicated field wins, then the library
+/// truth, then the first H1. Every title consumer (preview shells, draft
+/// push, exports) reads through here so the field is the single source.
+function currentTitle() {
+  const typed = $("article-title") && $("article-title").value.trim();
+  return typed || loadedTitle || autoTitle($("editor").value);
+}
+function updateTitleCount() {
+  const field = $("article-title");
+  const count = $("title-count");
+  if (!field || !count) return;
+  const len = [...field.value].length;
+  count.hidden = len === 0;
+  count.textContent = `${len}/64`;
+  count.classList.toggle("over", len > 64);
 }
 async function refreshLibrary() {
   const list = $("article-list");
@@ -811,9 +854,11 @@ async function persistCurrent(silent = false) {
   if (!invoke) return;
   const md = $("editor").value;
   if (md.trim().length === 0) return;
-  // Title rules: a library article keeps its stored title (renames survive
-  // edits); a brand-new unsaved doc takes its first heading.
-  const title = currentArticleId && loadedTitle ? loadedTitle : autoTitle(md);
+  // Title rules: the dedicated field wins; a library article keeps its stored
+  // title when the field is empty (renames survive edits); a brand-new
+  // unsaved doc takes its first heading.
+  const title = $("article-title").value.trim()
+    || (currentArticleId && loadedTitle ? loadedTitle : autoTitle(md));
   const isNew = !currentArticleId;
   const meta = await invoke("save_article", {
     id: currentArticleId,
@@ -853,6 +898,8 @@ async function openArticle(id) {
   const art = await invoke("read_article", { id });
   currentArticleId = art.meta.id;
   loadedTitle = art.meta.title;
+  $("article-title").value = loadedTitle;
+  updateTitleCount();
   articleFormat = art.meta.format === "html" ? "html" : "markdown";
   $("editor").value = art.markdown;
   dirty = false;
@@ -873,6 +920,8 @@ async function newArticle() {
   currentArticleId = null;
   loadedTitle = null;
   articleFormat = "markdown";
+  $("article-title").value = "";
+  updateTitleCount();
   $("editor").value = "# " + (lang === "zh-CN" ? "新文章" : "New article") + "\n\n";
   $("stat-saved").textContent = t("not_saved");
   dirty = false;
@@ -1425,7 +1474,7 @@ function updateWxAccountChip(st) {
   chipBtn.hidden = false;
   chipBtn.innerHTML =
     wxAvatarImg(active, 16) +
-    `<span>${escapeHtml(accountDisplayName(active))}</span><span class="wa-caret">▾</span>`;
+    `<span class="wa-name">${escapeHtml(accountDisplayName(active))}</span><span class="wa-caret">▾</span>`;
   chipBtn.onclick = () => {
     if (accounts.length <= 1) {
       openWxSettingsPane();
@@ -1525,7 +1574,7 @@ async function doCopy() {
     try {
       const text = await invoke("platform_export_text", {
         platform: currentPlatform,
-        title: loadedTitle || autoTitle($("editor").value),
+        title: currentTitle(),
         markdown: $("editor").value,
       });
       await invoke("copy_text_plain", { text });
@@ -4120,6 +4169,12 @@ function bindUI() {
     scheduleConvert();
     window.Mozai && Mozai.typing();
   });
+  $("article-title").addEventListener("input", () => {
+    dirty = true;
+    $("stat-saved").textContent = t("not_saved");
+    updateTitleCount();
+    scheduleConvert(); // channel previews render the title
+  });
   $("editor").addEventListener("paste", async (e) => {
     const items = (e.clipboardData && e.clipboardData.items) || [];
     for (const it of items) {
@@ -4164,6 +4219,28 @@ function bindUI() {
   });
   $("btn-device-dark").addEventListener("click", toggleDark);
   window.addEventListener("resize", fitDevice);
+  fitDevice(); // size the frame on the first paint - it renders at full CSS
+  // size (872px tall) before this runs, which read as a "shrink on load".
+
+  /* status-bar notifications */
+  $("status-note").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const panel = $("note-history");
+    if (panel.hidden) renderNoteHistory();
+    panel.hidden = !panel.hidden;
+  });
+  $("note-clear").addEventListener("click", (e) => {
+    e.stopPropagation();
+    noteHistory.length = 0;
+    $("note-history").hidden = true;
+    $("status-note").hidden = true;
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".status-note-wrap")) {
+      const panel = $("note-history");
+      if (panel) panel.hidden = true;
+    }
+  });
 
   /* library */
   $("btn-library").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
@@ -4253,7 +4330,7 @@ function bindUI() {
         cover = picked;
       }
       const r = await invoke("wx_push_draft", {
-        title: loadedTitle || autoTitle($("editor").value),
+        title: currentTitle(),
         markdown: $("editor").value,
         themeId: currentTheme,
         coverImagePath: cover,
@@ -4272,7 +4349,7 @@ function bindUI() {
           });
           if (picked) {
             const r2 = await invoke("wx_push_draft", {
-              title: loadedTitle || autoTitle($("editor").value),
+              title: currentTitle(),
               markdown: $("editor").value,
               themeId: currentTheme,
               coverImagePath: picked,
@@ -4857,6 +4934,7 @@ function bindUI() {
     const total = $("workspace").getBoundingClientRect().width;
     const left = Math.min(Math.max(e.clientX / total, 0.2), 0.78);
     $("workspace").querySelector(".pane-editor").style.flex = `0 0 ${left * 100}%`;
+    fitDevice(); // pane resize is invisible to window.resize
   });
 
   /* language toggle: swap locale, then re-render every dynamic surface */
@@ -4969,6 +5047,8 @@ function renderComfyResults(paths) {
 async function init() {
   lang = localStorage.getItem("wxwright-lang") || "zh-CN";
   applyI18n();
+  const statusMeta = $("status-meta");
+  if (statusMeta) statusMeta.textContent = `wxwright ${GUI_VERSION}`;
   currentTheme = localStorage.getItem("wxwright-theme") || "minimal";
 
   // 1. bind every listener first: a failing async load can no longer leave
@@ -5006,49 +5086,49 @@ async function init() {
     return;
   }
 
-  // 2. async loads, each isolated: one failure never kills the rest
-  const steps = [
-    async () => {
-      $("editor").value = await invoke("load_sample");
-      currentArticleId = null;
-      loadedTitle = null;
-    },
-    async () => {
+  // 2. startup fast path: editor content lands, preview renders immediately;
+  //    everything else loads in parallel around it (each step fills its own
+  //    DOM and never blocks the first preview or the other steps).
+  try {
+    $("editor").value = await invoke("load_sample");
+    currentArticleId = null;
+    loadedTitle = null;
+    $("article-title").value = "";
+    updateTitleCount();
+  } catch (e) {
+    console.error("init step failed:", e);
+    toast(`${lang === "zh-CN" ? "初始化部分失败" : "Init step failed"}: ${e}`, "err");
+  }
+  const bg = (label, p) => p.catch((e) => console.error(`init step failed (${label}):`, e));
+  const settle = [
+    bg("themes", (async () => {
       const themes = await invoke("list_themes");
       $("theme-select").innerHTML = themes
         .map((x) => `<option value="${x.id}">${escapeHtml(lang === "zh-CN" ? x.name_zh || x.name : x.name)}</option>`)
         .join("");
       $("theme-select").value = currentTheme;
-    },
-    () => initPlatformSwitcher(),
-    () => refreshLibrary(),
-    () => refreshModelSelect(),
-    async () => {
+    })()),
+    bg("platforms", initPlatformSwitcher()),
+    bg("library", refreshLibrary()),
+    bg("models", refreshModelSelect()),
+    bg("comfy", (async () => {
       const st = await invoke("comfy_status");
       $("comfy-url").value = st.url;
       $("comfy-model").value = st.model;
       $("comfy-launch-path").value = st.launch_path || "";
       renderComfyStatus(st);
-    },
-    async () => {
+    })()),
+    bg("cloud-model", (async () => {
       const im = await invoke("ai_settings").then((x) => x.image_model).catch(() => "");
       if (im) $("comfy-cloud-model").value = im;
-    },
-    async () => {
+    })()),
+    bg("library-dir", (async () => {
       const p = await invoke("library_dir");
       $("library-path").textContent = p;
       $("library-path").title = p;
-    },
-    () => refreshWxStatus(),
+    })()),
+    bg("wx", refreshWxStatus()),
   ];
-  for (const step of steps) {
-    try {
-      await step();
-    } catch (e) {
-      console.error("init step failed:", e);
-      toast(`${lang === "zh-CN" ? "初始化部分失败" : "Init step failed"}: ${e}`, "err");
-    }
-  }
 
   if (!localStorage.getItem("wxwright-hint")) {
     setTimeout(() => toast(t("first_run_hint")), 1200);
@@ -5062,6 +5142,7 @@ async function init() {
       try { await convertNow(); } catch (e) {}
     }, 900);
   }
+  await Promise.all(settle);
   applyDevice();
   window.Mozai && Mozai.setState("idle");
 }

@@ -1590,31 +1590,96 @@ fn cmd_bench(iters: usize, out: &Out) -> Result<i32, String> {
     let opts = ConvertOptions::new(theme::load_theme("minimal").map_err(|e| e.to_string())?);
     // Warmup.
     let _ = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-    let mut samples: Vec<f64> = Vec::new();
+    // Stage timings run the exact pipeline() sequence (parse -> render ->
+    // stats -> normalize -> validate) so a regression can be attributed
+    // without a profiler.
+    let mut total: Vec<f64> = Vec::with_capacity(iters);
+    let mut s_parse: Vec<f64> = Vec::with_capacity(iters);
+    let mut s_render: Vec<f64> = Vec::with_capacity(iters);
+    let mut s_stats: Vec<f64> = Vec::with_capacity(iters);
+    let mut s_norm: Vec<f64> = Vec::with_capacity(iters);
+    let mut s_valid: Vec<f64> = Vec::with_capacity(iters);
+    let mut html_bytes = 0usize;
+    let mut violation_count = 0usize;
     for _ in 0..iters {
-        let start = std::time::Instant::now();
-        let _ = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-        samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        let t0 = std::time::Instant::now();
+        let blocks = wxwright_core::parser::parse_markdown(&md);
+        let t1 = std::time::Instant::now();
+        let img = wxwright_core::img::ImgPipeline::new(
+            opts.image_mode,
+            opts.base_dir.clone(),
+            opts.transport.clone(),
+        );
+        let rendered = wxwright_core::render::render_document(&blocks, &opts.theme, &img);
+        let t2 = std::time::Instant::now();
+        let _doc_stats = wxwright_core::ir::count_stats(&blocks);
+        let t3 = std::time::Instant::now();
+        let normalized = wxwright_core::normalizer::normalize_html(
+            &rendered.html,
+            wxwright_core::normalizer::NormalizeOptions::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        let t4 = std::time::Instant::now();
+        let violations = wxwright_core::validator::validate_html(&normalized.html);
+        let t5 = std::time::Instant::now();
+
+        s_parse.push(t1.duration_since(t0).as_secs_f64() * 1000.0);
+        s_render.push(t2.duration_since(t1).as_secs_f64() * 1000.0);
+        s_stats.push(t3.duration_since(t2).as_secs_f64() * 1000.0);
+        s_norm.push(t4.duration_since(t3).as_secs_f64() * 1000.0);
+        s_valid.push(t5.duration_since(t4).as_secs_f64() * 1000.0);
+        total.push(t5.duration_since(t0).as_secs_f64() * 1000.0);
+        html_bytes = html_bytes.max(normalized.html.len());
+        violation_count = violation_count.max(violations.len());
     }
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let p50 = samples[samples.len() / 2];
-    let p95 = samples[(samples.len() as f64 * 0.95) as usize % samples.len()];
+    let sorted = |s: &mut Vec<f64>| {
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    };
+    for s in [
+        &mut total,
+        &mut s_parse,
+        &mut s_render,
+        &mut s_stats,
+        &mut s_norm,
+        &mut s_valid,
+    ] {
+        sorted(s);
+    }
+    let p50 = |s: &[f64]| s[s.len() / 2];
+    let p95 = |s: &[f64]| s[(s.len() as f64 * 0.95) as usize % s.len()];
     if out.json_mode {
         out.print_json(&serde_json::json!({
             "ok": true,
             "doc_chars": md.chars().count(),
             "iterations": iters,
-            "pipeline_ms_p50": p50,
-            "pipeline_ms_p95": p95,
+            "pipeline_ms_p50": p50(&total),
+            "pipeline_ms_p95": p95(&total),
+            "stages_ms_p50": {
+                "parse": p50(&s_parse),
+                "render": p50(&s_render),
+                "stats": p50(&s_stats),
+                "normalize": p50(&s_norm),
+                "validate": p50(&s_valid),
+            },
+            "html_bytes": html_bytes,
+            "violations": violation_count,
             "slo_p2_budget_ms": 60.0,
-            "within_slo": p50 <= 60.0,
+            "within_slo": p50(&total) <= 60.0,
         }));
     } else {
         out.ok(&format!(
             "full chain over {} chars: p50 {:.1}ms, p95 {:.1}ms (SLO budget 60ms)",
             md.chars().count(),
-            p50,
-            p95
+            p50(&total),
+            p95(&total)
+        ));
+        out.info(&format!(
+            "stages p50 ms: parse {:.1} · render {:.1} · stats {:.1} · normalize {:.1} · validate {:.1}",
+            p50(&s_parse),
+            p50(&s_render),
+            p50(&s_stats),
+            p50(&s_norm),
+            p50(&s_valid)
         ));
     }
     Ok(0)

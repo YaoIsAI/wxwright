@@ -36,14 +36,14 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.12.2）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.13.0）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.12.2_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS（Apple 芯片） | `wxwright_0.12.2_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
-| macOS（Intel 芯片） | `wxwright_0.12.2_x64.dmg`（同样需一次放行，见下） |
-| Linux | `wxwright_0.12.2_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.13.0_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS（Apple 芯片） | `wxwright_0.13.0_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
+| macOS（Intel 芯片） | `wxwright_0.13.0_x64.dmg`（同样需一次放行，见下） |
+| Linux | `wxwright_0.13.0_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS 首次打开**（macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
@@ -64,8 +64,8 @@ CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。签�
 
 **Linux**（x86_64，两种格式任选）：
 
-- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.12.2_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
-- AppImage：`chmod +x wxwright_0.12.2_amd64.AppImage && ./wxwright_0.12.2_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
+- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.13.0_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
+- AppImage：`chmod +x wxwright_0.13.0_amd64.AppImage && ./wxwright_0.13.0_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
 - 中文界面需要系统装有 CJK 字体：Ubuntu 桌面版自带；极简版/服务器版先执行 `sudo apt install fonts-noto-cjk`。
 
 平台支持一览：Windows 10/11 x64 · macOS 11+（Apple 芯片与 Intel 芯片各一个 dmg）· Linux x86_64（webkit2gtk-4.1）。
@@ -131,6 +131,7 @@ GUI 里还有 **AI 主题生成**：一句话描述风格（例如「赛博朋�
 `wxwright-gui`（Tauri 2）：
 
 - **三栏布局**：文章库（左）/ 编辑器（中）/ 手机框预览（右），Dark Mode 模拟、一键复制富文本、导出 HTML、拖拽载入 .md。
+- **标题字段**：发布标题在正文上方的独立输入框（带公众号 64 字上限实时计数）——平台预览、导出、推草稿全部读取该字段；未填标题时正文首个 `# H1` 兜底。
 - **文章库**：本地 Markdown 存储（`文档/wxwright/articles`，frontmatter 元数据）；切换自动保存、点击重新打开、删除、新建。
 - **AI 助手**：编辑器下方 Codex 式对话抽屉 - 流式输出，支持任意 OpenAI 兼容 Provider（OpenAI / DeepSeek / 通义 / Kimi / 智谱，或本地 Ollama / LM Studio）。API Key 存系统钥匙串。快捷指令：润色 / 续写 / 起标题 / 提纲；每条回复可一键插入 / 替换 / 复制。助手可自主调用只读 MCP 工具（校验 / 转换 / 导出 / 主题清单 / 草稿清单），并通过白名单 HTML 通道输出富样式块。
 - **AI 配图（一键）**：工具栏火花按钮自动规划插图位（锚点校验）、用你的云端图像模型生成、按目标平台形态裁剪并插入到对应段落——文章回来就已配好图。
@@ -178,7 +179,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.12.2 && git push origin v0.12.2`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release」→ Run workflow → 输入版本号（工作流会自动核对与 Cargo.toml 一致），同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
+打 tag（`git tag v0.13.0 && git push origin v0.13.0`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release」→ Run workflow → 输入版本号（工作流会自动核对与 Cargo.toml 一致），同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 

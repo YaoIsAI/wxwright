@@ -333,39 +333,62 @@ impl VState {
 
     /// Run text-conditional checks for stack[idx], then pop it.
     fn check_element_end(&mut self, _idx: usize, _draining: bool) {
-        let e = match self.stack.nodes.last() {
-            Some(n) => n.clone(),
-            None => return,
+        // R-2.1 sees the chain THROUGH the top element, so it must run while
+        // the element is still on the stack - and only this rare path pays
+        // for touching the node's style strings.
+        let r21 = {
+            let e = match self.stack.nodes.last() {
+                Some(n) => n,
+                None => return,
+            };
+            if e.child_elems <= 1 {
+                Some(self.stack.identical_chain_depth())
+            } else {
+                None
+            }
         };
-        let node = format!(
-            "<{} style=\"{}\">",
-            e.tag,
-            crate::htmlutil::build_style(&e.decls)
-        );
-        if e.has_text {
-            if e.tag == "pre" {
+        if let Some(depth) = r21 {
+            if depth > 10 {
+                let node = {
+                    let e = self.stack.nodes.last().expect("checked above");
+                    owned_node_hint(e)
+                };
                 self.add(
-                    "R-1.8",
-                    "plain text inside <pre> truncates on mobile".into(),
+                    "R-2.1",
+                    format!("identical wrapper chain is {} levels deep (max 10)", depth),
                     &node,
                 );
             }
+        }
+        // Pop, then check the owned node: no per-element clone, and the
+        // violation node-hint string is only built when a rule actually
+        // fires (compliant documents - the common case - build none).
+        let e = match self.stack.pop() {
+            Some(n) => n,
+            None => return,
+        };
+        if e.has_text {
+            let mut findings: Vec<(&'static str, String)> = Vec::new();
+            if e.tag == "pre" {
+                findings.push((
+                    "R-1.8",
+                    "plain text inside <pre> truncates on mobile".into(),
+                ));
+            }
             if walker::is_text_tag(&e.tag) && e.tag != "pre" {
                 if walker::Stack::line_height_violation(&e.decls).is_some() {
-                    self.add(
+                    findings.push((
                         "R-1.3",
                         "line-height smaller than font size stacks text lines on mobile".into(),
-                        &node,
-                    );
+                    ));
                 }
                 if e.decls.iter().any(|(p, v)| {
                     (p == "background" || p == "background-image") && v.contains("gradient(")
                 }) {
-                    self.add(
+                    findings.push((
                         "R-4.1.2",
                         "gradient background under text is flattened in Dark Mode".into(),
-                        &node,
-                    );
+                    ));
                 }
                 let color = e
                     .decls
@@ -380,33 +403,30 @@ impl VState {
                 if let (Some(c), Some(b)) = (color, bg) {
                     if let Some(ratio) = contrast_ratio(&c, &b) {
                         if ratio < 3.0 {
-                            self.add(
+                            findings.push((
                                 "R-4.1.1",
                                 format!(
                                     "contrast ratio {:.1}:1 is too low; Dark Mode will rewrite it",
                                     ratio
                                 ),
-                                &node,
-                            );
+                            ));
                         } else if ratio > 19.5 {
-                            self.add(
+                            findings.push((
                                 "R-4.1.1",
                                 format!(
                                     "contrast ratio {:.1}:1 is suspiciously high (invisible text?)",
                                     ratio
                                 ),
-                                &node,
-                            );
+                            ));
                         }
                     }
                 }
             }
             if e.tag == "svg" {
-                self.add(
+                findings.push((
                     "R-4.4",
                     "svg contains text content; Dark Mode does not convert SVG".into(),
-                    &node,
-                );
+                ));
             }
             let height = e
                 .decls
@@ -416,39 +436,39 @@ impl VState {
             if let Some(h) = height {
                 if e.tag != "svg" && e.tag != "iframe" {
                     if h <= 0.5 {
-                        self.add(
+                        findings.push((
                             "R-1.5.1",
                             "text container with height:0 is invisible on mobile".into(),
-                            &node,
-                        );
+                        ));
                     } else if h < 40.0 {
                         let clipped = e.decls.iter().any(|(p, v)| {
                             p == "overflow" && (v.contains("hidden") || v.contains("clip"))
                         });
                         if clipped {
-                            self.add(
-                                "R-1.5.2",
-                                "fixed small height clips text content".into(),
-                                &node,
-                            );
+                            findings
+                                .push(("R-1.5.2", "fixed small height clips text content".into()));
                         }
                     }
                 }
             }
-        }
-        // R-2.1: identical wrapper chains (single element child per level).
-        if e.child_elems <= 1 {
-            let depth = self.stack.identical_chain_depth();
-            if depth > 10 {
-                self.add(
-                    "R-2.1",
-                    format!("identical wrapper chain is {} levels deep (max 10)", depth),
-                    &node,
-                );
+            if !findings.is_empty() {
+                let node = owned_node_hint(&e);
+                for (rule, msg) in findings {
+                    self.add(rule, msg, &node);
+                }
             }
         }
-        self.stack.pop();
     }
+}
+
+/// Node hint for a node already off the stack: tag plus its style declaration
+/// block, matching what node_hint renders from a live element.
+fn owned_node_hint(e: &walker::NodeInfo) -> String {
+    format!(
+        "<{} style=\"{}\">",
+        e.tag,
+        crate::htmlutil::build_style(&e.decls)
+    )
 }
 
 fn node_hint(el: &lol_html::html_content::Element) -> String {

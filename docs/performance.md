@@ -3,6 +3,25 @@
 Architecture premise: single static binary, single process, zero IPC, zero
 serialization — every byte of the budget is spent on computing, not frameworks.
 
+## The 500 ms interaction budget (2026-10-18)
+
+Every local operation must land inside 500 ms wall time; network operations can
+never promise that, so the budget they must meet is **feedback**, not
+completion: a click changes visible UI state within 100 ms (streaming first
+token, button morph, status line, progress), and the long work continues in
+the background.
+
+| Class | Operation | Budget | Status |
+|---|---|---|---|
+| Local compute | engine full chain, 13k chars (P-2) | ≤ 60 ms (SLO) / 500 ms (hard cap) | measured, see below |
+| Local compute | platform preview + validate (GUI) | ≤ 30 ms | pass |
+| UI interaction | tab switch, panel open, kit card expand | ≤ 16 ms | pass |
+| Perceived | keystroke → preview update (180 ms debounce + convert + iframe reload) | ≤ 500 ms | pass |
+| Startup | GUI first interactive frame (P-4) | ≤ 400 ms p50 | SLO |
+| Startup | GUI first preview render | ≤ 500 ms | init loads editor + converts first, all other steps run in parallel |
+| Startup | ComfyUI status probe (offline host) | ≤ 1 s, never blocks first preview | fast probe |
+| Feedback | AI chat / image gen / ComfyUI / draft push / X-LinkedIn post | first visible reaction ≤ 100 ms; completion bounded by network | streaming + button morph + status lines |
+
 ## SLO table (release build)
 
 | # | Metric | p50 | p95 | Measured by |
@@ -11,11 +30,13 @@ serialization — every byte of the budget is spent on computing, not frameworks
 | P-2 | 10k-char full chain (md → dialect → normalize → validate, no upload) | ≤ 60 ms | ≤ 150 ms | `wxwright bench` |
 | P-3 | single 2 MB image decode + dimension probe | ≤ 5 ms | ≤ 15 ms | header-only decode (`image::ImageReader::into_dimensions`) |
 | P-4 | GUI first interactive frame | ≤ 400 ms | ≤ 800 ms | Tauri startup marks |
-| P-5 | GUI incremental re-render on input | ≤ 8 ms | ≤ 16 ms | 220 ms debounce + sub-ms convert |
+| P-5 | GUI incremental re-render on input | ≤ 8 ms | ≤ 16 ms | 180 ms debounce + sub-ms convert |
 | P-6 | engine resident memory | ≤ 50 MB | ≤ 80 MB | task manager sampling |
 | P-7 | CLI binary size (single platform) | ≤ 8 MB | ≤ 15 MB | CI size gate |
 
-Reproduce P-2 locally with `wxwright bench` (release build).
+Reproduce P-2 locally with `wxwright bench` (release build); the JSON output
+carries `stages_ms_p50` (parse / render / stats / normalize / validate) so a
+regression can be attributed without a profiler.
 
 ## Engineering means
 
@@ -38,6 +59,27 @@ P-1 note: the ≤8ms budget is defined against CI instruction counting
 is end-to-end wall time including spawn + PowerShell invocation — not
 comparable to the budget. CI measures P-1/P-3/P-6/P-4/P-5 on fixed runners;
 reproduce P-2/P-7 locally with `wxwright bench --json` and file size.
+
+## Measured (2026-10-19): regression attributed and fixed
+
+By October the same bench doc measured p50 76–100 ms on the same machine —
+beyond machine noise. The stage timers attributed the drift:
+
+- `validate` grew to ~44 % of the chain: `check_element_end` cloned the node
+  and built its violation hint string for **every** element, compliant or not;
+- `render` grew to ~22 %: `css_variant` re-expanded tokens and rebuilt style
+  strings for every element with the same (role, variant).
+
+Fixes (0.12.3): the hint string is built only when a rule actually fires, and
+`css_variant` memoizes per render. Interleaved A/B (old vs new binary,
+alternating runs, 4 rounds) showed **old ≈ 124.6 ms vs new ≈ 101.0 ms mean,
+≈ 19–25 % faster**. Stage shares after the fix: validate ~40 %, normalize
+~37 % (untouched baseline), render ~13 %, parse ~2 %.
+
+Caveat carried forward: this laptop's absolute numbers swing ±20 %+ with
+thermal state — the same old-code binary measured 105–150 ms on a warm
+afternoon versus 76 ms earlier the same day. Absolute SLO verdicts belong to
+CI's fixed runners; locally, always A/B interleaved.
 
 ## Regression policy
 

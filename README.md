@@ -36,14 +36,14 @@ The AI assistant drafts with you — streaming, stoppable, and every reply offer
 
 ## Download
 
-Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.12.2):
+Grab an installer from the [Releases page](https://github.com/YaoIsAI/wxwright/releases) (v0.13.0):
 
 | Platform | File |
 |---|---|
-| Windows | `wxwright_0.12.2_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
-| macOS (Apple silicon) | `wxwright_0.12.2_aarch64.dmg` (not notarized — first launch needs a one-time bypass, see below) |
-| macOS (Intel) | `wxwright_0.12.2_x64.dmg` (same one-time bypass, see below) |
-| Linux | `wxwright_0.12.2_amd64.deb` or `.AppImage` |
+| Windows | `wxwright_0.13.0_x64-setup.exe` (installer) or `wxwright-cli-windows-x64.zip` (portable CLI) |
+| macOS (Apple silicon) | `wxwright_0.13.0_aarch64.dmg` (not notarized — first launch needs a one-time bypass, see below) |
+| macOS (Intel) | `wxwright_0.13.0_x64.dmg` (same one-time bypass, see below) |
+| Linux | `wxwright_0.13.0_amd64.deb` or `.AppImage` |
 | CLI (all platforms) | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS first launch** (macOS 11+): the dmg is ad-hoc signed but not notarized, so the first launch is blocked by Gatekeeper with "Apple could not verify that wxwright does not contain malware". After dragging `wxwright.app` to Applications, use either of these — **each needs to be done once**:
@@ -64,8 +64,8 @@ Same for the CLI binary after extraction: `xattr -d com.apple.quarantine wxwrigh
 
 **Linux** (x86_64, two formats):
 
-- deb (Debian/Ubuntu family): `sudo apt install ./wxwright_0.12.2_amd64.deb` — dependencies (libwebkit2gtk-4.1-0 / libgtk-3-0) are pulled in by apt automatically. Verified on Ubuntu 24.04: dependency resolution, end-to-end conversion of a Chinese article, and GUI launch all work.
-- AppImage: `chmod +x wxwright_0.12.2_amd64.AppImage && ./wxwright_0.12.2_amd64.AppImage` (no install needed; AppDir structure and embedded binary verified).
+- deb (Debian/Ubuntu family): `sudo apt install ./wxwright_0.13.0_amd64.deb` — dependencies (libwebkit2gtk-4.1-0 / libgtk-3-0) are pulled in by apt automatically. Verified on Ubuntu 24.04: dependency resolution, end-to-end conversion of a Chinese article, and GUI launch all work.
+- AppImage: `chmod +x wxwright_0.13.0_amd64.AppImage && ./wxwright_0.13.0_amd64.AppImage` (no install needed; AppDir structure and embedded binary verified).
 - The Chinese UI needs a CJK font on the system: Ubuntu desktop ships one; on minimal/server installs run `sudo apt install fonts-noto-cjk` first.
 
 Platform support at a glance: Windows 10/11 x64 · macOS 11+ (separate dmgs for Apple silicon and Intel) · Linux x86_64 (webkit2gtk-4.1).
@@ -133,6 +133,7 @@ The GUI adds an **AI theme generator**: describe a style ("deep-space cyberpunk,
 `wxwright-gui` (Tauri 2):
 
 - **Three-zone layout**: article library (left) / editor (center) / phone-frame preview (right), Dark Mode simulation, one-click rich copy, HTML export, `.md` drag-and-drop.
+- **Title field**: the publish title lives in its own input above the body (with the MP 64-char limit as a live counter) — preview shells, exports and the drafts push all read it; the first `# H1` remains the fallback for untitled docs.
 - **Article library**: local Markdown store (`Documents/wxwright/articles`) with frontmatter metadata; auto-save on switch, click to reopen, delete, new article.
 - **AI assistant**: Codex-style drawer under the editor - streaming chat with any OpenAI-compatible provider (OpenAI / DeepSeek / Qwen / Kimi / GLM, or local Ollama / LM Studio). API keys live in the OS keychain. Quick prompts: polish / continue / titles / outline; every reply offers insert / replace / copy. The assistant can call the read-only MCP tools itself (validate / convert / export / themes list / drafts list) and writes rich blocks through the allowlisted HTML channel.
 - **AI illustrations (one click)**: the sparkle button in the toolbar plans illustration slots from the article (anchor-verified), generates the images with your cloud image model, fits them to the target platform's shape and inserts them where they belong - the article comes back illustrated.
@@ -208,7 +209,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 
 ## Release automation
 
-Tag a version (`git tag v0.12.2 && git push origin v0.12.2`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release", run it with the version number (the workflow cross-checks it against Cargo.toml) - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
+Tag a version (`git tag v0.13.0 && git push origin v0.13.0`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release", run it with the version number (the workflow cross-checks it against Cargo.toml) - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
 
 ## Author
 

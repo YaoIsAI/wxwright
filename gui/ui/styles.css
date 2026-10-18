@@ -217,13 +217,34 @@ body { display: flex; flex-direction: column; }
 .editor-empty-hint .linklike { pointer-events: auto; font-size: 13px; }
 
 .editor-status {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 4px 8px; /* row-gap keeps a second line breathable when wrapping */
   padding: 8px 4px;
   font-size: 12px; color: var(--text-tertiary);
   flex: 0 0 auto;
 }
 .editor-status .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--border-strong); }
 .statusbar .spacer, .editor-status .spacer { flex: 1 1 auto; }
+
+/* article title field: the publish title lives above the body, matching the
+   MP editor (and the drafts API) where the title is its own input */
+.title-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 0;
+  flex: 0 0 auto;
+}
+.title-row input {
+  flex: 1 1 auto; min-width: 0;
+  font-family: inherit;
+  font-size: 16px; font-weight: 600; color: var(--text);
+  background: none; border: none; outline: none;
+  padding: 6px 8px;
+  border-bottom: 1px solid transparent;
+}
+.title-row input:focus { border-bottom-color: var(--accent); }
+.title-row input::placeholder { color: var(--text-tertiary); font-weight: 400; font-size: 13px; }
+.title-count { flex: 0 0 auto; font-size: 11px; color: var(--text-tertiary); font-family: var(--mono); }
+.title-count.over { color: var(--err); font-weight: 700; }
 
 .linklike {
   display: inline-flex; align-items: center; gap: 4px;
@@ -275,7 +296,8 @@ body { display: flex; flex-direction: column; }
 }
 .wx-account-menu button:hover { background: var(--bg-subtle); }
 .wx-account-menu button .wa-avatar { width: 18px; height: 18px; }
-.wx-chip-wrap .rule-chip { display: inline-flex; align-items: center; gap: 5px; }
+.wx-chip-wrap .rule-chip { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 240px; }
+.wx-chip-wrap .rule-chip .wa-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wx-chip-wrap .wa-caret { color: var(--text-tertiary); font-size: 10px; }
 .wx-account-menu .wa-active-chip { margin-left: auto; }
 .wx-account-menu .wa-manage { color: var(--accent); border-top: 1px solid var(--border); border-radius: 0; margin-top: 2px; padding-top: 8px; }
@@ -1336,24 +1358,61 @@ body { display: flex; flex-direction: column; }
 }
 .status-meta { font-family: var(--mono); }
 
-/* ----------------------------------------------------------------- toast */
+/* --------------------------------------------------- status-bar notes */
+/* Notifications render centered in the status bar; the history popover opens
+   upward from it. Replaces the floating toast that covered the dark-mode
+   toggle under the device frame. */
 
-.toast-host { position: fixed; right: 16px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
-.toast {
-  display: flex; align-items: flex-start; gap: 8px;
-  max-width: 400px;
-  background: var(--text); color: #fff;
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 13px; line-height: 1.5;
-  box-shadow: 0 6px 24px rgba(31, 35, 40, 0.18);
-  animation: toast-in 0.15s ease;
+.status-note-wrap {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; justify-content: center;
+  position: relative; /* anchor for the history popover */
 }
-.toast.ok { background: #0B3B2E; }
-.toast.err { background: #4A1210; }
-.toast .toast-list { margin: 4px 0 0 0; padding-left: 16px; }
-.toast .toast-list li { font-size: 12px; color: rgba(255,255,255,0.82); }
-@keyframes toast-in { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+.status-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%; min-width: 0;
+  font: inherit; font-size: 12px;
+  color: var(--text-secondary);
+  background: none; border: none; cursor: pointer;
+  padding: 2px 8px; border-radius: var(--radius-sm);
+}
+.status-note:hover { background: var(--bg); }
+.note-dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border-strong);
+}
+.status-note.ok .note-dot { background: var(--ok); }
+.status-note.err .note-dot { background: var(--err); }
+.note-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-undo { flex: 0 0 auto; }
+.note-history {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: min(440px, 80vw); max-height: 300px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(31, 35, 40, 0.16);
+  padding: 8px;
+  z-index: 300;
+}
+.note-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-secondary);
+}
+.note-row {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 6px 4px; font-size: 12px; line-height: 1.5;
+  border-bottom: 1px dashed var(--border);
+}
+.note-row:last-child { border-bottom: none; }
+.note-time { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--text-tertiary); }
+.note-body { min-width: 0; color: var(--text-secondary); word-break: break-word; }
+.note-body .toast-list { margin: 4px 0 0 0; padding-left: 16px; }
+.note-body .toast-list li { font-size: 12px; color: var(--text-tertiary); }
+.note-row.err .note-body > div:first-child { color: var(--err); }
+.note-row.ok .note-body > div:first-child { color: var(--ok); }
+.note-empty { padding: 14px 4px; text-align: center; color: var(--text-tertiary); font-size: 12px; }
 
 /* ------------------------------------------------------------ responsive */
 

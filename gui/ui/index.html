@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=31" />
+  <link rel="stylesheet" href="styles.css?v=32" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -222,6 +222,10 @@
     </aside>
 
     <section class="pane pane-editor">
+      <div class="title-row">
+        <input id="article-title" data-i18n-placeholder="title_ph" placeholder="标题（发布时显示，公众号上限 64 字）" maxlength="128" autocomplete="off" />
+        <span id="title-count" class="title-count" hidden></span>
+      </div>
       <textarea id="editor" class="editor" spellcheck="false" placeholder="Markdown..."></textarea>
       <div id="editor-empty-hint" class="editor-empty-hint" hidden>
         <svg class="icon"><use href="#i-spark"/></svg>
@@ -369,11 +373,24 @@
     </div>
     <div id="pet-bubble" hidden></div>
     <span id="status-text" data-i18n="ready">就绪</span>
-    <span class="spacer"></span>
+    <span class="status-note-wrap">
+      <span id="status-note" class="status-note" hidden>
+        <span class="note-dot"></span>
+        <span id="status-note-text" class="note-text"></span>
+        <button type="button" id="status-note-undo" class="linklike note-undo" hidden></button>
+      </span>
+      <div id="note-history" class="note-history" hidden>
+        <div class="note-head">
+          <span data-i18n="note_history">通知历史</span>
+          <button type="button" id="note-clear" class="linklike" data-i18n="clear">清空</button>
+        </div>
+        <div id="note-list" class="note-list"></div>
+      </div>
+    </span>
     <span class="status-author">by <b>AI瑶</b> · 公众号 <button id="malong-btn" class="linklike malong" title="公众号二维码">码聋</button> ·
       <a href="https://github.com/YaoIsAI" id="link-github">github.com/YaoIsAI</a>
     </span>
-    <span class="status-meta">wxwright 0.11.2</span>
+    <span class="status-meta" id="status-meta">wxwright</span>
   </footer>
 
   <!-- ---------------------------------------------------- settings modal -->
@@ -856,10 +873,9 @@
     </div>
   </div>
 
-  <div id="toast-host" class="toast-host"></div>
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=53"></script>
+  <script src="app.js?v=54"></script>
 </body>
 </html>

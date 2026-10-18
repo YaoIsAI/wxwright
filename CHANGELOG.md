@@ -8,6 +8,50 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.13.0] - 2026-10-19
+
+### Added
+- **The article title is a first-class field.** The editor gains a title
+  input above the body with a live counter against the MP 64-char limit
+  (red past the limit). The field is the single title source for channel
+  preview shells, platform exports, copy flows and the drafts-box push;
+  the first `# H1` in the Markdown stays as a fallback for untitled docs.
+- **Performance budget documented and enforced.** `docs/performance.md`
+  gains the 500 ms interaction budget table (local compute / perceived /
+  startup / network feedback classes), and `wxwright bench` now reports
+  per-stage timings (`stages_ms_p50`: parse / render / stats / normalize /
+  validate) so a regression can be attributed without a profiler.
+
+### Changed
+- **GUI startup renders the first preview before the background loads.**
+  The editor content lands first and converts immediately; themes,
+  library, models, ComfyUI status, WeChat status and the rest now load in
+  parallel around it instead of gating the preview behind a serialized
+  chain. The ComfyUI probe bounds an offline host to ~1 s (was 3 s) and
+  never blocks the first render. The device frame is sized on the first
+  paint (previously it rendered full-size and visibly shrank after init).
+- **Engine full chain ~20 % faster** (interleaved A/B, 4 rounds). The
+  validator built a violation node-hint string and cloned the style
+  declarations for every element even on compliant documents; both are now
+  lazy. The renderer memoizes per-role style composition per document.
+- **Platform previews validate in parallel.** The channel preview and its
+  rule verdict previously ran as two serialized IPC round trips per
+  keystroke; they now race side by side (and the violations panel shows
+  the platform verdict it advertises).
+- **Notifications moved into the status bar.** The floating toast covered
+  the dark-mode toggle under the device frame. Notices now render centered
+  in the status bar with a colored dot (red persists for failures until
+  the next notice), and clicking opens a timestamped history panel.
+- **The editor stats row wraps on narrow windows.** Compliance badge,
+  save state, account switcher and action buttons flow onto a second line
+  instead of being squeezed; long account names ellipsize.
+- **Input debounce 220 → 180 ms** - typing feels snappier while staying
+  inside the 500 ms perceived budget.
+
+### Fixed
+- The status bar version string is filled from the app version at runtime
+  (the hardcoded text had drifted two releases behind).
+
 ## [0.12.2] - 2026-10-18
 
 ### Fixed
