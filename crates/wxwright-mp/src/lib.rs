@@ -703,10 +703,13 @@ mod tests {
     use super::*;
 
     /// Redirect config_root() at a throwaway dir for the duration of one test.
-    /// APPDATA is process-global: the lock keeps config tests serial.
+    /// config_root() reads APPDATA on Windows but XDG_CONFIG_HOME / HOME on
+    /// Unix - all three must be pointed at the sandbox or CI Linux/macOS
+    /// resolves the real home dir (whose wxwright/ subdir does not exist).
+    /// These are process-global: the lock keeps config tests serial.
     struct ConfigIsolation {
         _guard: std::sync::MutexGuard<'static, ()>,
-        prev: Option<std::ffi::OsString>,
+        prev: Vec<(String, Option<std::ffi::OsString>)>,
         dir: std::path::PathBuf,
     }
     impl ConfigIsolation {
@@ -720,8 +723,11 @@ mod tests {
             ));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(dir.join("wxwright")).unwrap();
-            let prev = std::env::var_os("APPDATA");
-            std::env::set_var("APPDATA", &dir);
+            let mut prev: Vec<(String, Option<std::ffi::OsString>)> = Vec::new();
+            for key in ["APPDATA", "XDG_CONFIG_HOME", "HOME"] {
+                prev.push((key.to_string(), std::env::var_os(key)));
+                std::env::set_var(key, &dir);
+            }
             Self {
                 _guard: guard,
                 prev,
@@ -731,9 +737,11 @@ mod tests {
     }
     impl Drop for ConfigIsolation {
         fn drop(&mut self) {
-            match &self.prev {
-                Some(v) => std::env::set_var("APPDATA", v),
-                None => std::env::remove_var("APPDATA"),
+            for (key, val) in &self.prev {
+                match val {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
             }
             let _ = std::fs::remove_dir_all(&self.dir);
         }
