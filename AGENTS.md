@@ -90,6 +90,10 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 9. **MCP 工具面**（9 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
    改工具清单必须同步 agent card + README，否则 CI 红。
 10. **修改 logo/图标**需三处同步：master.svg、index.html symbol、icongen 重跑。
+    icongen 一次产出全部平台产物：Windows/Linux 满幅 PNG+ICO，**macOS 官方规格
+    icns（824/1024 squircle 超椭圆 + 柔和投影）自动合成**——`gui/src-tauri/icons/`
+    下的文件是生成物，**禁止手改、禁止用 `tauri icon` 重生成**（会退化成满幅 icns
+    并丢掉 8 帧 ICO）；流程与验证命令见 `docs/icon-sop.md`。
 11. **主题角色以 `wxwright-core/src/roles.rs` 为唯一事实源**。渲染器、AI 主题提示词
     （`ai::theme_schema()`）与 `validate_generated_theme` 三方都从 `ROLES` 取。
     **新增/改名的 role 必须三处同时成立**，`tests/theme_roles_test.rs` 会给每个 key
@@ -181,6 +185,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 51 | **styles.css 里 svgkit 样式块整段重复出现两次**（历史追加事故，两段逐字相同；后者静默覆盖前者，改前不改后=改了白改） | 样式「改了没生效」或删除后残留一半，排查时间翻倍 | 大段 CSS 追加前先 `grep -c '段首注释\|特征类名'` 查重；删除功能时对类名做全文件 grep 而不是凭记忆只删一处；本次 v0.12.0 侧边栏化时清理 |
 | 52 | **测试隔离只覆盖了本平台的环境变量**（多账号配置测试只重定向了 Windows 的 `APPDATA`，而 `util::config_root()` 在 Linux/macOS 读 `XDG_CONFIG_HOME`/`HOME`——CI 上解析到真实 home 的 `.config/wxwright`，目录不存在 → `NotFound`，本地 Windows 绿、CI 双平台红） | 本地全绿的 PR 在 CI 双平台红一轮 | 重定向「配置根目录」类测试前，先看 `config_root()` 的**全部分支输入**（Windows=APPDATA；Unix=XDG_CONFIG_HOME 优先、HOME 兜底），三个都指向同一个临时目录并在 Drop 里恢复；临时目录必须 `create_dir_all(dir.join("wxwright"))` 预建子目录 |
 | 53 | **工作流用 GITHUB_TOKEN 推的 tag 不会触发其他工作流**（「打 tag → 触发 Release」的 dispatch 壳跑成功了、tag 也推上去了，但 Release 流水线**静默没启动**——GitHub 明文规定 GITHUB_TOKEN 产生的事件不再触发 workflow run，防递归；job 全绿、tag 在远端，发布却没发生） | 发布「成功」了但什么都没发；只有回头看 `gh run list --workflow=release.yml` 才发现没新 run | **任何需要级联触发工作流的事件，都不能由 GITHUB_TOKEN 制造**。正解是把 dispatch 触发做进目标工作流本体（release.yml 自带 `workflow_dispatch` + `guard-version` 岗哨核对 Cargo.toml + softprops 显式 `tag_name: ${{ env.RELEASE_TAG }}`，单工作流双触发）；临时解锁可用**本地凭据**删掉远端 tag 重推。排查看 `gh run list --workflow=release.yml` 而不是 dispatch 壳的绿勾 |
+| 54 | **macOS 图标用了 Windows 满幅方图**（icns 直接装满幅位图：1024 画布顶到四边。苹果官方规范是 1024 画布中央 824px 连续曲率 squircle（超椭圆 n=5）+ 透明边距 + 柔和投影；Dock/Finder 按位图原样渲染，满幅=比所有标准图标大一圈。v0.12.1 用户在 MacBook Air 实机发现） | 视觉不专业，与系统图标同屏突兀；此前每个 dmg 版本都带着这个问题 | icongen 自动合成 macOS 版（squircle 遮罩 + 824 网格 + 模板投影 → icon.icns），从管线根上杜绝；唯一入口 `cargo run --release -p icongen`，icons/ 产物禁止手改（`tauri icon` 会用满幅源覆盖 icns）。规范对照表、验证命令、发版后 dmg 复验见 `docs/icon-sop.md` |
 
 ## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
 

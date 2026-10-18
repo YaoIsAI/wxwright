@@ -8,6 +8,22 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.12.2] - 2026-10-18
+
+### Fixed
+- **The macOS app icon follows Apple's official template.** The icns shipped
+  a full-bleed square, so the Dock/Finder icon ran visibly larger than every
+  standard icon. icongen now composes the macOS variant automatically on the
+  official grid - 824px continuous-curvature squircle (superellipse n=5) on
+  the 1024 canvas, transparent margins, soft baked drop shadow - and writes
+  icon.icns in the standard ten-entry PNG set. Windows/Linux stay full-bleed.
+
+### Added
+- **Icon SOP** (`docs/icon-sop.md`): per-platform geometry table, the
+  icongen-only generation flow (hand edits and `tauri icon` regeneration are
+  forbidden - both would ship an off-spec icns), pre-commit verification
+  commands and a post-release dmg re-check.
+
 ## [0.12.1] - 2026-10-18
 
 ### Added

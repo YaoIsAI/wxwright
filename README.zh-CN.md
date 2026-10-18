@@ -36,14 +36,14 @@ AI 助手陪你写作——流式输出、随时停止，每条回复可一键**
 
 ## 下载
 
-到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.12.1）：
+到 [Releases 页面](https://github.com/YaoIsAI/wxwright/releases) 获取安装包（v0.12.2）：
 
 | 平台 | 文件 |
 |---|---|
-| Windows | `wxwright_0.12.1_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
-| macOS（Apple 芯片） | `wxwright_0.12.1_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
-| macOS（Intel 芯片） | `wxwright_0.12.1_x64.dmg`（同样需一次放行，见下） |
-| Linux | `wxwright_0.12.1_amd64.deb` 或 `.AppImage` |
+| Windows | `wxwright_0.12.2_x64-setup.exe`（安装向导）或 `wxwright-cli-windows-x64.zip`（便携 CLI） |
+| macOS（Apple 芯片） | `wxwright_0.12.2_aarch64.dmg`（未公证——首次打开需一次手动放行，见下） |
+| macOS（Intel 芯片） | `wxwright_0.12.2_x64.dmg`（同样需一次放行，见下） |
+| Linux | `wxwright_0.12.2_amd64.deb` 或 `.AppImage` |
 | CLI（全平台） | `wxwright-cli-*.zip / .tar.gz` |
 
 **macOS 首次打开**（macOS 11+）：dmg 为 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper 拦截，提示「Apple 无法验证 wxwright 是否包含可能危害 Mac 安全的恶意软件」。把 `wxwright.app` 拖入「应用程序」后，以下两种方式任选其一，**都只需做一次**：
@@ -64,8 +64,8 @@ CLI 二进制同理：解压后 `xattr -d com.apple.quarantine wxwright`。签�
 
 **Linux**（x86_64，两种格式任选）：
 
-- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.12.1_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
-- AppImage：`chmod +x wxwright_0.12.1_amd64.AppImage && ./wxwright_0.12.1_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
+- deb（Debian/Ubuntu 系）：`sudo apt install ./wxwright_0.12.2_amd64.deb` —— 依赖（libwebkit2gtk-4.1-0 / libgtk-3-0）由 apt 自动拉齐。已在 Ubuntu 24.04 实测：依赖解析安装、中文文章端到端转换、GUI 启动均正常。
+- AppImage：`chmod +x wxwright_0.12.2_amd64.AppImage && ./wxwright_0.12.2_amd64.AppImage`（免安装，已验证 AppDir 结构与内嵌二进制）。
 - 中文界面需要系统装有 CJK 字体：Ubuntu 桌面版自带；极简版/服务器版先执行 `sudo apt install fonts-noto-cjk`。
 
 平台支持一览：Windows 10/11 x64 · macOS 11+（Apple 芯片与 Intel 芯片各一个 dmg）· Linux x86_64（webkit2gtk-4.1）。
@@ -178,7 +178,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.12.1 && git push origin v0.12.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release」→ Run workflow → 输入版本号（工作流会自动核对与 Cargo.toml 一致），同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
+打 tag（`git tag v0.12.2 && git push origin v0.12.2`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release」→ Run workflow → 输入版本号（工作流会自动核对与 Cargo.toml 一致），同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 
