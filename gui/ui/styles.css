@@ -238,6 +238,39 @@ body { display: flex; flex-direction: column; }
 .input-btn-row input { flex: 1 1 auto; min-width: 0; }
 .input-btn-row .btn { flex: 0 0 auto; font-size: 12px; padding: 6px 10px; }
 
+/* multi-account WeChat binding: settings list + status-bar quick switcher */
+.wx-account-row {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px; margin-bottom: 6px;
+  font-size: 12px; color: var(--text-secondary);
+}
+.wx-account-row .wa-name { font-weight: 600; color: var(--text); }
+.wx-account-row .wa-appid { color: var(--text-tertiary); }
+.wx-account-row .spacer { flex: 1 1 auto; }
+.wx-account-row .btn { font-size: 11px; padding: 3px 8px; }
+.wa-active-chip {
+  font-size: 10px; color: var(--ok); border: 1px solid var(--ok);
+  border-radius: 999px; padding: 0 7px; line-height: 1.5;
+}
+.wx-chip-wrap { position: relative; display: inline-flex; }
+.wx-account-menu {
+  position: absolute; bottom: 30px; right: 0;
+  min-width: 210px; z-index: 40;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.14);
+  padding: 4px;
+}
+.wx-account-menu button {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font: inherit; font-size: 12px; text-align: left;
+  color: var(--text); background: none; border: none;
+  border-radius: var(--radius-sm); padding: 7px 9px; cursor: pointer;
+}
+.wx-account-menu button:hover { background: var(--bg-subtle); }
+.wx-account-menu .wa-active-chip { margin-left: auto; }
+.wx-account-menu .wa-manage { color: var(--accent); border-top: 1px solid var(--border); border-radius: 0; margin-top: 2px; padding-top: 8px; }
+
 /* rule chip: inline compliance badge in the stats row (PRD review moved here) */
 .rule-chip {
   display: inline-flex; align-items: center; gap: 5px;

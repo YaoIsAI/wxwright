@@ -490,11 +490,22 @@ pub async fn comfy_list_models(url: String) -> Result<Vec<String>, String> {
 // ------------------------------------------------------ wechat mp binding ---
 #[tauri::command]
 pub fn wx_bind_status() -> serde_json::Value {
-    let creds = wxwright_mp::load_credentials();
-    match creds {
-        Some(c) => serde_json::json!({ "bound": true, "appid": wxwright_mp::mask(&c.appid) }),
-        None => serde_json::json!({ "bound": false, "appid": "" }),
-    }
+    let accounts = wxwright_mp::list_accounts();
+    let active = accounts.iter().find(|a| a.active);
+    serde_json::json!({
+        "bound": !accounts.is_empty(),
+        "appid": active.map(|a| wxwright_mp::mask(&a.appid)).unwrap_or_default(),
+        "label": active.map(|a| a.label.clone()).unwrap_or_default(),
+        "accounts": accounts
+            .iter()
+            .map(|a| serde_json::json!({
+                // appid is an identifier, not a credential; it keys switching
+                "appid": a.appid,
+                "label": a.label,
+                "active": a.active,
+            }))
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// The drafts box as the GUI sees it: title / updated / media_id per item, so
@@ -524,7 +535,11 @@ pub async fn wx_draft_delete(media_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn wx_bind(appid: String, secret: String) -> Result<serde_json::Value, String> {
+pub fn wx_bind(
+    appid: String,
+    secret: String,
+    label: Option<String>,
+) -> Result<serde_json::Value, String> {
     if appid.trim().is_empty() || secret.trim().is_empty() {
         return Err("AppID 和 AppSecret 不能为空".into());
     }
@@ -533,15 +548,31 @@ pub fn wx_bind(appid: String, secret: String) -> Result<serde_json::Value, Strin
         secret: secret.trim().to_string(),
     };
     // keyring first; file fallback stays in %APPDATA% (outside any repo)
-    wxwright_mp::save_credentials(&creds, true).map_err(|e| e.to_string())?;
+    wxwright_mp::upsert_account(&creds, label.as_deref().unwrap_or(""), true)
+        .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "bound": true, "appid": wxwright_mp::mask(&creds.appid) }))
 }
 
+/// Point the active account at another already-bound appid; push / upload /
+/// the drafts box all follow the active account via load_credentials().
 #[tauri::command]
-pub fn wx_unbind() -> Result<bool, String> {
-    wxwright_mp::clear_credentials()
-        .map(|_| true)
-        .map_err(|e| e.to_string())
+pub fn wx_account_switch(appid: String) -> Result<serde_json::Value, String> {
+    wxwright_mp::set_active_account(&appid).map_err(|e| e.to_string())?;
+    Ok(wx_bind_status())
+}
+
+/// Remove one account by appid, or every account when appid is omitted
+/// (the settings pane removes per account; the full reset keeps CLI parity).
+#[tauri::command]
+pub fn wx_unbind(appid: Option<String>) -> Result<bool, String> {
+    match appid {
+        Some(id) if !id.trim().is_empty() => wxwright_mp::remove_account(id.trim())
+            .map(|_| true)
+            .map_err(|e| e.to_string()),
+        _ => wxwright_mp::clear_credentials()
+            .map(|_| true)
+            .map_err(|e| e.to_string()),
+    }
 }
 
 /// Push the current article to the MP draft box: dialect-render with the

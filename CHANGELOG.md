@@ -10,6 +10,17 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
 ## [Unreleased]
 
+### Added
+- **Multiple WeChat accounts with quick switching.** Settings → WeChat MP API
+  lists every bound account (label, masked appid, in-use badge) with per-row
+  switch/remove; the bind form takes an optional label; the editor status bar
+  shows the active account next to the push button with a one-click switch
+  menu. Push / image upload / the drafts box all follow the active account
+  (one `load_credentials` path, zero duplicated logic). Storage moves to a
+  `[mp.accounts]` table with a per-account keyring slot; legacy single-account
+  configs migrate on read without touching the stored secret. `wxwright
+  login` / `logout` keep working (upsert+activate / unbind-all).
+
 ### Changed
 - **WeChat developer-config guidance updated for the platform migration.**
   WeChat moved the API IP whitelist / AppSecret from the MP console (基本配置)

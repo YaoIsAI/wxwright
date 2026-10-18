@@ -111,8 +111,12 @@ const I18N = {
     wx_title: "公众号 API 绑定",
     wx_hint: "绑定后可使用「推送草稿」直接把文章写入公众号草稿箱。AppID / AppSecret 存入系统钥匙串，仅保存在本机。",
     wx_appid: "AppID", wx_secret: "AppSecret",
-    wx_bind: "绑定", wx_unbind: "解除绑定",
-    wx_bind_ok: "已绑定公众号", wx_unbind_ok: "已解除绑定",
+    wx_bind: "绑定", wx_unbind: "解除全部绑定",
+    wx_bind_ok: "已绑定公众号", wx_unbind_ok: "已解除全部绑定",
+    wx_label: "备注名（可选）", wx_label_ph: "例如：码聋 / 测试号",
+    wx_in_use: "使用中", wx_switch: "切换", wx_remove: "删除",
+    wx_switched_ok: (x) => `已切换到：${x}`, wx_removed_ok: "已移除该公众号",
+    wx_manage_accounts: "管理账号", wx_account_chip_title: "切换公众号",
     wx_demo_only: "浏览器演示模式下不可用",
     wx_secret_ph: "仅保存到本机钥匙串",
     wx_status_fail: "读取绑定状态失败",
@@ -265,8 +269,12 @@ const I18N = {
     wx_title: "Official Account API binding",
     wx_hint: "After binding, \"Push draft\" writes articles straight to your MP draft box. AppID / AppSecret are stored in the system keychain, on this machine only.",
     wx_appid: "AppID", wx_secret: "AppSecret",
-    wx_bind: "Bind", wx_unbind: "Unbind",
-    wx_bind_ok: "Official account bound", wx_unbind_ok: "Unbound",
+    wx_bind: "Bind", wx_unbind: "Unbind all",
+    wx_bind_ok: "Official account bound", wx_unbind_ok: "All accounts unbound",
+    wx_label: "Label (optional)", wx_label_ph: "e.g. Main / Test",
+    wx_in_use: "active", wx_switch: "Switch", wx_remove: "Remove",
+    wx_switched_ok: (x) => `Switched to: ${x}`, wx_removed_ok: "Account removed",
+    wx_manage_accounts: "Manage accounts", wx_account_chip_title: "Switch account",
     wx_demo_only: "Unavailable in browser demo mode",
     wx_secret_ph: "Keychain on this machine only",
     wx_status_fail: "Failed to read binding status",
@@ -1273,6 +1281,162 @@ async function renderPublishBindings() {
   });
 }
 
+/* ------------------------- wechat MP multi-account binding -------------- */
+
+let wxStatusCache = null; // last wx_bind_status payload; drives the chip
+
+function wxwright_mask_appid(appid) {
+  if (appid.length <= 8) return appid;
+  return appid.slice(0, 4) + "****" + appid.slice(-4);
+}
+function accountDisplayName(a) {
+  return a.label || wxwright_mask_appid(a.appid);
+}
+async function refreshWxStatus() {
+  const chip = $("wx-status");
+  if (!chip) return;
+  if (!invoke) {
+    chip.textContent = lang === "zh-CN" ? "浏览器演示：未绑定" : "browser demo: not bound";
+    renderWxAccounts(null);
+    updateWxAccountChip(null);
+    return;
+  }
+  try {
+    const st = await invoke("wx_bind_status");
+    wxStatusCache = st;
+    chip.textContent = st.bound
+      ? lang === "zh-CN"
+        ? `已绑定 ${st.accounts.length} 个 · ${st.label || st.appid}`
+        : `${st.accounts.length} bound · ${st.label || st.appid}`
+      : lang === "zh-CN" ? "未绑定" : "not bound";
+    chip.style.color = st.bound ? "var(--ok)" : "var(--text-tertiary)";
+    renderWxAccounts(st);
+    updateWxAccountChip(st);
+    if ($("wx-appid")) {
+      $("wx-appid").value = "";
+      $("wx-secret").value = "";
+      $("wx-label").value = "";
+    }
+  } catch (e) {
+    chip.textContent = t("wx_status_fail");
+  }
+}
+function renderWxAccounts(st) {
+  const host = $("wx-accounts");
+  if (!host) return;
+  host.innerHTML = "";
+  const accounts = (st && st.accounts) || [];
+  for (const a of accounts) {
+    const row = document.createElement("div");
+    row.className = "wx-account-row";
+    const name = document.createElement("span");
+    name.className = "wa-name";
+    name.textContent = accountDisplayName(a);
+    const appid = document.createElement("span");
+    appid.className = "wa-appid";
+    appid.textContent = wxwright_mask_appid(a.appid);
+    row.append(name, appid);
+    if (a.active) {
+      const chipEl = document.createElement("span");
+      chipEl.className = "wa-active-chip";
+      chipEl.textContent = t("wx_in_use");
+      row.appendChild(chipEl);
+    } else {
+      const sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "btn btn-ghost";
+      sw.textContent = t("wx_switch");
+      sw.addEventListener("click", () => switchWxAccount(a.appid));
+      row.appendChild(sw);
+    }
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn btn-ghost";
+    del.textContent = t("wx_remove");
+    del.addEventListener("click", async () => {
+      if (!invoke) return toast(t("demo_mode"), "err");
+      try {
+        await invoke("wx_unbind", { appid: a.appid });
+        toast(t("wx_removed_ok"), "ok");
+        await refreshWxStatus();
+      } catch (e) { toast(String(e), "err"); }
+    });
+    row.appendChild(del);
+    host.appendChild(row);
+  }
+}
+async function switchWxAccount(appid) {
+  try {
+    const st = await invoke("wx_account_switch", { appid });
+    toast(t("wx_switched_ok", st.label || st.appid), "ok");
+    await refreshWxStatus();
+    if (sidebarTab === "drafts") renderSidebarDrafts();
+  } catch (e) {
+    toast(String(e), "err");
+  }
+}
+function openWxSettingsPane() {
+  openModal("modal-settings");
+  document.querySelectorAll("#settings-nav .settings-nav-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.pane === "pane-wx")
+  );
+  document.querySelectorAll("#modal-settings .settings-pane").forEach((p) =>
+    p.classList.toggle("active", p.id === "pane-wx")
+  );
+  refreshWxStatus();
+}
+function updateWxAccountChip(st) {
+  const chipBtn = $("wx-account-chip");
+  const menu = $("wx-account-menu");
+  if (!chipBtn) return;
+  const accounts = (st && st.accounts) || [];
+  if (!st || !st.bound || !accounts.length || currentPlatform !== "wechat") {
+    chipBtn.hidden = true;
+    if (menu) menu.hidden = true;
+    return;
+  }
+  const active = accounts.find((a) => a.active) || accounts[0];
+  chipBtn.hidden = false;
+  chipBtn.textContent = (active.label || wxwright_mask_appid(active.appid)) + " ▾";
+  chipBtn.onclick = () => {
+    if (accounts.length <= 1) {
+      openWxSettingsPane();
+      return;
+    }
+    menu.innerHTML = "";
+    for (const a of accounts) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.append(accountDisplayName(a));
+      if (a.active) {
+        const chipEl = document.createElement("span");
+        chipEl.className = "wa-active-chip";
+        chipEl.textContent = t("wx_in_use");
+        row.appendChild(chipEl);
+      }
+      row.addEventListener("click", () => {
+        menu.hidden = true;
+        if (!a.active) switchWxAccount(a.appid);
+      });
+      menu.appendChild(row);
+    }
+    const manage = document.createElement("button");
+    manage.type = "button";
+    manage.className = "wa-manage";
+    manage.textContent = t("wx_manage_accounts");
+    manage.addEventListener("click", () => {
+      menu.hidden = true;
+      openWxSettingsPane();
+    });
+    menu.appendChild(manage);
+    menu.hidden = !menu.hidden;
+  };
+}
+document.addEventListener("mousedown", (e) => {
+  const menu = document.getElementById("wx-account-menu");
+  if (menu && !menu.hidden && !e.target.closest(".wx-chip-wrap")) menu.hidden = true;
+});
+
 /* push button: WeChat pushes a draft; X/LinkedIn publish live. The label
    switches with the platform so one button covers both flows. */
 function updatePushDraftButton() {
@@ -1283,6 +1447,7 @@ function updatePushDraftButton() {
   const span = b.querySelector("span[data-i18n='push_draft']");
   if (span) span.textContent = social ? t("social_post") : t("push_draft");
   b.title = social ? t("social_post_title") : t("push_draft_title");
+  updateWxAccountChip(wxStatusCache);
 }
 
 /* --------------------------------------------------------- prompt modal */
@@ -4245,53 +4410,29 @@ function bindUI() {
       );
     });
   });
-  // wechat mp binding: status refresh + bind/unbind
-  async function refreshWxStatus() {
-    const chip = $("wx-status");
-    if (!chip) return;
-    if (!invoke) {
-      chip.textContent = lang === "zh-CN" ? "浏览器演示：未绑定" : "browser demo: not bound";
-      return;
-    }
-    try {
-      const st = await invoke("wx_bind_status");
-      chip.textContent = st.bound
-        ? lang === "zh-CN" ? `已绑定 · ${st.appid}` : `bound · ${st.appid}`
-        : lang === "zh-CN" ? "未绑定" : "not bound";
-      chip.style.color = st.bound ? "var(--ok)" : "var(--text-tertiary)";
-      $("wx-appid").value = "";
-      $("wx-secret").value = "";
-    } catch (e) {
-      chip.textContent = t("wx_status_fail");
-    }
-  }
+  // wechat mp binding: status refresh + multi-account list + bind/unbind
+  // (logic lives at module scope so init() can refresh the status-bar chip)
   $("wx-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!invoke) return toast(t("wx_demo_only"), "err");
     const appid = $("wx-appid").value.trim();
     const secret = $("wx-secret").value.trim();
+    const label = $("wx-label").value.trim();
     try {
-      const st = await invoke("wx_bind", { appid, secret });
+      await invoke("wx_bind", { appid, secret, label });
       toast(t("wx_bind_ok"), "ok");
       $("wx-secret").value = "";
-      chipSync(st);
+      await refreshWxStatus();
     } catch (err) {
       toast(String(err), "err");
-    }
-    function chipSync(st) {
-      const chip = $("wx-status");
-      chip.textContent = lang === "zh-CN" ? `已绑定 · ${st.appid}` : `bound · ${st.appid}`;
-      chip.style.color = "var(--ok)";
     }
   });
   $("wx-unbind").addEventListener("click", async () => {
     if (!invoke) return;
     try {
-      await invoke("wx_unbind");
+      await invoke("wx_unbind", { appid: null });
       toast(t("wx_unbind_ok"), "ok");
-      const chip = $("wx-status");
-      chip.textContent = lang === "zh-CN" ? "未绑定" : "not bound";
-      chip.style.color = "var(--text-tertiary)";
+      await refreshWxStatus();
     } catch (err) {
       toast(String(err), "err");
     }
@@ -4861,6 +5002,7 @@ async function init() {
       $("library-path").textContent = p;
       $("library-path").title = p;
     },
+    () => refreshWxStatus(),
   ];
   for (const step of steps) {
     try {

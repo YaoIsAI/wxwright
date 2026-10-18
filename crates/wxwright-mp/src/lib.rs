@@ -23,6 +23,27 @@ pub struct Credentials {
     pub secret: String,
 }
 
+/// One row of the `[mp.accounts]` config table. Exactly one of `secret_ref`
+/// (keyring pointer) or `secret` (no-keyring fallback) is populated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AccountEntry {
+    appid: String,
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    secret_ref: String,
+    #[serde(default)]
+    secret: String,
+}
+
+/// Display-safe projection for status surfaces: never carries secrets.
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountInfo {
+    pub appid: String,
+    pub label: String,
+    pub active: bool,
+}
+
 pub fn config_path() -> std::path::PathBuf {
     wxwright_core::util::config_root().join("config.toml")
 }
@@ -31,7 +52,115 @@ fn keyring_entry() -> Option<keyring::Entry> {
     keyring::Entry::new("wxwright", "mp-secret").ok()
 }
 
-/// Load credentials: env overrides > keychain > config file.
+/// Per-account keyring slot: service "wxwright", user "mp-secret:<appid>".
+fn keyring_entry_for(appid: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new("wxwright", &format!("mp-secret:{}", appid)).ok()
+}
+
+fn read_config() -> toml::Value {
+    std::fs::read_to_string(config_path())
+        .ok()
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()))
+}
+
+/// All configured accounts. Legacy single-account configs (`[mp] appid` +
+/// `secret_ref = "keyring"`) migrate on read: they become one entry pointing
+/// at the same keyring slot, so the existing secret is never moved or copied.
+fn read_accounts(cfg: &toml::Value) -> Vec<AccountEntry> {
+    let mp = cfg.get("mp");
+    if let Some(list) = mp
+        .and_then(|m| m.get("accounts"))
+        .and_then(|a| a.as_array())
+    {
+        return list
+            .iter()
+            .filter_map(|v| AccountEntry::deserialize(v.clone()).ok())
+            .filter(|a| !a.appid.is_empty())
+            .collect();
+    }
+    let mp = match mp {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
+    let appid = match mp.get("appid").and_then(|x| x.as_str()) {
+        Some(a) if !a.is_empty() => a.to_string(),
+        _ => return Vec::new(),
+    };
+    let secret_ref = mp
+        .get("secret_ref")
+        .and_then(|x| x.as_str())
+        .unwrap_or("keyring")
+        .to_string();
+    let secret = mp
+        .get("secret")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    vec![AccountEntry {
+        appid,
+        label: String::new(),
+        secret_ref,
+        secret,
+    }]
+}
+
+fn read_active(cfg: &toml::Value, accounts: &[AccountEntry]) -> Option<String> {
+    if let Some(a) = cfg
+        .get("mp")
+        .and_then(|m| m.get("active"))
+        .and_then(|x| x.as_str())
+    {
+        if accounts.iter().any(|e| e.appid == a) {
+            return Some(a.to_string());
+        }
+    }
+    accounts.first().map(|e| e.appid.clone())
+}
+
+fn account_secret(entry: &AccountEntry) -> Option<String> {
+    if !entry.secret.is_empty() {
+        return Some(entry.secret.clone());
+    }
+    let user = entry
+        .secret_ref
+        .strip_prefix("keyring:")
+        .unwrap_or("mp-secret");
+    keyring::Entry::new("wxwright", user)
+        .ok()?
+        .get_password()
+        .ok()
+}
+
+/// Rewrite the `[mp]` table, preserving every other section of config.toml.
+fn persist_accounts(cfg: &mut toml::Value, accounts: &[AccountEntry], active: &str) -> Result<()> {
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(Error::Io)?;
+    }
+    if !cfg.is_table() {
+        *cfg = toml::Value::Table(toml::map::Map::new());
+    }
+    let list: Vec<toml::Value> = accounts
+        .iter()
+        .map(|a| toml::Value::try_from(a).map_err(|e| Error::Upload(e.to_string())))
+        .collect::<Result<_>>()?;
+    let mut mp = toml::map::Map::new();
+    mp.insert("active".into(), toml::Value::String(active.to_string()));
+    mp.insert("accounts".into(), toml::Value::Array(list));
+    cfg.as_table_mut()
+        .unwrap()
+        .insert("mp".into(), toml::Value::Table(mp));
+    let body = toml::to_string_pretty(cfg).map_err(|e| Error::Upload(e.to_string()))?;
+    // Owner-only permissions on Unix (the no-keyring fallback stores secrets
+    // in this file; the keyring path stores only references).
+    wxwright_core::util::write_private(&path, &body).map_err(Error::Io)?;
+    Ok(())
+}
+
+/// Load the ACTIVE account's credentials: env overrides > config+keychain.
+/// Every consumer (CLI, MCP, GUI push/upload/drafts) follows the active
+/// account automatically - switching is a config write, zero code paths.
 pub fn load_credentials() -> Option<Credentials> {
     if let (Ok(appid), Ok(secret)) = (
         std::env::var("WXWRIGHT_MP_APPID"),
@@ -41,65 +170,141 @@ pub fn load_credentials() -> Option<Credentials> {
             return Some(Credentials { appid, secret });
         }
     }
-    let cfg = std::fs::read_to_string(config_path()).ok()?;
-    let value: toml::Value = toml::from_str(&cfg).ok()?;
-    let mp = value.get("mp")?;
-    let appid = mp.get("appid")?.as_str()?.to_string();
-    let secret = match mp.get("secret_ref").and_then(|s| s.as_str()) {
-        Some("keyring") => {
-            let entry = keyring_entry()?;
-            entry.get_password().ok()?
-        }
-        _ => mp.get("secret")?.as_str()?.to_string(),
-    };
-    if appid.is_empty() || secret.is_empty() {
+    let cfg = read_config();
+    let accounts = read_accounts(&cfg);
+    let active = read_active(&cfg, &accounts)?;
+    let entry = accounts.iter().find(|e| e.appid == active)?;
+    let secret = account_secret(entry)?;
+    if secret.is_empty() {
         return None;
     }
-    Some(Credentials { appid, secret })
+    Some(Credentials {
+        appid: entry.appid.clone(),
+        secret,
+    })
+}
+
+/// Display-safe account list for status surfaces.
+pub fn list_accounts() -> Vec<AccountInfo> {
+    let cfg = read_config();
+    let accounts = read_accounts(&cfg);
+    let active = read_active(&cfg, &accounts);
+    accounts
+        .into_iter()
+        .map(|e| AccountInfo {
+            active: active.as_deref() == Some(e.appid.as_str()),
+            appid: e.appid,
+            label: e.label,
+        })
+        .collect()
+}
+
+/// Add or update one account and make it the active one. The secret lands in
+/// the OS keychain under `mp-secret:<appid>`; the config file only holds a
+/// reference (PRD 5.6). `use_keyring = false` keeps the documented file
+/// fallback for headless/CI setups.
+pub fn upsert_account(creds: &Credentials, label: &str, use_keyring: bool) -> Result<()> {
+    let appid = creds.appid.trim().to_string();
+    let secret = creds.secret.trim().to_string();
+    if appid.is_empty() || secret.is_empty() {
+        return Err(Error::Upload("appid and secret are both required".into()));
+    }
+    let mut secret_field = String::new();
+    let secret_ref = if use_keyring {
+        let entry = keyring_entry_for(&appid)
+            .ok_or_else(|| Error::Upload("OS keychain unavailable".into()))?;
+        entry
+            .set_password(&secret)
+            .map_err(|e| Error::Upload(format!("keychain write failed: {}", e)))?;
+        format!("keyring:mp-secret:{}", appid)
+    } else {
+        secret_field = secret;
+        String::new()
+    };
+    let mut cfg = read_config();
+    let mut accounts = read_accounts(&cfg);
+    let label = label.trim().to_string();
+    if let Some(e) = accounts.iter_mut().find(|e| e.appid == appid) {
+        e.label = label;
+        e.secret_ref = secret_ref;
+        e.secret = secret_field;
+    } else {
+        accounts.push(AccountEntry {
+            appid: appid.clone(),
+            label,
+            secret_ref,
+            secret: secret_field,
+        });
+    }
+    persist_accounts(&mut cfg, &accounts, &appid)
+}
+
+/// Point the active account at another already-bound appid.
+pub fn set_active_account(appid: &str) -> Result<()> {
+    let appid = appid.trim();
+    let mut cfg = read_config();
+    let accounts = read_accounts(&cfg);
+    if !accounts.iter().any(|e| e.appid == appid) {
+        return Err(Error::Upload(format!("account {} is not bound", appid)));
+    }
+    persist_accounts(&mut cfg, &accounts, appid)
+}
+
+/// Remove one account (keyring slot included). If it was active, the first
+/// remaining account becomes active.
+pub fn remove_account(appid: &str) -> Result<()> {
+    let appid = appid.trim();
+    let mut cfg = read_config();
+    let mut accounts = read_accounts(&cfg);
+    let removed = match accounts.iter().position(|e| e.appid == appid) {
+        Some(idx) => accounts.remove(idx),
+        None => return Err(Error::Upload(format!("account {} is not bound", appid))),
+    };
+    if removed.secret_ref.starts_with("keyring:mp-secret:") {
+        if let Some(entry) = keyring_entry_for(appid) {
+            let _ = entry.delete_credential();
+        }
+    } else if removed.secret_ref == "keyring" {
+        if let Some(entry) = keyring_entry() {
+            let _ = entry.delete_credential();
+        }
+    }
+    let next = accounts
+        .first()
+        .map(|e| e.appid.clone())
+        .unwrap_or_default();
+    persist_accounts(&mut cfg, &accounts, &next)
 }
 
 /// Persist credentials. `use_keyring` stores the secret in the OS keychain
 /// and only a reference in the config file (PRD 5.6); otherwise the secret
 /// lands in the config file with 0600-ish discretion (documented risk).
+/// Single-account entry point (CLI `wxwright login`): upserts + activates.
 pub fn save_credentials(creds: &Credentials, use_keyring: bool) -> Result<()> {
-    let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(Error::Io)?;
-    }
-    let secret_cell = if use_keyring {
-        let entry =
-            keyring_entry().ok_or_else(|| Error::Upload("OS keychain unavailable".into()))?;
-        entry
-            .set_password(&creds.secret)
-            .map_err(|e| Error::Upload(format!("keychain write failed: {}", e)))?;
-        "secret_ref = \"keyring\"".to_string()
-    } else {
-        format!("secret = \"{}\"", creds.secret)
-    };
-    let body = format!(
-        "# wxwright configuration (generated by `wxwright login`)\n\n[mp]\nappid = \"{}\"\n{}\n",
-        creds.appid, secret_cell
-    );
-    // Owner-only permissions on Unix: without --no-keyring this file holds the
-    // AppSecret in clear text.
-    wxwright_core::util::write_private(&path, &body).map_err(Error::Io)?;
-    Ok(())
+    upsert_account(creds, "", use_keyring)
 }
+
+/// Unbind everything (CLI `wxwright logout` semantics).
 pub fn clear_credentials() -> Result<()> {
-    if let Some(entry) = keyring_entry() {
-        let _ = entry.delete_credential();
+    let mut cfg = read_config();
+    for entry in read_accounts(&cfg) {
+        if entry.secret_ref.starts_with("keyring:mp-secret:") {
+            if let Some(e) = keyring_entry_for(&entry.appid) {
+                let _ = e.delete_credential();
+            }
+        } else if entry.secret_ref == "keyring" {
+            if let Some(e) = keyring_entry() {
+                let _ = e.delete_credential();
+            }
+        }
+    }
+    if let Some(table) = cfg.as_table_mut() {
+        table.remove("mp");
     }
     let path = config_path();
     if path.exists() {
-        let cfg = std::fs::read_to_string(&path).unwrap_or_default();
-        let filtered: String = cfg
-            .lines()
-            .filter(|l| {
-                !l.trim_start().starts_with("appid") && !l.trim_start().starts_with("secret")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        wxwright_core::util::write_private(&path, &filtered).map_err(Error::Io)?;
+        let body = toml::to_string_pretty(&cfg).map_err(|e| Error::Upload(e.to_string()))?;
+        wxwright_core::util::write_private(&path, &body).map_err(Error::Io)?;
     }
     Ok(())
 }
@@ -496,6 +701,144 @@ pub fn probe_reachable() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Redirect config_root() at a throwaway dir for the duration of one test.
+    /// APPDATA is process-global: the lock keeps config tests serial.
+    struct ConfigIsolation {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        prev: Option<std::ffi::OsString>,
+        dir: std::path::PathBuf,
+    }
+    impl ConfigIsolation {
+        fn new(tag: &str) -> Self {
+            static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let dir = std::env::temp_dir().join(format!(
+                "wxwright-mp-test-{}-{}",
+                tag,
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("wxwright")).unwrap();
+            let prev = std::env::var_os("APPDATA");
+            std::env::set_var("APPDATA", &dir);
+            Self {
+                _guard: guard,
+                prev,
+                dir,
+            }
+        }
+    }
+    impl Drop for ConfigIsolation {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var("APPDATA", v),
+                None => std::env::remove_var("APPDATA"),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn multi_account_bind_switch_remove_with_legacy_migration() {
+        let _iso = ConfigIsolation::new("multi");
+        // Legacy single-account config: appid + plain secret (no keyring touch).
+        std::fs::write(
+            config_path(),
+            "[mp]\nappid = \"wxold1111\"\nsecret = \"s1\"\n",
+        )
+        .unwrap();
+
+        // Migration on read: the old pair is one active account.
+        let accs = list_accounts();
+        assert_eq!(accs.len(), 1, "legacy config migrates to one account");
+        assert_eq!(accs[0].appid, "wxold1111");
+        assert!(accs[0].active, "the single legacy account is active");
+        assert_eq!(
+            load_credentials().unwrap().secret,
+            "s1",
+            "legacy plain secret resolves"
+        );
+
+        // Bind a second account (no-keyring fallback) - it becomes active.
+        upsert_account(
+            &Credentials {
+                appid: "wxnew2222".into(),
+                secret: "s2".into(),
+            },
+            "测试号",
+            false,
+        )
+        .unwrap();
+        let accs = list_accounts();
+        assert_eq!(accs.len(), 2);
+        let active = accs.iter().find(|a| a.active).unwrap();
+        assert_eq!(active.appid, "wxnew2222");
+        assert_eq!(active.label, "测试号");
+        let creds = load_credentials().unwrap();
+        assert_eq!(creds.appid, "wxnew2222");
+        assert_eq!(creds.secret, "s2");
+
+        // Switch back to the migrated legacy account.
+        set_active_account("wxold1111").unwrap();
+        assert_eq!(load_credentials().unwrap().appid, "wxold1111");
+
+        // Re-binding with a new secret updates in place (no duplicate row).
+        upsert_account(
+            &Credentials {
+                appid: "wxold1111".into(),
+                secret: "s1b".into(),
+            },
+            "老号",
+            false,
+        )
+        .unwrap();
+        let accs = list_accounts();
+        assert_eq!(accs.len(), 2, "upsert must not duplicate");
+        assert_eq!(load_credentials().unwrap().secret, "s1b");
+        let old = accs.iter().find(|a| a.appid == "wxold1111").unwrap();
+        assert_eq!(old.label, "老号");
+
+        // Remove the active one: the other account takes over.
+        remove_account("wxold1111").unwrap();
+        let accs = list_accounts();
+        assert_eq!(accs.len(), 1);
+        assert_eq!(accs[0].appid, "wxnew2222");
+        assert!(accs[0].active);
+        assert_eq!(load_credentials().unwrap().appid, "wxnew2222");
+
+        // Removing the last account leaves nothing bound.
+        remove_account("wxnew2222").unwrap();
+        assert!(list_accounts().is_empty());
+        assert!(load_credentials().is_none());
+
+        // Switching to a non-existent account is a hard error, never a silent
+        // fallthrough to some other account.
+        assert!(set_active_account("wxghost").is_err());
+    }
+
+    #[test]
+    fn other_config_sections_survive_account_writes() {
+        let _iso = ConfigIsolation::new("preserve");
+        std::fs::write(
+            config_path(),
+            "[mp]\nappid = \"wxkeep\"\nsecret = \"s\"\n\n[future]\nkey = \"v\"\n",
+        )
+        .unwrap();
+        upsert_account(
+            &Credentials {
+                appid: "wxkeep".into(),
+                secret: "s2".into(),
+            },
+            "",
+            false,
+        )
+        .unwrap();
+        let raw = std::fs::read_to_string(config_path()).unwrap();
+        assert!(raw.contains("[future]"), "foreign sections survive: {raw}");
+        assert!(raw.contains("key = \"v\""));
+        assert!(raw.contains("[[mp.accounts]]"), "new format present: {raw}");
+    }
 
     #[test]
     fn mask_hides_secret() {

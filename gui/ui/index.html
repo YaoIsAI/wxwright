@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -241,6 +241,10 @@
         <button id="btn-validate" class="btn btn-validate" data-i18n-title="validate_title" title="校验公众号规范" aria-label="validate">
           <svg class="icon"><use href="#i-shield"/></svg><span data-i18n="validate">校验</span>
         </button>
+        <span class="wx-chip-wrap">
+          <button id="wx-account-chip" class="rule-chip" data-i18n-title="wx_account_chip_title" title="切换公众号" hidden></button>
+          <div id="wx-account-menu" class="wx-account-menu" hidden></div>
+        </span>
         <button id="btn-push-draft" class="btn btn-ghost" data-i18n-title="push_draft_title" title="推送到公众号草稿箱" hidden>
           <svg class="icon"><use href="#i-send"/></svg><span data-i18n="push_draft">推草稿</span>
         </button>
@@ -449,15 +453,17 @@
               绑定后可使用「推送草稿」直接把文章写入公众号草稿箱。AppID / AppSecret 存入系统钥匙串，仅保存在本机。
             </p>
             <div id="wx-status" class="ai-provider-chip" style="margin-bottom: 12px;"></div>
+            <div id="wx-accounts"></div>
             <form id="wx-form" class="provider-form">
               <div class="form-grid">
                 <label class="span2"><span data-i18n="wx_appid">AppID</span><input id="wx-appid" placeholder="wx1234567890abcdef" /></label>
                 <label class="span2"><span data-i18n="wx_secret">AppSecret</span><input id="wx-secret" type="password" placeholder="仅保存到本机钥匙串" data-i18n-placeholder="wx_secret_ph" /></label>
+                <label class="span2"><span data-i18n="wx_label">备注名（可选）</span><input id="wx-label" placeholder="例如：码聋 / 测试号" data-i18n-placeholder="wx_label_ph" /></label>
               </div>
               <div class="form-actions">
                 <span class="spacer"></span>
-                <button type="button" id="wx-unbind" class="btn btn-ghost" data-i18n="wx_unbind">解除绑定</button>
-                <button type="submit" class="btn btn-primary" data-i18n="wx_bind">绑定</button>
+                <button type="button" id="wx-unbind" class="btn btn-ghost" data-i18n="wx_unbind">解除全部绑定</button>
+                <button type="submit" class="btn btn-primary" data-i18n="wx_bind">绑定 / 更新</button>
               </div>
             </form>
           </section>
@@ -854,6 +860,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=51"></script>
+  <script src="app.js?v=52"></script>
 </body>
 </html>
