@@ -178,7 +178,7 @@ GUI 二进制同时响应 `wxwright-gui.exe mcp serve`，单独安装 GUI 也能
 
 ## 自动发布
 
-打 tag（`git tag v0.12.1 && git push origin v0.12.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release (dispatch)」→ Run workflow → 输入版本号，同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
+打 tag（`git tag v0.12.1 && git push origin v0.12.1`）即可由 GitHub Actions 自动构建全平台产物（Windows NSIS 安装包、macOS dmg、Linux deb + AppImage、四目标 CLI 包 + SHA256SUMS）并挂到 Release。**不想本地打 tag？** 先把版本号改好（Cargo.toml + tauri.conf.json）推送，然后到仓库 Actions 页选「Release」→ Run workflow → 输入版本号（工作流会自动核对与 Cargo.toml 一致），同样自动出全平台包并发布。CI 同时运行三平台测试矩阵与官方 puppeteer 规范门禁。发布流程见 `docs/release-automation.md`，macOS/Windows 签名与公证配置见 `docs/code-signing.md`。
 
 ## 作者
 
