@@ -1,0 +1,41 @@
+name: Release (dispatch)
+
+# One-click release: Actions -> "Release (dispatch)" -> Run workflow -> enter
+# the version (no "v" prefix, e.g. 0.12.1). This wrapper cuts the tag; the
+# tag push then triggers release.yml, which builds every platform bundle
+# (NSIS, macOS dmg x2, Linux deb+AppImage, CLI archives, SHA256SUMS) and
+# publishes them on the GitHub Release. Bump the version in Cargo.toml +
+# tauri.conf.json first so the artifacts carry the right version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (no v prefix, e.g. 0.12.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  cut-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity-check the version exists in Cargo.toml (bump it first)
+        run: |
+          VER="$(grep -m1 '^version' Cargo.toml | sed 's/version *= *"\(.*\)"/\1/')"
+          echo "workspace version: $VER, requested: ${{ inputs.version }}"
+          if [ "$VER" != "${{ inputs.version }}" ]; then
+            echo "::error::Version mismatch: Cargo.toml says $VER. Bump the version first (Cargo.toml + gui/src-tauri/tauri.conf.json), merge, then dispatch $VER."
+            exit 1
+          fi
+
+      - name: Push the release tag
+        run: |
+          git config user.name "wxwright release bot"
+          git config user.email "actions@users.noreply.github.com"
+          git tag -a "v${{ inputs.version }}" -m "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"

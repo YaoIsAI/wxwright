@@ -1290,7 +1290,25 @@ function wxwright_mask_appid(appid) {
   return appid.slice(0, 4) + "****" + appid.slice(-4);
 }
 function accountDisplayName(a) {
-  return a.label || wxwright_mask_appid(a.appid);
+  return a.name || a.nickname || a.label || wxwright_mask_appid(a.appid);
+}
+function wxAvatarImg(a, size) {
+  if (!a.avatar) return "";
+  return `<img class="wa-avatar" src="${escapeHtml(a.avatar)}" alt="" style="width:${size}px;height:${size}px;" />`;
+}
+let wxInfoRefreshBusy = false;
+async function maybeRefreshWxInfo(st) {
+  if (!invoke || wxInfoRefreshBusy) return;
+  const missing = ((st && st.accounts) || []).filter((a) => !a.nickname || !a.avatar);
+  if (!missing.length) return;
+  wxInfoRefreshBusy = true;
+  try {
+    const res = await invoke("wx_refresh_account_info", { appid: null });
+    wxStatusCache = res.status;
+    if ($("wx-accounts")) renderWxAccounts(res.status);
+    updateWxAccountChip(res.status);
+  } catch (e) { /* enrichment is best-effort; appid fallback stays */ }
+  finally { wxInfoRefreshBusy = false; }
 }
 async function refreshWxStatus() {
   const chip = $("wx-status");
@@ -1312,6 +1330,7 @@ async function refreshWxStatus() {
     chip.style.color = st.bound ? "var(--ok)" : "var(--text-tertiary)";
     renderWxAccounts(st);
     updateWxAccountChip(st);
+    maybeRefreshWxInfo(st);
     if ($("wx-appid")) {
       $("wx-appid").value = "";
       $("wx-secret").value = "";
@@ -1329,6 +1348,13 @@ function renderWxAccounts(st) {
   for (const a of accounts) {
     const row = document.createElement("div");
     row.className = "wx-account-row";
+    if (a.avatar) {
+      const av = document.createElement("img");
+      av.className = "wa-avatar";
+      av.src = a.avatar;
+      av.alt = "";
+      row.appendChild(av);
+    }
     const name = document.createElement("span");
     name.className = "wa-name";
     name.textContent = accountDisplayName(a);
@@ -1397,7 +1423,9 @@ function updateWxAccountChip(st) {
   }
   const active = accounts.find((a) => a.active) || accounts[0];
   chipBtn.hidden = false;
-  chipBtn.textContent = (active.label || wxwright_mask_appid(active.appid)) + " ▾";
+  chipBtn.innerHTML =
+    wxAvatarImg(active, 16) +
+    `<span>${escapeHtml(accountDisplayName(active))}</span><span class="wa-caret">▾</span>`;
   chipBtn.onclick = () => {
     if (accounts.length <= 1) {
       openWxSettingsPane();
@@ -1407,7 +1435,16 @@ function updateWxAccountChip(st) {
     for (const a of accounts) {
       const row = document.createElement("button");
       row.type = "button";
-      row.append(accountDisplayName(a));
+      if (a.avatar) {
+        const av = document.createElement("img");
+        av.className = "wa-avatar";
+        av.src = a.avatar;
+        av.alt = "";
+        row.appendChild(av);
+      }
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = accountDisplayName(a);
+      row.appendChild(labelSpan);
       if (a.active) {
         const chipEl = document.createElement("span");
         chipEl.className = "wa-active-chip";

@@ -492,20 +492,90 @@ pub async fn comfy_list_models(url: String) -> Result<Vec<String>, String> {
 pub fn wx_bind_status() -> serde_json::Value {
     let accounts = wxwright_mp::list_accounts();
     let active = accounts.iter().find(|a| a.active);
+    let display_name = |a: &wxwright_mp::AccountInfo| {
+        if !a.nickname.is_empty() {
+            a.nickname.clone()
+        } else if !a.label.is_empty() {
+            a.label.clone()
+        } else {
+            wxwright_mp::mask(&a.appid)
+        }
+    };
     serde_json::json!({
         "bound": !accounts.is_empty(),
         "appid": active.map(|a| wxwright_mp::mask(&a.appid)).unwrap_or_default(),
-        "label": active.map(|a| a.label.clone()).unwrap_or_default(),
+        "label": active.map(|a| display_name(a)).unwrap_or_default(),
         "accounts": accounts
             .iter()
             .map(|a| serde_json::json!({
                 // appid is an identifier, not a credential; it keys switching
                 "appid": a.appid,
                 "label": a.label,
+                "nickname": a.nickname,
+                "avatar": a.avatar,
+                "name": display_name(a),
                 "active": a.active,
             }))
             .collect::<Vec<_>>(),
     })
+}
+
+/// Fetch nickname + avatar from the account-info endpoint for every account
+/// missing them (or one specific appid), and store them as display-only
+/// enrichment. Best-effort: IP-whitelist / network failures come back in
+/// `errors` and never break the binding.
+#[tauri::command]
+pub async fn wx_refresh_account_info(appid: Option<String>) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    tauri::async_runtime::spawn_blocking(move || {
+        let targets: Vec<String> = match appid.as_deref() {
+            Some(id) if !id.trim().is_empty() => vec![id.trim().to_string()],
+            _ => wxwright_mp::list_accounts()
+                .into_iter()
+                .filter(|a| a.nickname.is_empty() || a.avatar.is_empty())
+                .map(|a| a.appid)
+                .collect(),
+        };
+        let mut updated = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+        for id in targets {
+            match (|| -> Result<(), String> {
+                let creds = wxwright_mp::account_credentials(&id).map_err(|e| e.to_string())?;
+                let client = wxwright_mp::MpClient::new(creds);
+                let (nickname, head_img) =
+                    client.account_basic_info().map_err(|e| e.to_string())?;
+                let mut avatar = String::new();
+                if !head_img.is_empty() {
+                    let bytes = client
+                        .fetch_url_bytes(&head_img)
+                        .map_err(|e| e.to_string())?;
+                    let mime = if head_img.contains(".png") {
+                        "image/png"
+                    } else {
+                        "image/jpeg"
+                    };
+                    avatar = format!(
+                        "data:{};base64,{}",
+                        mime,
+                        base64::engine::general_purpose::STANDARD.encode(&bytes)
+                    );
+                }
+                wxwright_mp::set_account_display(&id, &nickname, &avatar)
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            })() {
+                Ok(()) => updated += 1,
+                Err(e) => errors.push(format!("{}: {}", wxwright_mp::mask(&id), e)),
+            }
+        }
+        Ok(serde_json::json!({
+            "updated": updated,
+            "errors": errors,
+            "status": wx_bind_status(),
+        }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 /// The drafts box as the GUI sees it: title / updated / media_id per item, so

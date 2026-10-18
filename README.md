@@ -207,7 +207,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 
 ## Release automation
 
-Tag a version (`git tag v0.12.0 && git push origin v0.12.0`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
+Tag a version (`git tag v0.12.0 && git push origin v0.12.0`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release (dispatch)", run it with the version number - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup.
 
 ## Author
 

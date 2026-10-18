@@ -249,6 +249,12 @@ body { display: flex; flex-direction: column; }
 .wx-account-row .wa-appid { color: var(--text-tertiary); }
 .wx-account-row .spacer { flex: 1 1 auto; }
 .wx-account-row .btn { font-size: 11px; padding: 3px 8px; }
+.wa-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  object-fit: cover; flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+}
 .wa-active-chip {
   font-size: 10px; color: var(--ok); border: 1px solid var(--ok);
   border-radius: 999px; padding: 0 7px; line-height: 1.5;
@@ -268,6 +274,9 @@ body { display: flex; flex-direction: column; }
   border-radius: var(--radius-sm); padding: 7px 9px; cursor: pointer;
 }
 .wx-account-menu button:hover { background: var(--bg-subtle); }
+.wx-account-menu button .wa-avatar { width: 18px; height: 18px; }
+.wx-chip-wrap .rule-chip { display: inline-flex; align-items: center; gap: 5px; }
+.wx-chip-wrap .wa-caret { color: var(--text-tertiary); font-size: 10px; }
 .wx-account-menu .wa-active-chip { margin-left: auto; }
 .wx-account-menu .wa-manage { color: var(--accent); border-top: 1px solid var(--border); border-radius: 0; margin-top: 2px; padding-top: 8px; }
 

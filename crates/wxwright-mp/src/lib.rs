@@ -25,11 +25,17 @@ pub struct Credentials {
 
 /// One row of the `[mp.accounts]` config table. Exactly one of `secret_ref`
 /// (keyring pointer) or `secret` (no-keyring fallback) is populated.
+/// `nickname` / `avatar` (data URI) come from the account-info endpoint and
+/// are display-only enrichment - binding works without them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AccountEntry {
     appid: String,
     #[serde(default)]
     label: String,
+    #[serde(default)]
+    nickname: String,
+    #[serde(default)]
+    avatar: String,
     #[serde(default)]
     secret_ref: String,
     #[serde(default)]
@@ -41,6 +47,8 @@ struct AccountEntry {
 pub struct AccountInfo {
     pub appid: String,
     pub label: String,
+    pub nickname: String,
+    pub avatar: String,
     pub active: bool,
 }
 
@@ -100,6 +108,8 @@ fn read_accounts(cfg: &toml::Value) -> Vec<AccountEntry> {
     vec![AccountEntry {
         appid,
         label: String::new(),
+        nickname: String::new(),
+        avatar: String::new(),
         secret_ref,
         secret,
     }]
@@ -195,6 +205,8 @@ pub fn list_accounts() -> Vec<AccountInfo> {
             active: active.as_deref() == Some(e.appid.as_str()),
             appid: e.appid,
             label: e.label,
+            nickname: e.nickname,
+            avatar: e.avatar,
         })
         .collect()
 }
@@ -232,6 +244,8 @@ pub fn upsert_account(creds: &Credentials, label: &str, use_keyring: bool) -> Re
         accounts.push(AccountEntry {
             appid: appid.clone(),
             label,
+            nickname: String::new(),
+            avatar: String::new(),
             secret_ref,
             secret: secret_field,
         });
@@ -274,6 +288,45 @@ pub fn remove_account(appid: &str) -> Result<()> {
         .map(|e| e.appid.clone())
         .unwrap_or_default();
     persist_accounts(&mut cfg, &accounts, &next)
+}
+
+/// Store display-only enrichment (nickname + avatar data URI) for one account.
+/// Never touches the secret or the active flag.
+pub fn set_account_display(appid: &str, nickname: &str, avatar: &str) -> Result<()> {
+    let appid = appid.trim();
+    let mut cfg = read_config();
+    let mut accounts = read_accounts(&cfg);
+    let entry = accounts
+        .iter_mut()
+        .find(|e| e.appid == appid)
+        .ok_or_else(|| Error::Upload(format!("account {} is not bound", appid)))?;
+    entry.nickname = nickname.trim().to_string();
+    entry.avatar = avatar.trim().to_string();
+    let active = read_active(&cfg, &accounts).unwrap_or_default();
+    persist_accounts(&mut cfg, &accounts, &active)
+}
+
+/// Credentials for ANY bound account (not just the active one) - used by the
+/// account-info refresh so every bound account gets its nickname/avatar.
+pub fn account_credentials(appid: &str) -> Result<Credentials> {
+    let appid = appid.trim();
+    let cfg = read_config();
+    let accounts = read_accounts(&cfg);
+    let entry = accounts
+        .iter()
+        .find(|e| e.appid == appid)
+        .ok_or_else(|| Error::Upload(format!("account {} is not bound", appid)))?;
+    let secret = account_secret(entry).unwrap_or_default();
+    if secret.is_empty() {
+        return Err(Error::Upload(format!(
+            "account {} has no readable secret",
+            appid
+        )));
+    }
+    Ok(Credentials {
+        appid: appid.to_string(),
+        secret,
+    })
 }
 
 /// Persist credentials. `use_keyring` stores the secret in the OS keychain
@@ -524,6 +577,56 @@ impl MpClient {
         // WeChat answered 40066 "invalid url", so this tool had never worked
         // against the live API).
         self.post_with_token_value("/cgi-bin/draft/batchget", &payload)
+    }
+
+    /// Account nickname + avatar URL, for display surfaces (account switcher).
+    /// Subject to the same IP whitelist as every other API call; callers must
+    /// tolerate failure (the appid fallback stays).
+    pub fn account_basic_info(&self) -> Result<(String, String)> {
+        let token = self.access_token(false)?;
+        let url = format!(
+            "{}/cgi-bin/account/getaccountbasicinfo?access_token={}",
+            API_BASE, token
+        );
+        let v: serde_json::Value = self
+            .agent
+            .get(&url)
+            .call()
+            .map_err(ureq_err)?
+            .into_json()
+            .map_err(|e| Error::Upload(format!("json: {}", e)))?;
+        let gr: GenericResponse =
+            serde_json::from_value(v.clone()).map_err(|e| Error::Upload(e.to_string()))?;
+        check(&gr)?;
+        let nickname = v
+            .get("nickname")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        // The avatar lives at head_image_info.head_image_url (getAccountBasicInfo);
+        // tolerate the flat head_img spelling older docs used.
+        let head_img = v
+            .pointer("/head_image_info/head_image_url")
+            .or_else(|| v.get("head_img"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok((nickname, head_img))
+    }
+
+    /// GET an arbitrary (WeChat CDN) URL and return the body bytes - used to
+    /// download account avatars so they display offline as data URIs.
+    pub fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.agent
+            .get(url)
+            .call()
+            .map_err(ureq_err)?
+            .into_reader()
+            .take(5 * 1024 * 1024)
+            .read_to_end(&mut buf)
+            .map_err(|e| Error::Upload(format!("avatar download: {}", e)))?;
+        Ok(buf)
     }
 
     /// Delete one draft by media_id. The complements of create: without it,

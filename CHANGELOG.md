@@ -11,6 +11,14 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [Unreleased]
 
 ### Added
+- **Accounts show nickname + avatar, not raw appids.** The switcher, the
+  settings list and the status-bar chip display each account's WeChat
+  nickname and logo (fetched from the account-info endpoint after binding,
+  stored as display-only enrichment with an appid fallback when the fetch
+  is blocked or offline).
+- **One-click release dispatch.** A new "Release (dispatch)" workflow takes
+  a version number in the Actions UI, verifies it matches Cargo.toml, cuts
+  the tag, and the existing release pipeline builds every platform bundle.
 - **Multiple WeChat accounts with quick switching.** Settings → WeChat MP API
   lists every bound account (label, masked appid, in-use badge) with per-row
   switch/remove; the bind form takes an optional label; the editor status bar
