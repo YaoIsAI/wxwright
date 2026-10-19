@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.13.0";
+const GUI_VERSION = "0.14.0";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
@@ -460,26 +460,93 @@ function applyI18n() {
 }
 
 /* -------------------------------------------------------------- preview */
-function wrapPreviewHtml(dialect) {
+/// Real current time in the MP article format ("2026年10月18日 08:30").
+function wxArticleDate() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return lang === "zh-CN"
+    ? `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
+    : `${d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })} ${hm}`;
+}
+/// Identity of the active WeChat account for the article shell (real nickname
+/// + avatar when bound, sample persona otherwise).
+function wxShellIdentity() {
+  const acc = ((wxStatusCache && wxStatusCache.accounts) || []).find((a) => a.active);
+  if (!acc) return null;
+  return { name: accountDisplayName(acc), avatar: acc.avatar || null };
+}
+/// The article shell renders the title as the page header; a first H1 that
+/// repeats it would show twice. Drop that line from the PREVIEW source only
+/// (stats and saved markdown keep every character).
+function previewMarkdown(md) {
+  const title = (currentTitle() || "").trim();
+  if (!title) return md;
+  const m = md.match(/^[ \t]*#[ \t]+([^\n]+)\r?\n?/);
+  if (m && m[1].trim() === title) {
+    return md.slice(0, m.index) + md.slice(m.index + m[0].length);
+  }
+  return md;
+}
+function wrapPreviewHtml(dialect, meta = {}) {
+  const S = shellStr();
+  const id = wxShellIdentity();
+  const name = meta.account || (id && id.name) || S.persona;
+  const avatarSrc = meta.avatar || (id && id.avatar) || null;
+  const avatar = (size) =>
+    avatarSrc
+      ? `<img src="${avatarSrc}" alt="" style="flex:none;width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;" />`
+      : shellAvatar(size);
   // one-shot landing pulse on the newest last block after AI insert/replace
   const pulse = aiLanding
-    ? `<style>
+    ? `
   @keyframes wxland{0%{box-shadow:inset 4px 0 0 0 var(--accent,#2F6CEA);background:rgba(47,108,234,.10);transform:translateY(6px);opacity:.2}
     60%{box-shadow:inset 4px 0 0 0 var(--accent,#2F6CEA);background:rgba(47,108,234,.08)}
     100%{box-shadow:none;background:transparent;transform:none;opacity:1}}
-  body>*:last-child{animation:wxland 1.5s ease both;border-radius:6px;}
-</style>`
+  .wx-content>*:last-child{animation:wxland 1.5s ease both;border-radius:6px;}
+`
     : "";
   aiLanding = false;
-  return `<!doctype html><html><head><meta charset="utf-8">
-<style>
-  html,body{margin:0;padding:0;background:#fff;}
-  body{padding:16px 14px;word-break:break-word;}
-  section{max-width:100%;}
-  /* phone-realistic: no visible scrollbars */
-  ::-webkit-scrollbar{width:0;height:0;display:none;}
-  html{scrollbar-width:none;}
-</style>${pulse}</head><body>${dialect}</body></html>`;
+  return shellDoc(
+    `
+    ::-webkit-scrollbar{width:0;height:0;display:none;}
+    html{scrollbar-width:none;}
+    body{background:#fff;word-break:break-word;color:#333;}
+    .wx-title{font-size:20px;font-weight:500;color:#111;line-height:1.4;margin:0;padding:22px 16px 0;}
+    .wx-author{display:flex;align-items:center;gap:10px;padding:14px 16px 0;}
+    .wx-nick{font-size:15px;font-weight:500;color:#111;}
+    .wx-follow{font-size:13px;color:#576b95;border:1px solid #576b95;border-radius:4px;padding:3px 14px;flex:none;}
+    .wx-date{font-size:13px;color:#B2B2B2;padding:12px 16px 14px;}
+    .wx-content{padding:2px 16px 8px;}
+    .wx-content section{max-width:100%;}
+    .wx-bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid rgba(0,0,0,0.08);display:flex;align-items:center;padding:0 14px;height:56px;box-sizing:border-box;}
+    .wx-bar .act{display:flex;align-items:center;justify-content:center;margin-left:19px;flex:none;}
+    ${pulse}
+  `,
+    `
+    ${shellTop("#FFFFFF")}
+    <h1 class="wx-title">${escapeHtml(meta.title || "")}</h1>
+    <div class="wx-author">
+      ${avatar(34)}
+      <div style="flex:1;min-width:0;">
+        <div class="wx-nick">${escapeHtml(name)}</div>
+        ${meta.author ? `<div style="font-size:12px;color:#B2B2B2;margin-top:1px;">${escapeHtml(meta.author)}</div>` : ""}
+      </div>
+      <span class="wx-follow">${S.follow}</span>
+    </div>
+    <div class="wx-date">${wxArticleDate()}<span style="margin:0 6px;">·</span>${S.ip}</div>
+    <div class="wx-content">${dialect}</div>
+    <div style="height:80px;"></div>
+    <div class="wx-bar">
+      ${avatar(28)}
+      <span style="font-size:14px;color:#576b95;margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(name)}</span>
+      <span style="flex:1;"></span>
+      <span class="act">${shellIcon("thumb", 21, "#262626")}</span>
+      <span class="act">${shellIcon("wow", 21, "#262626", { sw: 1.9 })}</span>
+      <span class="act">${shellIcon("send", 20, "#262626")}</span>
+      <span class="act" style="gap:5px;">${shellIcon("chat", 19, "#262626")}<span style="font-size:13px;color:#576b95;">${S.write}</span></span>
+    </div>
+  `);
 }
 function updateStats(stats, violations) {
   $("stat-chars").textContent = `${t("chars")} ${stats.chars}`;
@@ -522,7 +589,10 @@ function renderViolationsPanel(violations) {
     )
     .join("");
 }
+let convertSeq = 0; // monotonically increasing; stale conversions must not paint
 async function convertNow() {
+  const seq = ++convertSeq;
+  const stale = () => seq !== convertSeq;
   const md = $("editor").value;
   if (!invoke) {
     // Browser demo: channel shells still render so every platform shape is
@@ -539,7 +609,27 @@ async function convertNow() {
           });
     } else {
       try {
-        $("preview").srcdoc = await fetch("demo-preview.html").then((r) => r.text());
+        // same 1:1 article shell as the desktop, fed by the static dialect;
+        // its first section is the sample article's H1 - drop it when it
+        // repeats the title, exactly like the desktop preview does
+        const demo = await fetch("demo-preview.html").then((r) => r.text());
+        if (stale()) return;
+        let body = demo.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        body = body ? body[1] : demo;
+        // unwrap the export wrapper (max-width section), then drop the
+        // sample's H1 when it repeats the title - like the desktop preview
+        const outer = body.match(/^\s*<section[^>]*max-width[^>]*>([\s\S]*)<\/section>\s*$/);
+        if (outer) body = outer[1];
+        const first = body.match(/^\s*<section[^>]*>([\s\S]*?)<\/section>/);
+        if (first) {
+          const text = first[1].replace(/<[^>]*>/g, "").trim();
+          if (text === currentTitle().trim()) {
+            body = body.slice(first[0].length);
+          }
+        }
+        $("preview").srcdoc = wrapPreviewHtml(body, {
+          title: currentTitle(),
+        });
         updateRuleChip([]);
       } catch (e) {}
     }
@@ -558,14 +648,19 @@ async function convertNow() {
     // the compliance normalizer + validator, no template render
     if (articleFormat === "html") {
       const res = await invoke("html_preview", { html: md });
+      if (stale()) return;
       lastResult = res;
-      $("preview").srcdoc = wrapPreviewHtml(res.html);
+      $("preview").srcdoc = wrapPreviewHtml(res.html, { title: currentTitle() });
       updateStats(res.stats, res.violations);
       if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
       $("status-text").textContent = t("ready");
       return;
     }
-    const res = await invoke("convert_preview", { markdown: md, themeId: currentTheme });
+    // the WeChat shell carries the title as the page header - a first H1
+    // identical to it is dropped from the preview source (title dedup)
+    const src = currentPlatform === "wechat" ? previewMarkdown(md) : md;
+    const res = await invoke("convert_preview", { markdown: src, themeId: currentTheme });
+    if (stale()) return; // a newer conversion (platform/typing) superseded this one
     lastResult = res;
     // channel preview: same article, the target platform's own layout
     if (currentPlatform !== "wechat") {
@@ -579,11 +674,12 @@ async function convertNow() {
         invoke("platform_preview", { ...args, themeId: currentTheme }).catch(() => null),
         invoke("platform_validate", { ...args, images: res.stats.images || 0 }).catch(() => null),
       ]);
+      if (stale()) return;
       $("preview").srcdoc = model
         ? (model.mode === "note"
           ? renderChannelShell(model.platform, model)
           : zhihuArticleShell(model.html))
-        : wrapPreviewHtml(res.html); // fall back to dialect
+        : wrapPreviewHtml(res.html, { title: currentTitle() }); // fall back to dialect
       updateStats(res.stats, res.violations);
       if (pv) {
         // platform rule table replaces the dialect verdict for non-WeChat targets
@@ -591,7 +687,7 @@ async function convertNow() {
         if (!$("violations-panel").hidden) renderViolationsPanel(pv.violations || []);
       }
     } else {
-      $("preview").srcdoc = wrapPreviewHtml(res.html);
+      $("preview").srcdoc = wrapPreviewHtml(res.html, { title: currentTitle() });
       updateStats(res.stats, res.violations);
     }
     if (currentPlatform === "wechat" && !$("violations-panel").hidden) {
@@ -2489,6 +2585,8 @@ const SHELL_ICONS = {
   chart: "M4.5 20v-9m6 9V4m6 16v-6",
   search: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm9.5 3.5L15.5 16",
   dots: "M5 12h.01M12 12h.01M19 12h.01",
+  /* 在看/推荐: the six-ray flower WeChat uses for its "wow" mark */
+  wow: "M12 4.5v4.2M12 15.3v4.2M5.7 8.25l3.64 2.1M14.66 13.65l3.64 2.1M5.7 15.75l3.64-2.1M14.66 10.35l3.64-2.1",
 };
 function shellIcon(name, size, color, opts = {}) {
   const fill = opts.filled ? color : "none";
@@ -2541,6 +2639,9 @@ function shellStr() {
     views: "14.2万 次浏览", likesCount: "1,284 次赞", viewAll: "查看全部 45 条评论",
     reactionN: "128", fbCounts: "12 条评论 · 3 次分享", liCounts: "45 条评论 · 12 次转发",
     copyright: "著作权归作者所有",
+    ip: "IP属地北京", write: "写留言",
+    cmtCount: "共 45 条评论", cmtName1: "设计师小鹿", cmtText1: "排版细节讲得太清楚了，收藏！",
+    cmtReply: "回复", cmtName2: "夜航西飞", cmtText2: "标题独立成字段这个设计很贴心", cmtOpen: "查看全部 45 条评论",
   };
   return lang === "zh-CN" ? zh : {
     follow: "Follow", like: "Like", comment: "Comment", share: "Share", repost: "Repost",
@@ -2551,6 +2652,9 @@ function shellStr() {
     views: "142K views", likesCount: "1,284 likes", viewAll: "View all 45 comments",
     reactionN: "128", fbCounts: "12 comments · 3 shares", liCounts: "45 comments · 12 reposts",
     copyright: "All rights reserved",
+    ip: "IP location Beijing", write: "Comments",
+    cmtCount: "45 comments", cmtName1: "designdeer", cmtText1: "Crystal clear on layout details - saved!",
+    cmtReply: "Reply", cmtName2: "nightflight", cmtText2: "The dedicated title field is a nice touch", cmtOpen: "View all 45 comments",
   };
 }
 
@@ -2585,7 +2689,22 @@ function xhsNoteShell(model) {
     <div style="padding:12px 14px 0;">
       <div style="font-size:16px;font-weight:700;color:#333;line-height:1.45;">${escapeHtml(model.title || "")}</div>
       <div style="font-size:15px;color:#333;line-height:1.7;margin-top:8px;">${shellCaption(cap, accent)}</div>
-      <div style="font-size:12px;color:#999;margin-top:10px;">${S.edited}</div>
+      <div style="font-size:12px;color:#999;margin-top:10px;">${S.edited} · ${S.ip}</div>
+      <div style="background:#F8F8F8;border-radius:10px;padding:12px 12px 10px;margin-top:12px;">
+        <div style="font-size:13px;color:#999;">${S.cmtCount}</div>
+        ${[[S.cmtName1, S.cmtText1], [S.cmtName2, S.cmtText2]].map(([n, c]) => `
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <span style="flex:none;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#FFB199,#FF2442);"></span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;color:#999;">${n}</div>
+              <div style="font-size:14px;color:#333;line-height:1.5;margin-top:2px;">${c}</div>
+              <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:#999;margin-top:4px;">
+                <span>${S.date}</span><span>${S.cmtReply}</span><span style="margin-left:auto;">${shellIcon("heart", 12, "#999")}</span>
+              </div>
+            </div>
+          </div>`).join("")}
+        <div style="font-size:12px;color:#999;margin-top:10px;border-top:1px solid #ECECEC;padding-top:8px;">${S.cmtOpen}</div>
+      </div>
     </div>
     <div style="height:64px;"></div>
     <div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #F3F3F3;display:flex;align-items:center;gap:8px;padding:8px 12px;">
@@ -2594,10 +2713,10 @@ function xhsNoteShell(model) {
       <span style="background:${accent};color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:999px;flex:none;">${S.follow}</span>
       <span style="flex:1;"></span>
       <span style="background:#F5F5F5;color:#999;font-size:12px;padding:6px 12px;border-radius:999px;flex:none;">${S.say}</span>
-      ${shellIcon("heart", 19, "#333", { filled: true })}
-      <b style="font-size:12px;color:#333;font-weight:600;">1.2k</b>
-      ${shellIcon("star", 19, "#333")}
-      <b style="font-size:12px;color:#333;font-weight:600;">856</b>
+      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("heart", 19, "#333", { filled: true })}<b style="font-size:12px;color:#333;font-weight:600;">1.2k</b></span>
+      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("star", 19, "#333")}<b style="font-size:12px;color:#333;font-weight:600;">856</b></span>
+      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("chat", 19, "#333")}<b style="font-size:12px;color:#333;font-weight:600;">45</b></span>
+      ${shellIcon("send", 19, "#333")}
     </div>`);
 }
 
@@ -2697,6 +2816,7 @@ function instagramShell(model) {
       <span style="margin-left:auto;">${shellIcon("dots", 15, "#000", { sw: 2.6 })}</span>
     </div>
     ${shellMedia(imgs, "4 / 5", model.title, "#DD2A7B", model.caption)}
+    ${imgs.length > 1 ? `<div style="display:flex;gap:4px;justify-content:center;padding:8px 0 0;">${imgs.slice(0, 9).map((_, i) => `<i style="width:5px;height:5px;border-radius:50%;background:${i === 0 ? "#0095F6" : "#C7C7C7"};display:block;"></i>`).join("")}</div>` : ""}
     <div style="display:flex;align-items:center;gap:16px;padding:10px 12px 4px;">
       ${shellIcon("heart", 24, "#000")}
       ${shellIcon("chat", 24, "#000")}

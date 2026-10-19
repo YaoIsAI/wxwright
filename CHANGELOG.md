@@ -8,6 +8,37 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.14.0] - 2026-10-19
+
+### Added
+- **The WeChat phone mock renders the real article page, not just the body.**
+  The preview now mirrors what a reader sees on weixin: title header, the
+  account row (avatar + nickname from the active bound account, author slot,
+  Follow button), publish time with IP-location line, the article body, and
+  the fixed bottom bar - account logo + name on the left, 赞 / 推荐 / 分享 /
+  写留言 on the right. Users can judge the final look in the app instead of
+  test-publishing.
+- **Title dedup in the preview.** The shell carries the title as the page
+  header; a first `# H1` identical to it is dropped from the preview source
+  (stats and saved markdown keep every character) so the title never shows
+  twice.
+- **Xiaohongshu note page fidelity.** The mock gains the comment block
+  (count + sample comments + view-all row), the edited-date/IP line, and
+  the complete bottom action row (like / collect / comment counts + share).
+- **Instagram carousel dots** for multi-image posts.
+
+### Changed
+- The demo (browser) mode renders through the same 1:1 WeChat article shell
+  instead of a flat static page.
+- Platform preview screenshots (`docs/screenshots/platform-xhs.png`,
+  `hero.png`) retaken against the new shells.
+
+### Fixed
+- **Stale preview conversions can no longer paint.** Rapid platform switches
+  fired overlapping conversions and a slower older one could overwrite the
+  newer selection's preview; each conversion now carries a sequence number
+  and a superseded result is discarded.
+
 ## [0.13.0] - 2026-10-19
 
 ### Added
