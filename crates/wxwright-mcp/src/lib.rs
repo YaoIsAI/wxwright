@@ -210,7 +210,7 @@ fn tools_list() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "markdown": { "type": "string", "description": "Markdown source (GFM). Required." },
+                        "markdown": { "type": "string", "description": "Markdown text content (GFM). Required. Pass the article text, never a file path - paths are rejected with an error." },
                         "theme": { "type": "string", "description": "Theme id (minimal|techblue|magazine) or path to a theme TOML. Default: minimal." },
                         "image_mode": { "type": "string", "enum": ["inline", "keep"], "description": "inline: local images become base64 (file export). keep: URLs kept as-is. Default: inline." }
                     },
@@ -223,7 +223,7 @@ fn tools_list() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "markdown": { "type": "string", "description": "Markdown source (converted with default theme first)." },
+                        "markdown": { "type": "string", "description": "Markdown text content (converted with default theme first); never a file path." },
                         "html": { "type": "string", "description": "HTML source (validated directly). One of markdown/html required." }
                     }
                 })
@@ -234,7 +234,7 @@ fn tools_list() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "markdown": { "type": "string" },
+                        "markdown": { "type": "string", "description": "Markdown text content; never a file path - paths are rejected with an error." },
                         "theme": { "type": "string" },
                         "dry_run": { "type": "boolean", "description": "Run the chain but skip the clipboard write." }
                     },
@@ -267,7 +267,7 @@ fn tools_list() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "markdown": { "type": "string" },
+                        "markdown": { "type": "string", "description": "Markdown text content; never a file path - paths are rejected with an error." },
                         "title": { "type": "string" },
                         "author": { "type": "string" },
                         "digest": { "type": "string" },
@@ -304,7 +304,7 @@ fn tools_list() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "markdown": { "type": "string", "description": "Markdown source (GFM). Required." },
+                        "markdown": { "type": "string", "description": "Markdown text content (GFM). Required. Pass the article text, never a file path - paths are rejected with an error." },
                         "platform": { "type": "string", "description": "Platform id: wechat | xhs | zhihu | meta | instagram | x | linkedin. Default: wechat. An unknown id is reported via platform_known=false." },
                         "title": { "type": "string", "description": "Article title, used for caption-style exports." },
                         "theme": { "type": "string", "description": "Theme id or TOML path (WeChat dialect only). Default: minimal." }
@@ -320,6 +320,39 @@ fn tool(name: &str, description: &str, input_schema: Value) -> Value {
     json!({ "name": name, "description": description, "inputSchema": input_schema })
 }
 
+/// The `markdown`-family arguments take TEXT CONTENT. A single-line string
+/// shaped like a file path is almost certainly an agent passing a path where
+/// the contract wants content: the old behavior rendered the path as the
+/// article body and reported it compliant, so the agent never learned it was
+/// wrong (MCP test report 2026-10-20). Reject loudly and teach the contract.
+fn reject_path_lookalike(key: &str, v: String) -> Result<String, String> {
+    let t = v.trim();
+    let looks_like_path = !t.contains('\n')
+        && t.len() < 260
+        && (t.contains('\\') || t.starts_with('/'))
+        && (t.ends_with(".md")
+            || t.ends_with(".markdown")
+            || t.ends_with(".mdown")
+            || t.ends_with(".txt")
+            || t.ends_with(".html"));
+    if looks_like_path {
+        return Err(format!(
+            "the `{key}` argument looks like a file path (\"{}\"), but this tool takes text content directly. Read the file first and pass its content; the CLI (`wxwright convert <path>`) is the one that accepts paths",
+            t
+        ));
+    }
+    Ok(v)
+}
+/// Required text-content argument (convert / copy / draft_create / export).
+fn md_arg(args: &Value, key: &str) -> Result<String, String> {
+    let v = args
+        .get(key)
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .ok_or(format!("missing argument: {key}"))?;
+    reject_path_lookalike(key, v)
+}
+
 fn tools_call(params: Option<&Value>) -> DispatchResult {
     let params = params.ok_or((-32602, "Missing params".to_string()))?;
     let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
@@ -333,7 +366,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
         let need_theme = || theme::load_theme(&theme).map_err(|e| e.to_string());
         match name {
             "wxwright_convert" => {
-                let md = get_str("markdown").ok_or("missing argument: markdown")?;
+                let md = md_arg(&args, "markdown")?;
                 let mode = match get_str("image_mode").as_deref() {
                     Some("keep") => wxwright_core::img::ImageMode::Keep,
                     _ => wxwright_core::img::ImageMode::Inline,
@@ -358,8 +391,14 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 Ok(v)
             }
             "wxwright_validate" => {
-                let md = get_str("markdown");
-                let html_arg = get_str("html");
+                let md = match get_str("markdown") {
+                    Some(m) => Some(reject_path_lookalike("markdown", m)?),
+                    None => None,
+                };
+                let html_arg = match get_str("html") {
+                    Some(h) => Some(reject_path_lookalike("html", h)?),
+                    None => None,
+                };
                 let html = if let Some(h) = html_arg {
                     h
                 } else if let Some(md) = md {
@@ -380,7 +419,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 }))
             }
             "wxwright_copy" => {
-                let md = get_str("markdown").ok_or("missing argument: markdown")?;
+                let md = md_arg(&args, "markdown")?;
                 let dry = args
                     .get("dry_run")
                     .and_then(|v| v.as_bool())
@@ -438,10 +477,10 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 Ok(json!({ "themes": themes }))
             }
             "wxwright_draft_create" => {
-                let md = get_str("markdown").ok_or("missing argument: markdown")?;
+                let md = md_arg(&args, "markdown")?;
                 let title = get_str("title").ok_or("missing argument: title")?;
                 let creds = wxwright_mp::load_credentials()
-                    .ok_or("no credentials configured; run `wxwright login` first")?;
+                    .ok_or(wxwright_mp::NO_CREDENTIALS_HINT.to_string())?;
                 let client = std::sync::Arc::new(wxwright_mp::MpClient::new(creds));
                 let mut opts = ConvertOptions::new(need_theme()?);
                 opts.image_mode = wxwright_core::img::ImageMode::Upload;
@@ -508,7 +547,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     return Err("missing argument: paths (non-empty array of image files)".into());
                 }
                 let creds = wxwright_mp::load_credentials()
-                    .ok_or("no credentials configured; run `wxwright login` first")?;
+                    .ok_or(wxwright_mp::NO_CREDENTIALS_HINT.to_string())?;
                 let client = wxwright_mp::MpClient::new(creds);
                 let mut uploads = Vec::new();
                 let mut all_ok = true;
@@ -533,7 +572,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                 Ok(json!({ "ok": all_ok, "uploads": uploads }))
             }
             "wxwright_export" => {
-                let md = get_str("markdown").ok_or("missing argument: markdown")?;
+                let md = md_arg(&args, "markdown")?;
                 let platform = get_str("platform").unwrap_or_else(|| "wechat".into());
                 let (spec, known) = wxwright_core::platform::resolve_platform(&platform);
                 let title_arg = get_str("title").unwrap_or_default();
@@ -571,7 +610,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
             }
             "wxwright_draft_list" => {
                 let creds = wxwright_mp::load_credentials()
-                    .ok_or("no credentials configured; run `wxwright login` first")?;
+                    .ok_or(wxwright_mp::NO_CREDENTIALS_HINT.to_string())?;
                 let client = wxwright_mp::MpClient::new(creds);
                 let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
                 let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(10);
@@ -579,7 +618,7 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
             }
             "wxwright_draft_delete" => {
                 let creds = wxwright_mp::load_credentials()
-                    .ok_or("no credentials configured; run `wxwright login` first")?;
+                    .ok_or(wxwright_mp::NO_CREDENTIALS_HINT.to_string())?;
                 let client = wxwright_mp::MpClient::new(creds);
                 let media_id = args
                     .get("media_id")
@@ -805,6 +844,57 @@ mod tests {
             impl_names, card_names,
             "MCP tool surface drifted from the agent card contract"
         );
+    }
+
+    /// A path passed into a content argument used to be rendered AS the
+    /// article body and reported compliant - the agent never learned it was
+    /// wrong (MCP test report 2026-10-20, problem 2). Every content-taking
+    /// tool must reject the lookalike loudly, and real content must still
+    /// convert.
+    #[test]
+    fn path_lookalikes_are_rejected_with_contract_guidance() {
+        let path = "C:\\Users\\yao\\test.md";
+        for tool in [
+            "wxwright_convert",
+            "wxwright_copy",
+            "wxwright_draft_create",
+            "wxwright_export",
+        ] {
+            let mut args = serde_json::json!({ "markdown": path });
+            if tool == "wxwright_draft_create" {
+                args["title"] = json!("t");
+            }
+            let responses = roundtrip(&[json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{ "name": tool, "arguments": args }
+            })
+            .to_string()]);
+            let msg = &responses[0]["error"]["message"];
+            assert!(
+                msg.as_str().unwrap_or("").contains("file path"),
+                "{tool} must reject a path lookalike, got: {msg}"
+            );
+        }
+        // validate accepts either key - both must be guarded.
+        let responses = roundtrip(&[json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{ "name":"wxwright_validate", "arguments":{ "markdown": path } }
+        })
+        .to_string()]);
+        assert!(responses[0]["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("file path"));
+
+        // Real content is untouched by the heuristic (multi-line, or a single
+        // line that merely mentions a path inside prose).
+        let responses = roundtrip(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}).to_string(),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}).to_string(),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wxwright_convert","arguments":{"markdown":"# 配置说明\n\n把文件放在 C:\\data\\notes.md 目录下。"}}}).to_string(),
+        ]);
+        let sc = &responses[2]["result"]["structuredContent"];
+        assert!(sc["html"].as_str().unwrap_or("").contains("配置说明"));
     }
 
     #[test]

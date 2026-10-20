@@ -58,11 +58,14 @@ Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
 wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
 wxwright_draft_delete, wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
+Contract: every MCP `markdown` argument takes the article's TEXT CONTENT -
+read the file first and pass its text; file paths are rejected with an error
+(the CLI commands are the ones that accept paths).
 
 ## Publishing (optional, needs credentials)
 
 - `wxwright draft create --file article.md --title "..."` creates a 草稿箱 (Drafts) entry.
-- `wxwright draft update|list` manages existing drafts.
+- `wxwright draft update|list|delete` manages existing drafts (delete takes --media-id).
 - 群发 (mass send) is intentionally NOT part of the agent surface: it is
   irreversible and reaches real subscribers, so a human must trigger it from
   the desktop app. Do not look for a way to automate it.

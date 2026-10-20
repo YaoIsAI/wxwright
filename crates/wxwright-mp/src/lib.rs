@@ -171,6 +171,11 @@ fn persist_accounts(cfg: &mut toml::Value, accounts: &[AccountEntry], active: &s
 /// Load the ACTIVE account's credentials: env overrides > config+keychain.
 /// Every consumer (CLI, MCP, GUI push/upload/drafts) follows the active
 /// account automatically - switching is a config write, zero code paths.
+/// Shared guidance for every "no credentials" answer (CLI / MCP / GUI): the
+/// message must point at the fix AND at the no-login alternative, otherwise
+/// an agent loops on a hint it cannot act on (MCP test report 2026-10-20).
+pub const NO_CREDENTIALS_HINT: &str = "no WeChat MP credentials configured; run `wxwright login --appid <appid> --secret <secret>` (or bind the account in the GUI settings). With credentials, local images upload to mmbiz automatically; without them use https image URLs with image_mode=keep - local/base64 images do not survive a paste into the MP editor";
+
 pub fn load_credentials() -> Option<Credentials> {
     if let (Ok(appid), Ok(secret)) = (
         std::env::var("WXWRIGHT_MP_APPID"),
@@ -227,7 +232,14 @@ pub fn upsert_account(creds: &Credentials, label: &str, use_keyring: bool) -> Re
             .ok_or_else(|| Error::Upload("OS keychain unavailable".into()))?;
         entry
             .set_password(&secret)
-            .map_err(|e| Error::Upload(format!("keychain write failed: {}", e)))?;
+            .map_err(|e| {
+                // Raw DPAPI codes (ERROR_NO_SUCH_LOGON_SESSION) mean nothing to
+                // an agent on an SSH/headless box - name the fix and the
+                // documented fallback (MCP test report 2026-10-20).
+                Error::Upload(format!(
+                    "keychain write failed: {e} - headless/SSH sessions have no user keychain (DPAPI); run login inside an interactive desktop session, or retry with --no-keyring to store the secret in the local config file"
+                ))
+            })?;
         format!("keyring:mp-secret:{}", appid)
     } else {
         secret_field = secret;

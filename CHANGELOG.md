@@ -8,6 +8,32 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.14.1] - 2026-10-20
+
+Fixes from an external MCP protocol test report (v0.10.0 re-verified against
+0.14.0; the "missing tools" item was already stale - 9 tools shipped and the
+agent card matches since 0.12).
+
+### Fixed
+- **A file path passed into a content argument is rejected, not rendered.**
+  `wxwright_convert` / `wxwright_copy` / `wxwright_validate` /
+  `wxwright_draft_create` / `wxwright_export` now detect a single-line
+  path-shaped string in their text arguments and answer with an explicit
+  contract error ("read the file first, pass its content") instead of
+  silently rendering the path as the article body and calling it compliant.
+- **Credential errors teach both the fix and the alternative.** Every
+  "no credentials" answer (CLI and MCP) now says how to log in AND that
+  https images with `image_mode=keep` are the no-login path - local/base64
+  images do not survive a paste into the MP editor.
+- **`wxwright login` on headless sessions names the fix.** The raw DPAPI
+  error (ERROR_NO_SUCH_LOGON_SESSION) now comes with "run login inside an
+  interactive desktop session, or retry with --no-keyring to store the
+  secret in the local config file".
+- **Contract documented at the boundary.** Every MCP `markdown` schema
+  description and the agent card now state that arguments take text content,
+  never file paths; the browser-demo card copy was regenerated from the
+  drift-protected source.
+
 ## [0.14.0] - 2026-10-19
 
 ### Added

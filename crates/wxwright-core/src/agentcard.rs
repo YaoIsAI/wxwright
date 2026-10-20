@@ -65,6 +65,9 @@ Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
 wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
 wxwright_draft_delete, wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
+Contract: every MCP `markdown` argument takes the article's TEXT CONTENT -
+read the file first and pass its text; file paths are rejected with an error
+(the CLI commands are the ones that accept paths).
 
 ## Publishing (optional, needs credentials)
 

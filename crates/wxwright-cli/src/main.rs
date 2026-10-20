@@ -788,8 +788,7 @@ fn cmd_copy(
 }
 
 fn cmd_image_upload(paths: &[String], out: &Out) -> Result<i32, String> {
-    let creds =
-        wxwright_mp::load_credentials().ok_or("no credentials; run `wxwright login` first")?;
+    let creds = wxwright_mp::load_credentials().ok_or(wxwright_mp::NO_CREDENTIALS_HINT)?;
     let client = MpClient::new(creds);
     let mut results = Vec::new();
     for p in paths {
@@ -992,8 +991,7 @@ fn draft_gates_pass(out: &Out, result: &PipelineOutput) -> bool {
 }
 
 fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
-    let creds =
-        wxwright_mp::load_credentials().ok_or("no credentials; run `wxwright login` first")?;
+    let creds = wxwright_mp::load_credentials().ok_or(wxwright_mp::NO_CREDENTIALS_HINT)?;
     let client = MpClient::new(creds);
     match cmd {
         DraftCmd::Create {
@@ -1128,8 +1126,7 @@ fn cmd_publish(draft_id: &str, yes: bool, out: &Out) -> Result<i32, String> {
         }
         return Ok(2);
     }
-    let creds =
-        wxwright_mp::load_credentials().ok_or("no credentials; run `wxwright login` first")?;
+    let creds = wxwright_mp::load_credentials().ok_or(wxwright_mp::NO_CREDENTIALS_HINT)?;
     let client = MpClient::new(creds);
     let resp = client
         .freepublish_submit(draft_id)
