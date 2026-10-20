@@ -869,7 +869,9 @@ mod tests {
                 "params":{ "name": tool, "arguments": args }
             })
             .to_string()]);
-            let msg = &responses[0]["error"]["message"];
+            // tools_call maps handler errors to an isError envelope, not a
+            // JSON-RPC error - the agent reads structuredContent.error.
+            let msg = &responses[0]["result"]["structuredContent"]["error"];
             assert!(
                 msg.as_str().unwrap_or("").contains("file path"),
                 "{tool} must reject a path lookalike, got: {msg}"
@@ -881,7 +883,7 @@ mod tests {
             "params":{ "name":"wxwright_validate", "arguments":{ "markdown": path } }
         })
         .to_string()]);
-        assert!(responses[0]["error"]["message"]
+        assert!(responses[0]["result"]["structuredContent"]["error"]
             .as_str()
             .unwrap_or("")
             .contains("file path"));
@@ -893,7 +895,9 @@ mod tests {
             json!({"jsonrpc":"2.0","method":"notifications/initialized"}).to_string(),
             json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wxwright_convert","arguments":{"markdown":"# 配置说明\n\n把文件放在 C:\\data\\notes.md 目录下。"}}}).to_string(),
         ]);
-        let sc = &responses[2]["result"]["structuredContent"];
+        // initialize answers, the notification does not: the tool result is
+        // responses[1].
+        let sc = &responses[1]["result"]["structuredContent"];
         assert!(sc["html"].as_str().unwrap_or("").contains("配置说明"));
     }
 
