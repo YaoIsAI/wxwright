@@ -45,7 +45,7 @@ fn demo_agent_card_matches_core_tool_surface() {
     );
     assert_eq!(
         demo_tools.matches("wxwright_").count(),
-        9,
-        "the MCP tool surface is 9 tools (iron law 9)"
+        12,
+        "the MCP tool surface is 12 tools (iron law 9)"
     );
 }

@@ -121,14 +121,15 @@ fn text_result(v: Value) -> Value {
 
 /// Tools the GUI's assistant may call: the read-only ones.
 ///
-/// The side-effectful tools - clipboard write, material upload, draft create -
-/// are deliberately not offered to the model. An assistant that can push to the
-/// user's 公众号 on its own is not an assistant. What makes tools worth having
-/// here is self-checking (validate / convert / export), which the read-only set
-/// covers completely.
+/// The side-effectful tools - clipboard write, material upload, draft create,
+/// draft update, image fit (writes files) - are deliberately not offered to
+/// the model. An assistant that can push to the user's 公众号 on its own is
+/// not an assistant. What makes tools worth having here is self-checking
+/// (validate / convert / export / fix), which the read-only set covers.
 pub const ASSISTANT_TOOLS: &[&str] = &[
     "wxwright_validate",
     "wxwright_convert",
+    "wxwright_fix",
     "wxwright_export",
     "wxwright_themes_list",
     "wxwright_draft_list",
@@ -229,6 +230,17 @@ fn tools_list() -> Value {
                 })
             ),
             tool(
+                "wxwright_fix",
+                "Auto-fix compliance violations in HTML (the normalizer: fixed widths, height:0, event handlers, dangerous tags). Returns the fixed html plus the fix records and remaining violations.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "html": { "type": "string", "description": "HTML text content to fix; never a file path - paths are rejected with an error." }
+                    },
+                    "required": ["html"]
+                })
+            ),
+            tool(
                 "wxwright_copy",
                 "Full chain: parse, render, normalize, validate, write rich text/html to the user's clipboard. The user then pastes into the MP editor. Requires a desktop session.",
                 json!({
@@ -274,6 +286,36 @@ fn tools_list() -> Value {
                         "theme": { "type": "string" }
                     },
                     "required": ["markdown", "title"]
+                })
+            ),
+            tool(
+                "wxwright_draft_update",
+                "Replace an existing WeChat MP draft's content with a re-rendered article (same gates as draft_create). The cover stays when the markdown still carries an uploaded image; otherwise pass cover_image_path. Requires credentials. Get media_id from wxwright_draft_list.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "media_id": { "type": "string", "description": "Draft media_id from wxwright_draft_list." },
+                        "markdown": { "type": "string", "description": "Markdown text content; never a file path - paths are rejected with an error." },
+                        "title": { "type": "string" },
+                        "theme": { "type": "string" },
+                        "author": { "type": "string" },
+                        "digest": { "type": "string" },
+                        "cover_image_path": { "type": "string", "description": "Optional local image path used as the new cover when the markdown itself has no uploadable image." }
+                    },
+                    "required": ["media_id", "markdown", "title"]
+                })
+            ),
+            tool(
+                "wxwright_image_fit",
+                "Fit the article's local images to a platform's primary shape: centre-crop to the cover ratio (rich-text platforms: width clamp only, never upscale) and write numbered files into out_dir. Returns a manifest of source -> fitted file. Remote/data images are skipped, never fetched.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "markdown": { "type": "string", "description": "Markdown text content; never a file path - paths are rejected with an error." },
+                        "platform": { "type": "string", "description": "Platform id: wechat | xhs | zhihu | meta | instagram | x | linkedin. Default: wechat." },
+                        "out_dir": { "type": "string", "description": "Directory for the fitted files (created if missing). Use a path the follow-up upload step can read." }
+                    },
+                    "required": ["markdown", "out_dir"]
                 })
             ),
             tool(
@@ -389,6 +431,22 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     );
                 }
                 Ok(v)
+            }
+            "wxwright_fix" => {
+                let html_in = md_arg(&args, "html")?;
+                let norm = wxwright_core::normalizer::normalize_html(
+                    &html_in,
+                    wxwright_core::normalizer::NormalizeOptions::default(),
+                )
+                .map_err(|e| e.to_string())?;
+                if norm.html.len() > 64 * 1024 {
+                    return Err(
+                        "html exceeds 64KB; use the CLI `wxwright fix --out` for the full artifact"
+                            .into(),
+                    );
+                }
+                let violations = wxwright_core::validator::validate_html(&norm.html);
+                Ok(json!({ "html": norm.html, "fixes": norm.fixes, "violations": violations }))
             }
             "wxwright_validate" => {
                 let md = match get_str("markdown") {
@@ -533,6 +591,136 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     json!({ "draft_media_id": media_id, "images": out.images, "violations": out.violations }),
                 )
             }
+            "wxwright_draft_update" => {
+                // Mirrors the GUI's wx_update_draft chain exactly: frontmatter
+                // (author/digest/format:html), render or direct-HTML entry,
+                // blocking + paste-hostile gates, cover policy (fresh upload >
+                // cover_image_path > refuse - the old thumb is not readable
+                // through the API), then draft_update on article index 0.
+                let media_id = args
+                    .get("media_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or("missing argument: media_id (see wxwright_draft_list)")?;
+                let md = md_arg(&args, "markdown")?;
+                let title = get_str("title").ok_or("missing argument: title")?;
+                let cover_path = get_str("cover_image_path").filter(|s| !s.trim().is_empty());
+                let creds = wxwright_mp::load_credentials()
+                    .ok_or(wxwright_mp::NO_CREDENTIALS_HINT.to_string())?;
+                let client = std::sync::Arc::new(wxwright_mp::MpClient::new(creds.clone()));
+                let (front, body_md) = wxwright_core::util::strip_frontmatter(&md);
+                let fm = |keys: &[&str]| -> String {
+                    front
+                        .iter()
+                        .find(|(k, _)| keys.iter().any(|want| k.eq_ignore_ascii_case(want)))
+                        .map(|(_, v)| v.trim().to_string())
+                        .unwrap_or_default()
+                };
+                let author = fm(&["author"]);
+                let digest: String = fm(&["digest", "summary", "description"])
+                    .chars()
+                    .take(120)
+                    .collect();
+                let is_html = front.iter().any(|(k, v)| {
+                    k.eq_ignore_ascii_case("format") && v.trim().eq_ignore_ascii_case("html")
+                });
+                let out = if is_html {
+                    let norm = wxwright_core::normalizer::normalize_html(
+                        &body_md,
+                        wxwright_core::normalizer::NormalizeOptions::default(),
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let violations = wxwright_core::validator::validate_html(&norm.html);
+                    wxwright_core::PipelineOutput {
+                        html: norm.html,
+                        images: Vec::new(),
+                        stats: wxwright_core::ir::Stats::default(),
+                        links: Vec::new(),
+                        fixes: norm.fixes,
+                        violations,
+                    }
+                } else {
+                    let mut opts = ConvertOptions::new(need_theme()?);
+                    opts.image_mode = wxwright_core::img::ImageMode::Upload;
+                    opts.transport = Some(client.clone());
+                    pipeline(&body_md, &opts).map_err(|e| e.to_string())?
+                };
+                let blocking = out.blocking_violations();
+                if !blocking.is_empty() {
+                    let list = blocking
+                        .iter()
+                        .map(|v| format!("{} {}", v.rule_id, v.message))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(format!(
+                        "{} blocking violations; draft not updated: {}",
+                        blocking.len(),
+                        list
+                    ));
+                }
+                if is_html {
+                    let hostile = wxwright_core::htmlutil::paste_hostile_html_imgs(&out.html);
+                    if !hostile.is_empty() {
+                        return Err(format!(
+                            "{} image(s) would render broken in the MP editor (mmbiz or https required); draft not updated: {}",
+                            hostile.len(),
+                            hostile.join("; ")
+                        ));
+                    }
+                }
+                let hostile: Vec<String> = out
+                    .images
+                    .iter()
+                    .filter(|i| i.paste_hostile())
+                    .map(|i| i.source.clone())
+                    .collect();
+                if !hostile.is_empty() {
+                    return Err(format!(
+                        "{} image(s) would render broken in the MP editor (mmbiz or https required); draft not updated: {}",
+                        hostile.len(),
+                        hostile.join("; ")
+                    ));
+                }
+                let new_thumb = out.images.iter().find_map(|i| i.media_id.clone());
+                let thumb = match new_thumb {
+                    Some(t) => Some(t),
+                    None => match cover_path {
+                        Some(path) => {
+                            let bytes = std::fs::read(&path)
+                                .map_err(|e| format!("cannot read cover image: {e}"))?;
+                            let name = std::path::Path::new(&path)
+                                .file_name()
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "cover.png".into());
+                            Some(
+                                wxwright_mp::MpClient::new(creds)
+                                    .upload_material(bytes, &name)
+                                    .map_err(|e| e.to_string())?
+                                    .0,
+                            )
+                        }
+                        None => None,
+                    },
+                };
+                let thumb = thumb.ok_or(
+                    "no cover available: include at least one image in the markdown or pass cover_image_path (the API cannot read back the draft's existing cover)",
+                )?;
+                let article = wxwright_mp::DraftArticle {
+                    title,
+                    author,
+                    digest,
+                    content_html: out.html.clone(),
+                    content_source_url: String::new(),
+                    thumb_media_id: thumb,
+                };
+                client
+                    .draft_update(&media_id, 0, &article)
+                    .map_err(|e| e.to_string())?;
+                Ok(
+                    json!({ "updated": media_id, "images": out.images, "violations": out.violations }),
+                )
+            }
             "wxwright_upload_images" => {
                 let paths: Vec<String> = args
                     .get("paths")
@@ -570,6 +758,90 @@ fn tools_call(params: Option<&Value>) -> DispatchResult {
                     }
                 }
                 Ok(json!({ "ok": all_ok, "uploads": uploads }))
+            }
+            "wxwright_image_fit" => {
+                // Same contract as the CLI `wxwright image fit`: local images
+                // are centre-cropped to the platform's primary shape and
+                // written into out_dir in document order; remote/data images
+                // are reported as skipped (core never fetches).
+                let md = md_arg(&args, "markdown")?;
+                let platform = get_str("platform").unwrap_or_else(|| "wechat".into());
+                let out_dir = get_str("out_dir")
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or("missing argument: out_dir (directory for the fitted files)")?;
+                let (spec, known) = wxwright_core::platform::resolve_platform(&platform);
+                if !known {
+                    return Err(format!(
+                        "unknown platform {platform:?}; ids: wechat | xhs | zhihu | meta | instagram | x | linkedin"
+                    ));
+                }
+                let profile = wxwright_core::platform::get_platform(spec.id).image_profile();
+                let doc = wxwright_core::parser::parse_markdown(&md);
+                let images = wxwright_core::ir::collect_images(&doc);
+                if images.is_empty() {
+                    return Err("the markdown contains no images to fit".into());
+                }
+                std::fs::create_dir_all(&out_dir)
+                    .map_err(|e| format!("cannot create {out_dir}: {e}"))?;
+                // No file parent exists for text input: relative image paths
+                // resolve against the process working directory.
+                let mut manifest = Vec::new();
+                for (i, img) in images.iter().enumerate() {
+                    let src = img.src.as_str();
+                    if src.starts_with("http://")
+                        || src.starts_with("https://")
+                        || src.starts_with("data:")
+                        || src.is_empty()
+                    {
+                        manifest.push(json!({
+                            "source": src, "ok": false,
+                            "skipped": "remote or inline image; only local files are fitted",
+                        }));
+                        continue;
+                    }
+                    let path = std::path::Path::new(&src);
+                    let entry = match std::fs::read(path) {
+                        Ok(bytes) => match wxwright_core::img::fit_to_profile(&bytes, &profile) {
+                            Ok(fit) => {
+                                let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+                                let stem = path
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| "image".into());
+                                let name = format!(
+                                    "{:02}-{}.{}",
+                                    i + 1,
+                                    stem,
+                                    if is_png { "png" } else { "jpg" }
+                                );
+                                let dest = std::path::Path::new(&out_dir).join(&name);
+                                match std::fs::write(&dest, &fit.bytes) {
+                                    Ok(()) => json!({
+                                        "source": src, "ok": true,
+                                        "file": dest.display().to_string(),
+                                        "alt": img.alt, "width": fit.width,
+                                        "height": fit.height,
+                                        "cropped": fit.cropped, "resized": fit.resized,
+                                    }),
+                                    Err(e) => json!({
+                                        "source": src, "ok": false,
+                                        "error": format!("cannot write {}: {}", dest.display(), e),
+                                    }),
+                                }
+                            }
+                            Err(e) => json!({
+                                "source": src, "ok": false, "error": e.to_string(),
+                            }),
+                        },
+                        Err(e) => json!({
+                            "source": src, "ok": false,
+                            "error": format!("cannot read {}: {}", path.display(), e),
+                        }),
+                    };
+                    manifest.push(entry);
+                }
+                Ok(json!({ "platform": spec.id, "out_dir": out_dir, "images": manifest }))
             }
             "wxwright_export" => {
                 let md = md_arg(&args, "markdown")?;
@@ -858,11 +1130,15 @@ mod tests {
             "wxwright_convert",
             "wxwright_copy",
             "wxwright_draft_create",
+            "wxwright_draft_update",
             "wxwright_export",
         ] {
             let mut args = serde_json::json!({ "markdown": path });
-            if tool == "wxwright_draft_create" {
+            if tool == "wxwright_draft_create" || tool == "wxwright_draft_update" {
                 args["title"] = json!("t");
+            }
+            if tool == "wxwright_draft_update" {
+                args["media_id"] = json!("m");
             }
             let responses = roundtrip(&[json!({
                 "jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -899,6 +1175,135 @@ mod tests {
         // responses[1].
         let sc = &responses[1]["result"]["structuredContent"];
         assert!(sc["html"].as_str().unwrap_or("").contains("配置说明"));
+    }
+
+    /// The gap-filler tools (CLI parity, 2026-10-21): fix normalizes in
+    /// place, image_fit writes fitted files, draft_update rejects the same
+    /// bad inputs the other content tools reject.
+    #[test]
+    fn fix_image_fit_and_draft_update_behave() {
+        // fix: R-1.4 fixed width is auto-fixed and reported.
+        let responses = roundtrip(&[json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{ "name":"wxwright_fix", "arguments":{ "html":"<section style=\"width: 2000px;\">x</section>" } }
+        }).to_string()]);
+        let sc = &responses[0]["result"]["structuredContent"];
+        assert!(
+            !sc["html"].as_str().unwrap().contains("2000px"),
+            "width fixed"
+        );
+        assert_eq!(sc["fixes"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(sc["isError"], json!(null));
+
+        // image_fit: a local image is fitted into out_dir and manifested.
+        let tmp = std::env::temp_dir().join("wxwright-mcp-fit-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        // A real 200x300 PNG: fit centre-crops it to the xhs 3:4 cover.
+        let png: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 200, 0, 0, 1,
+            44, 8, 2, 0, 0, 0, 9, 152, 107, 233, 0, 0, 3, 15, 73, 68, 65, 84, 120, 156, 237, 210,
+            65, 9, 0, 32, 0, 192, 64, 59, 217, 201, 78, 182, 181, 132, 67, 144, 131, 11, 176, 199,
+            198, 92, 27, 174, 27, 207, 11, 248, 146, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177,
+            72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132,
+            177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139,
+            132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24,
+            139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 132, 177, 72,
+            24, 139, 132, 177, 72, 24, 139, 132, 177, 72, 24, 139, 196, 1, 250, 244, 55, 41, 186,
+            244, 104, 232, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+        ];
+        let pic = tmp.join("pic.png");
+        std::fs::write(&pic, png).unwrap();
+        let out_dir = tmp.join("fitted");
+        // text input has no file parent: the test passes an absolute source
+        // path (relative ones resolve against the process working directory)
+        let md_img = format!("![pic]({})", pic.display());
+        let responses = roundtrip(&[json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{ "name":"wxwright_image_fit", "arguments":{
+                "markdown": md_img,
+                "platform": "xhs",
+                "out_dir": out_dir.display().to_string(),
+            } }
+        })
+        .to_string()]);
+        let sc = &responses[0]["result"]["structuredContent"];
+        assert_eq!(sc["platform"], json!("xhs"));
+        assert_eq!(sc["images"][0]["ok"], json!(true));
+        assert!(
+            std::path::Path::new(sc["images"][0]["file"].as_str().unwrap()).exists(),
+            "fitted file written"
+        );
+
+        // image_fit: unknown platform and image-less markdown are loud errors.
+        for args in [
+            json!({ "markdown": "![p](pic.png)", "platform": "nope", "out_dir": out_dir.display().to_string() }),
+            json!({ "markdown": "no images at all", "out_dir": out_dir.display().to_string() }),
+        ] {
+            let responses = roundtrip(&[json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{ "name":"wxwright_image_fit", "arguments": args }
+            })
+            .to_string()]);
+            assert!(
+                responses[0]["result"]["structuredContent"]["isError"] == json!(true),
+                "expected a loud failure"
+            );
+        }
+
+        // draft_update: missing media_id and path-lookalike markdown are
+        // rejected before any network call.
+        for args in [
+            json!({ "markdown": "# t", "title": "t" }),
+            json!({ "media_id": "m", "markdown": "C:\\Users\\yao\\test.md", "title": "t" }),
+        ] {
+            let responses = roundtrip(&[json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{ "name":"wxwright_draft_update", "arguments": args }
+            })
+            .to_string()]);
+            let err = responses[0]["result"]["structuredContent"]["error"]
+                .as_str()
+                .unwrap_or("");
+            assert!(
+                err.contains("media_id") || err.contains("file path"),
+                "expected input rejection, got: {err}"
+            );
+        }
     }
 
     #[test]

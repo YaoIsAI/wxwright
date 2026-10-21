@@ -8,6 +8,28 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.16.0] - 2026-10-21
+
+### Added
+- **The MCP surface reaches full CLI parity: 12 tools.** The three gaps an
+  agent-only setup had against the CLI are closed:
+  - `wxwright_draft_update` - replace an existing draft with a re-rendered
+    article (same frontmatter handling, blocking/image gates and cover
+    policy as the GUI's update path; the old thumb is preserved when the
+    markdown still carries an uploaded image, otherwise a new cover can be
+    passed - the API cannot read back the existing one);
+  - `wxwright_fix` - the normalizer as a tool: compliance-fixed HTML plus
+    fix records and remaining violations;
+  - `wxwright_image_fit` - centre-crop the article's local images to a
+    platform's primary shape (xhs 3:4 etc.) into an out_dir with a manifest;
+    remote/data images are skipped, never fetched.
+- The GUI assistant gains `wxwright_fix` in its read-only tool set (pure
+  transform, no side effects).
+
+### Changed
+- The agent card (markdown + JSON) and the browser-demo card now list all
+  12 tools; the drift tests lock the new surface.
+
 ## [0.15.0] - 2026-10-21
 
 ### Added

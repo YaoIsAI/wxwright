@@ -19,7 +19,8 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "review"]
 const REQUIRED_SITES: &[(&str, usize)] = &[
     // CLI copy + draft_gates_pass (shared by draft create/update)
     ("crates/wxwright-cli/src/main.rs", 2),
-    ("crates/wxwright-mcp/src/lib.rs", 2),
+    // MCP copy + draft_create + draft_update: three write paths, one gate each
+    ("crates/wxwright-mcp/src/lib.rs", 3),
     // push draft + update draft: two write paths, one gate each
     ("gui/src-tauri/src/commands.rs", 3),
 ];

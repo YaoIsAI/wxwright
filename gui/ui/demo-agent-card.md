@@ -54,8 +54,9 @@ Read it, fix the source, retry. Do not ship while `blocking_violations` is non-e
 ## MCP alternative
 
 Start `wxwright mcp serve` (stdio) or `wxwright mcp install --target claude`.
-Tools: wxwright_convert, wxwright_validate, wxwright_copy, wxwright_themes_list,
-wxwright_upload_images, wxwright_draft_create, wxwright_draft_list,
+Tools: wxwright_convert, wxwright_validate, wxwright_fix, wxwright_copy,
+wxwright_themes_list, wxwright_upload_images, wxwright_draft_create,
+wxwright_draft_update, wxwright_image_fit, wxwright_draft_list,
 wxwright_draft_delete, wxwright_export.
 Resources: wxwright://themes, wxwright://spec/rules.
 Contract: every MCP `markdown` argument takes the article's TEXT CONTENT -

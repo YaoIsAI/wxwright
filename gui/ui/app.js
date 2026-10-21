@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.15.0";
+const GUI_VERSION = "0.16.0";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
