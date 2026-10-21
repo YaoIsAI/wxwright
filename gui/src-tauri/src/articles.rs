@@ -16,6 +16,11 @@ pub struct ArticleMeta {
     /// Source format: "markdown" (default) or "html" (direct-HTML entry).
     pub format: String,
     pub chars: usize,
+    /// WeChat MP draft this article was pushed to / imported from. The
+    /// drafts box uses it to reopen the local copy of a cloud draft instead
+    /// of importing a duplicate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_media_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -106,6 +111,7 @@ fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
             "markdown".to_string()
         }
     };
+    let draft_media_id = get("draft_media_id").filter(|s| !s.is_empty());
     Some(ArticleMeta {
         id,
         title,
@@ -115,6 +121,7 @@ fn meta_from_path(path: &PathBuf) -> Option<ArticleMeta> {
         platform,
         format,
         chars: body.chars().count(),
+        draft_media_id,
     })
 }
 
@@ -179,6 +186,7 @@ pub fn save_article(
     platform: &str,
     format: &str,
     markdown: &str,
+    draft_media_id: &str,
 ) -> Result<ArticleMeta, String> {
     let dir = library_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("create dir: {}", e))?;
@@ -206,6 +214,26 @@ pub fn save_article(
         "markdown"
     };
     let format_line = if fmt == "html" { "\nformat: html" } else { "" };
+    // An empty tag PRESERVES the previous one (rename/autosave must not
+    // silently unlink a draft); passing a new tag re-points the article.
+    let existing_media = read_article(&id)
+        .ok()
+        .and_then(|a| a.meta.draft_media_id)
+        .unwrap_or_default();
+    let media_tag = if draft_media_id.trim().is_empty() {
+        existing_media.as_str()
+    } else {
+        draft_media_id.trim()
+    };
+    let media_line = if media_tag.is_empty() {
+        String::new()
+    } else {
+        let clean: String = media_tag
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .collect();
+        format!("\ndraft_media_id: {}", clean)
+    };
     let body = format!(
         "---\ntitle: \"{}\"\ncreated: {}\nupdated: {}\ntheme: {}\nplatform: {}{}\n---\n\n{}",
         title.replace('"', "'"),
@@ -216,6 +244,14 @@ pub fn save_article(
         format_line,
         markdown.trim_start()
     );
+    // splice the media line in front of the closing fence (format_line keeps
+    // the single-line frontmatter invariant: media ids are sanitized to
+    // [A-Za-z0-9_-] and cannot carry newlines)
+    let body = if media_line.is_empty() {
+        body
+    } else {
+        body.replacen("\n---\n", &format!("{}\n---\n", media_line), 1)
+    };
     let path = dir.join(format!("{}.md", id));
     write_atomic(&path, &body)?;
     let platform = if platform.trim().is_empty() {
@@ -232,6 +268,15 @@ pub fn save_article(
         platform: platform.to_string(),
         format: fmt.to_string(),
         chars: markdown.chars().count(),
+        draft_media_id: if media_line.is_empty() {
+            None
+        } else {
+            Some(
+                media_line
+                    .trim_start_matches("\ndraft_media_id: ")
+                    .to_string(),
+            )
+        },
     })
 }
 

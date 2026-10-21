@@ -168,14 +168,14 @@ fn persist_accounts(cfg: &mut toml::Value, accounts: &[AccountEntry], active: &s
     Ok(())
 }
 
-/// Load the ACTIVE account's credentials: env overrides > config+keychain.
-/// Every consumer (CLI, MCP, GUI push/upload/drafts) follows the active
-/// account automatically - switching is a config write, zero code paths.
 /// Shared guidance for every "no credentials" answer (CLI / MCP / GUI): the
 /// message must point at the fix AND at the no-login alternative, otherwise
 /// an agent loops on a hint it cannot act on (MCP test report 2026-10-20).
 pub const NO_CREDENTIALS_HINT: &str = "no WeChat MP credentials configured; run `wxwright login --appid <appid> --secret <secret>` (or bind the account in the GUI settings). With credentials, local images upload to mmbiz automatically; without them use https image URLs with image_mode=keep - local/base64 images do not survive a paste into the MP editor";
 
+/// Load the ACTIVE account's credentials: env overrides > config+keychain.
+/// Every consumer (CLI, MCP, GUI push/upload/drafts) follows the active
+/// account automatically - switching is a config write, zero code paths.
 pub fn load_credentials() -> Option<Credentials> {
     if let (Ok(appid), Ok(secret)) = (
         std::env::var("WXWRIGHT_MP_APPID"),
@@ -589,6 +589,16 @@ impl MpClient {
         // WeChat answered 40066 "invalid url", so this tool had never worked
         // against the live API).
         self.post_with_token_value("/cgi-bin/draft/batchget", &payload)
+    }
+
+    /// One full draft, news_item.content (the body HTML) included. The list
+    /// endpoint runs with no_content=1, so pulling a body for editing needs
+    /// this per-draft fetch.
+    pub fn draft_get(&self, media_id: &str) -> Result<serde_json::Value> {
+        self.post_with_token_value(
+            "/cgi-bin/draft/get",
+            &serde_json::json!({ "media_id": media_id }),
+        )
     }
 
     /// Account nickname + avatar URL, for display surfaces (account switcher).

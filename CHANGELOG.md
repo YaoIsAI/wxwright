@@ -8,6 +8,29 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.15.0] - 2026-10-21
+
+### Added
+- **The drafts box "Edit" button pulls a draft into the article library.**
+  Every pushed/updated draft is now linked to its local article through a
+  `draft_media_id` frontmatter tag; Edit reopens that exact article, and a
+  draft without a local copy fetches its body from the cloud (`draft_get` -
+  the list endpoint runs with `no_content=1`) and imports as an HTML-format
+  article that gets linked - so Edit never duplicates, and the next Edit
+  always lands on the same document. The pencil icon means "pull into the
+  editor"; the send icon means "overwrite the cloud draft from the editor"
+  (HTML-format articles are refused with an explanation - they would push
+  as plain text).
+- **Drafts list caching.** Switching to the drafts tab renders instantly
+  from a 2-minute cache instead of re-hitting the WeChat API on every tab
+  switch; a Refresh button (next to the MP-console shortcut) forces a
+  re-fetch, and pushes / deletes / account switches invalidate the cache.
+
+### Changed
+- The drafts hint line is now visible in the list and documents the new
+  buttons; an unbound account shows a "bind the MP account" action instead
+  of a raw error string.
+
 ## [0.14.1] - 2026-10-20
 
 Fixes from an external MCP protocol test report (v0.10.0 re-verified against

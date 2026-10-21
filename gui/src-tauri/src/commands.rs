@@ -255,6 +255,7 @@ pub async fn save_article(
     platform: Option<String>,
     format: Option<String>,
     markdown: String,
+    draft_media_id: Option<String>,
 ) -> Result<ArticleMeta, String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::articles::save_article(
@@ -264,6 +265,7 @@ pub async fn save_article(
             platform.as_deref().unwrap_or("wechat"),
             format.as_deref().unwrap_or("markdown"),
             &markdown,
+            draft_media_id.as_deref().unwrap_or(""),
         )
     })
     .await
@@ -588,6 +590,20 @@ pub async fn wx_draft_list(offset: u64, count: u64) -> Result<serde_json::Value,
             .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
         let client = wxwright_mp::MpClient::new(creds);
         client.draft_list(offset, count).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
+/// One draft WITH its body (news_item.content) - the drafts box "Edit" pull
+/// fetches exactly the draft being opened, keeping the list light.
+#[tauri::command]
+pub async fn wx_draft_get(media_id: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::load_credentials()
+            .ok_or("公众号未绑定：请先在 设置 → 公众号 API 完成绑定")?;
+        let client = wxwright_mp::MpClient::new(creds);
+        client.draft_get(&media_id).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("task join failed: {e}"))?

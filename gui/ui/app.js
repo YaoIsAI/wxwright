@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.14.1";
+const GUI_VERSION = "0.15.0";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
@@ -53,7 +53,7 @@ const I18N = {
     syncpost_none_bound: "尚未绑定任何社交平台：请先在上方完成 X / LinkedIn 的一键登录",
     syncpost_done: (posted, total) => `已发布 ${posted}/${total} 个平台，详情见下方`,
     drafts_title: "草稿箱",
-    drafts_hint: "最近 10 条草稿；误推的内容可以在这里直接删除。",
+    drafts_hint: "最近 20 条草稿；「编辑」把草稿导入文章列表，误推的内容可以在这里直接删除。",
     drafts_refresh: "刷新草稿箱",
     drafts_loading: "读取草稿箱…",
     drafts_none: "草稿箱为空。",
@@ -61,8 +61,13 @@ const I18N = {
     drafts_delete: "删除",
     drafts_update: "用当前文章更新此草稿",
     drafts_deleted: "草稿已删除",
-    drafts_update: "用当前文章更新",
     drafts_updated: "草稿已更新",
+    drafts_edit_title: "编辑（导入到文章列表）",
+    drafts_imported_ok: (title) => `草稿已导入文章列表：${title}`,
+    drafts_opened_local: (title) => `已打开本地副本：${title}`,
+    drafts_import_empty: "此草稿没有可导入的正文内容",
+    drafts_go_bind: "去绑定公众号",
+    drafts_update_html_block: "HTML 文章暂不支持推送更新（会按纯文本渲染）；请用 Markdown 文章",
     drafts_warns: (n) => `${n} 条非阻断提示`,
     illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
     illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
@@ -213,7 +218,7 @@ const I18N = {
     syncpost_none_bound: "No social platform bound yet: finish the X / LinkedIn one-click login above first",
     syncpost_done: (posted, total) => `Posted to ${posted}/${total} platforms - details below`,
     drafts_title: "Drafts box",
-    drafts_hint: "The last 10 drafts; clean up a mistaken push without leaving the app.",
+    drafts_hint: "The last 20 drafts; Edit imports one into the article library, and a mistaken push can be deleted here.",
     drafts_refresh: "Refresh drafts",
     drafts_loading: "Loading drafts…",
     drafts_none: "The drafts box is empty.",
@@ -221,8 +226,13 @@ const I18N = {
     drafts_delete: "Delete",
     drafts_update: "Update this draft from the editor",
     drafts_deleted: "Draft deleted",
-    drafts_update: "Update from editor",
     drafts_updated: "Draft updated",
+    drafts_edit_title: "Edit (imports into the article library)",
+    drafts_imported_ok: (title) => `Draft imported into the library: ${title}`,
+    drafts_opened_local: (title) => `Opened the local copy: ${title}`,
+    drafts_import_empty: "This draft has no body content to import",
+    drafts_go_bind: "Bind the MP account",
+    drafts_update_html_block: "HTML articles cannot push updates (they would render as plain text); use a Markdown article",
     drafts_warns: (n) => `${n} non-blocking note(s)`,
     illustrate_need_save: "Save the article (with body text) before using AI illustrations",
     illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
@@ -740,21 +750,35 @@ function openMpAdmin() {
   else window.open(url, "_blank");
 }
 
-// Rebuilt entry point for openMpAdmin: every drafts-tab render state ends
-// with this row, so the MP console is one click away from the drafts box.
-function draftsAdminRow() {
+// Tools row closing every drafts-tab render state: refresh (cache-busting
+// re-fetch) + the MP console shortcut.
+function draftsToolsRow() {
   const row = document.createElement("div");
-  row.className = "sd-empty";
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "btn btn-ghost";
-  btn.textContent = t("drafts_admin");
-  btn.addEventListener("click", openMpAdmin);
-  row.appendChild(btn);
+  row.className = "sd-empty sd-tools";
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.className = "btn btn-ghost";
+  refresh.innerHTML = `<svg class="icon icon-sm"><use href="#i-refresh"/></svg><span>${t("drafts_refresh")}</span>`;
+  refresh.addEventListener("click", () => renderSidebarDrafts(true));
+  const admin = document.createElement("button");
+  admin.type = "button";
+  admin.className = "btn btn-ghost";
+  admin.textContent = t("drafts_admin");
+  admin.addEventListener("click", openMpAdmin);
+  row.append(refresh, admin);
   return row;
 }
 
-async function renderSidebarDrafts() {
+// Cloud drafts list cache: switching tabs must not re-hit the WeChat API
+// every time. Invalidated by pushes/deletes/account switches and refreshed
+// on demand; entries older than 2 minutes re-fetch automatically.
+let draftsCache = { at: 0, items: null };
+const DRAFTS_TTL = 120000;
+function invalidateDrafts() {
+  draftsCache = { at: 0, items: null };
+}
+
+async function renderSidebarDrafts(force = false) {
   const host = $("drafts-list");
   if (!host) return;
   if (!invoke) { host.innerHTML = `<div class="sd-empty">${t("demo_mode")}</div>`; return; }
@@ -763,77 +787,167 @@ async function renderSidebarDrafts() {
     host.innerHTML = `<div class="sd-empty">${t("drafts_hint_other")}</div>`;
     return;
   }
+  if (!force && draftsCache.items && Date.now() - draftsCache.at < DRAFTS_TTL) {
+    renderDraftItems(host, draftsCache.items);
+    return;
+  }
   host.innerHTML = `<div class="sd-empty">${t("drafts_loading")}</div>`;
-  host.appendChild(draftsAdminRow());
+  host.appendChild(draftsToolsRow());
   try {
     const v = await invoke("wx_draft_list", { offset: 0, count: 20 });
     const items = v.item || [];
-    if (!items.length) {
-      host.innerHTML = `<div class="sd-empty">${t("drafts_none")}</div>`;
-      host.appendChild(draftsAdminRow());
-      return;
-    }
-    host.innerHTML = items.map((it) => {
-      const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
-      const mediaId = escapeHtml(String(it.media_id || ""));
-      const title = escapeHtml(String(nid.title || "(untitled)"));
-      const ts = it.content && it.content.update_time ? it.content.update_time : 0;
-      const when = ts ? new Date(ts * 1000).toLocaleString() : "";
-      return `<div class="draft-item" data-media="${mediaId}">
-        <div class="draft-meta">
-          <div class="draft-title" title="${title}">${title}</div>
-          <div class="draft-when">${when}</div>
-        </div>
-        <button type="button" class="draft-act" data-draft-update="${mediaId}" title="${t("drafts_update")}">
-          <svg class="icon icon-sm"><use href="#i-edit"/></svg>
-        </button>
-        <button type="button" class="draft-del" data-del-draft="${mediaId}" title="${t("drafts_delete")}">
-          <svg class="icon icon-sm"><use href="#i-trash"/></svg>
-        </button>
-      </div>`;
-    }).join("");
-    host.appendChild(draftsAdminRow());
-    host.querySelectorAll("[data-del-draft]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const mid = btn.dataset.delDraft;
-        btn.disabled = true;
-        try {
-          await invoke("wx_draft_delete", { mediaId: mid });
-          toast(t("drafts_deleted"), "ok");
-          renderSidebarDrafts();
-        } catch (e) {
-          toast(String(e), "err");
-          btn.disabled = false;
-        }
-      });
-    });
-    host.querySelectorAll("[data-draft-update]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const mid = btn.dataset.draftUpdate;
-        const md = $("editor").value;
-        if (!md.trim()) { toast(t("syncpost_need_save"), "err"); return; }
-        btn.disabled = true;
-        try {
-          if (dirty) await persistCurrent(true);
-          if (!currentArticleId) { toast(t("syncpost_need_save"), "err"); btn.disabled = false; return; }
-          const r = await invoke("wx_update_draft", {
-            mediaId: mid,
-            title: currentTitle(),
-            markdown: md,
-            themeId: currentTheme,
-            coverImagePath: null,
-          });
-          const warns = r && r.warnings ? r.warnings : 0;
-          toast(t("drafts_updated") + (warns ? ` (${t("drafts_warns", warns)})` : ""), "ok");
-        } catch (e) {
-          toast(String(e), "err");
-        }
-        btn.disabled = false;
-      });
-    });
+    draftsCache = { at: Date.now(), items };
+    renderDraftItems(host, items);
   } catch (e) {
-    host.innerHTML = `<div class="sd-empty">${escapeHtml(String(e))}</div>`;
+    const msg = String(e);
+    host.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "sd-empty";
+    if (/绑定|credentials|login/i.test(msg)) {
+      row.textContent = msg;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-ghost";
+      btn.textContent = t("drafts_go_bind");
+      btn.addEventListener("click", openWxSettingsPane);
+      row.appendChild(btn);
+    } else {
+      row.textContent = msg;
+    }
+    host.appendChild(row);
+    host.appendChild(draftsToolsRow());
   }
+}
+
+function renderDraftItems(host, items) {
+  if (!items.length) {
+    host.innerHTML = `<div class="sd-empty">${t("drafts_hint")}</div><div class="sd-empty">${t("drafts_none")}</div>`;
+    host.appendChild(draftsToolsRow());
+    return;
+  }
+  host.innerHTML = `<div class="sd-empty">${t("drafts_hint")}</div>` + items.map((it) => {
+    const nid = (it.content && it.content.news_item && it.content.news_item[0]) || {};
+    const mediaId = escapeHtml(String(it.media_id || ""));
+    const title = escapeHtml(String(nid.title || "(untitled)"));
+    const ts = it.content && it.content.update_time ? it.content.update_time : 0;
+    const when = ts ? new Date(ts * 1000).toLocaleString() : "";
+    return `<div class="draft-item" data-media="${mediaId}">
+      <div class="draft-meta">
+        <div class="draft-title" title="${title}">${title}</div>
+        <div class="draft-when">${when}</div>
+      </div>
+      <button type="button" class="draft-act" data-draft-edit="${mediaId}" title="${t("drafts_edit_title")}">
+        <svg class="icon icon-sm"><use href="#i-edit"/></svg>
+      </button>
+      <button type="button" class="draft-act" data-draft-update="${mediaId}" title="${t("drafts_update")}">
+        <svg class="icon icon-sm"><use href="#i-send"/></svg>
+      </button>
+      <button type="button" class="draft-del" data-del-draft="${mediaId}" title="${t("drafts_delete")}">
+        <svg class="icon icon-sm"><use href="#i-trash"/></svg>
+      </button>
+    </div>`;
+  }).join("");
+  host.appendChild(draftsToolsRow());
+  host.querySelectorAll("[data-del-draft]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mid = btn.dataset.delDraft;
+      btn.disabled = true;
+      try {
+        await invoke("wx_draft_delete", { mediaId: mid });
+        toast(t("drafts_deleted"), "ok");
+        invalidateDrafts();
+        renderSidebarDrafts(true);
+      } catch (e) {
+        toast(String(e), "err");
+        btn.disabled = false;
+      }
+    });
+  });
+  // Edit = pull the draft INTO the library. A local article already linked
+  // to this media_id (pushed/imported here before) reopens as-is; anything
+  // else imports the cloud content as a new HTML-format article and links
+  // it, so the next Edit always finds the local copy.
+  host.querySelectorAll("[data-draft-edit]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mid = btn.dataset.draftEdit;
+      try {
+        const articles = await invoke("list_articles");
+        const hit = (articles || []).find((a) => a.draft_media_id === mid);
+        if (hit) {
+          setSidebarTab("articles");
+          await openArticle(hit.id);
+          toast(t("drafts_opened_local", hit.title), "ok");
+          return;
+        }
+      } catch (e) { /* fall through to the import path */ }
+      // The list endpoint runs with no_content=1 - the single-draft fetch
+      // carries the body HTML, so Edit pulls exactly the draft being opened.
+      btn.disabled = true;
+      try {
+        const full = await invoke("wx_draft_get", { mediaId: mid });
+        const nid = (full && full.news_item && full.news_item[0]) || {};
+        const html = String(nid.content || "");
+        const title = String(nid.title || "(untitled)");
+        if (!html.trim()) {
+          toast(t("drafts_import_empty"), "err");
+          btn.disabled = false;
+          return;
+        }
+        const meta = await invoke("save_article", {
+          id: null,
+          title,
+          theme: currentTheme,
+          platform: "wechat",
+          format: "html",
+          markdown: html,
+          draftMediaId: mid,
+        });
+        setSidebarTab("articles");
+        await openArticle(meta.id);
+        toast(t("drafts_imported_ok", meta.title), "ok");
+      } catch (e) {
+        toast(String(e), "err");
+      }
+      btn.disabled = false;
+    });
+  });
+  host.querySelectorAll("[data-draft-update]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mid = btn.dataset.draftUpdate;
+      const md = $("editor").value;
+      if (!md.trim()) { toast(t("syncpost_need_save"), "err"); return; }
+      if (articleFormat === "html") { toast(t("drafts_update_html_block"), "err"); return; }
+      btn.disabled = true;
+      try {
+        if (dirty) await persistCurrent(true);
+        if (!currentArticleId) { toast(t("syncpost_need_save"), "err"); btn.disabled = false; return; }
+        const r = await invoke("wx_update_draft", {
+          mediaId: mid,
+          title: currentTitle(),
+          markdown: md,
+          themeId: currentTheme,
+          coverImagePath: null,
+        });
+        const warns = r && r.warnings ? r.warnings : 0;
+        toast(t("drafts_updated") + (warns ? ` (${t("drafts_warns", warns)})` : ""), "ok");
+        // link the local article to this draft so Edit reopens it later
+        try {
+          await invoke("save_article", {
+            id: currentArticleId,
+            title: currentTitle(),
+            theme: currentTheme,
+            platform: currentPlatform,
+            format: articleFormat,
+            markdown: $("editor").value,
+            draftMediaId: mid,
+          });
+        } catch (e) { /* the push itself succeeded; tagging is best-effort */ }
+      } catch (e) {
+        toast(String(e), "err");
+      }
+      btn.disabled = false;
+    });
+  });
 }
 
 function autoTitle(md) {
@@ -1529,6 +1643,7 @@ function renderWxAccounts(st) {
       try {
         await invoke("wx_unbind", { appid: a.appid });
         toast(t("wx_removed_ok"), "ok");
+        invalidateDrafts(); // another account's drafts list, or none at all
         await refreshWxStatus();
       } catch (e) { toast(String(e), "err"); }
     });
@@ -1540,8 +1655,9 @@ async function switchWxAccount(appid) {
   try {
     const st = await invoke("wx_account_switch", { appid });
     toast(t("wx_switched_ok", st.label || st.appid), "ok");
+    invalidateDrafts(); // the cached list belongs to the previous account
     await refreshWxStatus();
-    if (sidebarTab === "drafts") renderSidebarDrafts();
+    if (sidebarTab === "drafts") renderSidebarDrafts(true);
   } catch (e) {
     toast(String(e), "err");
   }
@@ -4456,6 +4572,22 @@ function bindUI() {
         coverImagePath: cover,
       });
       toast(t("push_draft_ok", String(r.draft_media_id).slice(0, 12) + "..."), "ok");
+      // link the local article to the cloud draft: the drafts box "Edit"
+      // button reopens this exact article instead of importing a duplicate
+      try {
+        if (currentArticleId) {
+          await invoke("save_article", {
+            id: currentArticleId,
+            title: currentTitle(),
+            theme: currentTheme,
+            platform: currentPlatform,
+            format: articleFormat,
+            markdown: $("editor").value,
+            draftMediaId: r.draft_media_id,
+          });
+        }
+      } catch (e) { /* push succeeded; tagging is best-effort */ }
+      invalidateDrafts(); // the cloud box now holds one more draft
       window.Mozai && Mozai.celebrate();
     } catch (e) {
       const msg = String(e);

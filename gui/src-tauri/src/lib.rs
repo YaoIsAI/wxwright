@@ -55,6 +55,7 @@ pub fn run() {
             commands::wx_account_switch,
             commands::wx_refresh_account_info,
             commands::wx_draft_list,
+            commands::wx_draft_get,
             commands::wx_draft_delete,
             commands::wx_update_draft,
             commands::wx_bind,
