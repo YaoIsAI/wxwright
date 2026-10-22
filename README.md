@@ -195,7 +195,7 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 - `crates/wxwright-mp` — WeChat MP API adapter (token, material upload, drafts, freepublish)
 - `gui/` — Tauri 2 desktop app + vanilla-JS frontend (`ui/`)
 - `tools/icongen` — icon master → platform icons pipeline
-- `docs/` — agent integration, performance SLOs, manual test matrix, UI audit, publish feasibility
+- `docs/` — agent integration, performance SLOs, manual test matrix, UI audit, publish feasibility, release automation (`release-automation.md`), Gitee mirror sync (`gitee-sync-sop.md`)
 - `examples/sample-article.md` — a feature-complete sample article
 
 ## Known limitations
@@ -206,10 +206,6 @@ Single process, single binary, zero resident services. Boundaries are compile-ti
 - Rich clipboard HTML flavor is attempted on Windows/macOS/Linux alike; it degrades to plain text only where the clipboard cannot accept HTML (headless).
 - clap built-in help text is English; reports are localized (en / zh-CN).
 - macOS builds are ad-hoc signed, not notarized (Gatekeeper blocks the first launch: `xattr -cr /Applications/wxwright.app`, or "Open Anyway" in System Settings).
-
-## Release automation
-
-Tag a version (`git tag v0.13.0 && git push origin v0.13.0`) and GitHub Actions builds everything automatically: Windows NSIS installer, macOS dmg, Linux deb + AppImage, CLI archives for all four targets, plus SHA256SUMS - all attached to the Release. **Prefer not to tag locally?** Bump the version (Cargo.toml + tauri.conf.json), push, then open the repo's Actions tab, pick "Release", run it with the version number (the workflow cross-checks it against Cargo.toml) - the full platform matrix builds and publishes the same way. CI additionally runs the three-platform test matrix and the official puppeteer spec gate. See `docs/release-automation.md` for the release flow and `docs/code-signing.md` for macOS/Windows signing and notarization setup. The Gitee mirror (`gitee.com/YaoIsAI/wxwright`) is synced after every release - the standard double-push flow lives in `docs/gitee-sync-sop.md`.
 
 ## Author
 

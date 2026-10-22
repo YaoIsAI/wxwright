@@ -12,6 +12,20 @@ git push origin v1.0.1
 # 3. Actions 跑完后，Release 页面自动出现全部产物（generate_release_notes 自动写更新说明）
 ```
 
+### 方式 B：不本地打 tag（workflow_dispatch，0.12.2 起）
+
+到仓库 Actions 页 → 选「Release」→ Run workflow → 输入版本号（不带 v）。
+guard-version 会核对该版本与 workspace `Cargo.toml` 一致，然后自动打 tag、
+构建全平台产物并发布。适合纯网页操作或 CI 环境触发。
+
+> 版本号需要同步四处：workspace `Cargo.toml`、`gui/src-tauri/tauri.conf.json`、
+> `gui/ui/app.js` 的 `GUI_VERSION`，以及 `cargo update --precise` 刷新 Cargo.lock。
+
+## Gitee 镜像
+
+Release 工作流只管 GitHub。Gitee（gitee.com/YaoIsAI/wxwright）的 main/标签
+镜像与发行版附件同步，见 `docs/gitee-sync-sop.md`。
+
 ## 产物矩阵
 
 | 平台 | 产物 | 说明 |
