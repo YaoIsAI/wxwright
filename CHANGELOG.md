@@ -8,6 +8,48 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.17.0] - 2026-10-30
+
+### Added
+- **In-app online updates.** The version number at the bottom right is now the
+  update entry: a background check against the latest GitHub release turns it
+  into an accent button when a newer version exists, one click downloads the
+  signed installer and reports progress in place. Windows runs the NSIS
+  installer passively and relaunches; macOS and Linux swap the bundle and
+  restart. Every artifact is verified against the embedded minisign public key
+  before execution, and the update path honours the system proxy. Failures are
+  classified (network / missing manifest / signature / install) so a release
+  without a feed is not misreported as a proxy problem.
+- **Signed release feed.** The release workflow now builds updater artifacts
+  (`createUpdaterArtifacts`), signs them with the maintainer's minisign key,
+  composes `latest.json` (`tools/make-latest-json.py`), attaches it to the
+  release and verifies the asset plus the signing-key id. Without the signing
+  secrets the pipeline still ships unsigned archives and the update feed stays
+  dormant, so nothing breaks for contributors.
+- **NSIS is the Windows release format.** The installer is per-user
+  (`currentUser`), bilingual (Simplified Chinese / English), and doubles as the
+  updater payload - no MSI is needed.
+- A premium README trio: English and Chinese editions for GitHub, plus
+  `README_GITEE.md` with Gitee-only badges, release links and clone/author
+  URLs. `docs/gitee-sync-sop.md` now defines the two-document, two-push
+  standards for keeping both repositories on the same commit tree.
+
+### Changed
+- **Every platform preview shell now honours the mock device's status bar.**
+  Shells had reserved a fixed 34px while the iOS frame draws a 54px status
+  overlay, so the clock and icons straddled the white header and the cover
+  image. The inset is now derived from the selected device, and switching
+  devices re-renders the active shell.
+- **The Xiaohongshu shell matches the current note-detail layout.** Fixed
+  white status + navigation bar (back, author, Follow pill, share), full-width
+  cover with a `1/N` counter, carousel dots below the image, title/body/navy
+  hashtags, a white comment list, and a fixed bottom bar with the comment pill
+  and like/collect/comment counts. The author and Follow action live in the
+  top bar, as in the real product.
+- `docs/release-automation.md` now covers updater signing, the feed format and
+  the key rotation flow; `docs/auto-update.md` records the NSIS/updater design
+  and the exact release checklist.
+
 ## [0.16.0] - 2026-10-21
 
 ### Added

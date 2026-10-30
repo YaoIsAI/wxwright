@@ -25,14 +25,18 @@ wxwright 是**面向社交媒体创作的桌面客户端 + Rust 引擎**：一�
 crates/wxwright-core/    引擎：parser(IR) / render(方言) / normalizer / validator(R-规则) /
                          theme(TOML) / platform(平台注册表+出口适配) / img / clipboard / htmlutil
 crates/wxwright-cli/     CLI：convert / validate / fix / copy / draft / publish / platforms / doctor / agent-card / mcp
-crates/wxwright-mcp/     MCP stdio server（9 工具，手写 JSON-RPC，per-request catch_unwind）
+crates/wxwright-mcp/     MCP stdio server（12 工具，手写 JSON-RPC，per-request catch_unwind）
 crates/wxwright-mp/      公众号 API（凭据 keyring / 草稿 / freepublish / mmbiz 上传）
 gui/src-tauri/           Tauri 2 桌面客户端后端（Rust；不是 crates/ 下的成员）
 gui/src-tauri/src/       ai.rs(Provider/SSE/complete) · jobs.rs(统一 AI 生成运行时) · social.rs(海外平台 BYO 一键登录/凭据) · comfy.rs(ComfyUI) ·
+                         updater.rs(在线更新：check/install + 进度事件) ·
                          articles.rs(文章库 frontmatter) · extract.rs(PDF/DOCX/HTML 文本提取) · commands.rs · lib.rs
 gui/ui/                  index.html · app.js(主逻辑,~4100行) · ai-jobs.js(生成任务桥) · pet.js(宠物墨仔) ·
                          brand-logos.js(17厂商+5平台官方矢量,内嵌 path/dataURI) · styles.css · qrcode.jpg
 tools/icongen/           图标生成（1024px 超采样→Lanczos3→8帧 ICO）
+tools/make-latest-json.py
+                         从 Release 产物合成 updater 清单 latest.json（含签名
+                         key id 与 tauri.conf pubkey 的交叉校验）
 tools/verify-macos-signature.py
                          离线校验 macOS Mach-O 内嵌签名（CodeDirectory 页哈希
                          全量比对，无需 Mac；发布前验 CLI 包 / dmg 内二进制）
@@ -87,7 +91,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
    必须 grep `<path` 验证）；Simple Icons 没有的（xAI/Zhipu/LinkedIn）取 Wikimedia 官方素材
    并在 CHANGELOG 注明来源。不要手绘品牌标。
 8. **SVG 组件插入必须作为文档末尾独立块**（光标插入会嵌进列表/代码块导致渲染失效）。
-9. **MCP 工具面**（9 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
+9. **MCP 工具面**（12 工具）由 `tool_surface_matches_agent_card` 漂移测试锁定：
    改工具清单必须同步 agent card + README，否则 CI 红。
 10. **修改 logo/图标**需三处同步：master.svg、index.html symbol、icongen 重跑。
     icongen 一次产出全部平台产物：Windows/Linux 满幅 PNG+ICO，**macOS 官方规格
@@ -186,8 +190,16 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 52 | **测试隔离只覆盖了本平台的环境变量**（多账号配置测试只重定向了 Windows 的 `APPDATA`，而 `util::config_root()` 在 Linux/macOS 读 `XDG_CONFIG_HOME`/`HOME`——CI 上解析到真实 home 的 `.config/wxwright`，目录不存在 → `NotFound`，本地 Windows 绿、CI 双平台红） | 本地全绿的 PR 在 CI 双平台红一轮 | 重定向「配置根目录」类测试前，先看 `config_root()` 的**全部分支输入**（Windows=APPDATA；Unix=XDG_CONFIG_HOME 优先、HOME 兜底），三个都指向同一个临时目录并在 Drop 里恢复；临时目录必须 `create_dir_all(dir.join("wxwright"))` 预建子目录 |
 | 53 | **工作流用 GITHUB_TOKEN 推的 tag 不会触发其他工作流**（「打 tag → 触发 Release」的 dispatch 壳跑成功了、tag 也推上去了，但 Release 流水线**静默没启动**——GitHub 明文规定 GITHUB_TOKEN 产生的事件不再触发 workflow run，防递归；job 全绿、tag 在远端，发布却没发生） | 发布「成功」了但什么都没发；只有回头看 `gh run list --workflow=release.yml` 才发现没新 run | **任何需要级联触发工作流的事件，都不能由 GITHUB_TOKEN 制造**。正解是把 dispatch 触发做进目标工作流本体（release.yml 自带 `workflow_dispatch` + `guard-version` 岗哨核对 Cargo.toml + softprops 显式 `tag_name: ${{ env.RELEASE_TAG }}`，单工作流双触发）；临时解锁可用**本地凭据**删掉远端 tag 重推。排查看 `gh run list --workflow=release.yml` 而不是 dispatch 壳的绿勾 |
 | 54 | **macOS 图标用了 Windows 满幅方图**（icns 直接装满幅位图：1024 画布顶到四边。苹果官方规范是 1024 画布中央 824px 连续曲率 squircle（超椭圆 n=5）+ 透明边距 + 柔和投影；Dock/Finder 按位图原样渲染，满幅=比所有标准图标大一圈。v0.12.1 用户在 MacBook Air 实机发现） | 视觉不专业，与系统图标同屏突兀；此前每个 dmg 版本都带着这个问题 | icongen 自动合成 macOS 版（squircle 遮罩 + 824 网格 + 模板投影 → icon.icns），从管线根上杜绝；唯一入口 `cargo run --release -p icongen`，icons/ 产物禁止手改（`tauri icon` 会用满幅源覆盖 icns）。规范对照表、验证命令、发版后 dmg 复验见 `docs/icon-sop.md` |
+| 55 | **更新器「签名私钥」与客户端内置「公钥」不是一对**（发布端换了钥匙、或 secrets 填成另一把 key；客户端只认编译期的 `plugins.updater.pubkey`，验签失败会拒绝安装且用户只看到一句「签名校验失败」） | 全量用户无法自动更新，只能手动重装；每一次发布都「成功」但没人能升级 | 发布脚本 `tools/make-latest-json.py` 解出签名里的 minisign key id 与 `tauri.conf.json` 公钥比对，不一致直接让 job 红；密钥轮换必须走 `docs/auto-update.md` 的两步流程（过渡版用旧私钥签名 + 新公钥内置，用 `vars.UPDATER_PUBKEY` 放行校验） |
+| 56 | **想当然打开 `requireSignedVersion`**（它要求签名 trusted comment 里带版本号，而 tauri-cli 2.11.4 只写 `timestamp` 与 `file`；开启后所有更新都会被拒） | 更新通道全灭，且错误看起来像「签名坏了」 | 保持 `false`；等 CI 的 tauri-cli 升级到会写入版本的版本后再评估。代价（可被降级到旧的已签名版本）记录在 `docs/auto-update.md` 第 8 节 |
+| 57 | **更新清单/资产静默缺失**（`latest.json` 没挂上 Release、某个平台缺 `.sig`、macOS 两个架构的 `wxwright.app.tar.gz` 同名覆盖） | 客户端永远显示「已是最新」，或只有部分平台能升级，而流水线全绿 | 构建产物收集必须包含 `*.sig`；`latest.json` 由脚本做全平台完整性与 key id 校验；macOS 归档在签名后按架构改名；发布后用 `gh api` 断言 `latest.json` 真在资产列表里（release.yml 已内置） |
+| 58 | **渠道壳按固定 34px 预留状态栏，与样机真实状态栏高度不一致**（iOS 壳 `.device-status` 是 54px 覆盖层，`shellTop()` 只留 34px：时钟/信号一半在白底导航、一半压在红色封面上；Android 34px 恰好对所以一直没暴露） | 用户一眼看出样机「顶部状态栏坏了」，所有平台壳都中招 | 状态栏留白必须由设备类型推导（`statusBarInset()`：iOS 54 / Android 34，`homeBarInset()` 同理），禁止硬编码；切换设备要重渲染当前渠道壳，否则留白不更新 |
+| 59 | **Gitee 首页直接复用 GitHub 版 README**（徽章、下载、克隆、作者链接全指向 GitHub） | Gitee 用户被导流到可能访问不了的站点，站点信息不一致 | 维护 `README_GITEE.md`（Gitee 徽章/发行版/克隆/作者，禁止 GitHub 链接），Gitee「默认页面」指向它；`docs/gitee-sync-sop.md` 规定两套说明与两套推送标准，代码树保持同一 commit |
+| 58 | **清单只写带安装器后缀的键**（NSIS 安装版查 `windows-x86_64-nsis`，便携 exe 的 bundle_type 为空、只查 `windows-x86_64`；本地联调时最容易漏） | 便携用户收不到更新，联调时误判成 feed/网络故障 | `make-latest-json.py` 同时写 `windows-x86_64` 与 `-nsis`（以及 AppImage/deb 变体）；自建本地 feed 时手动补基键，做法见 `docs/auto-update.md` 6.1 |
+| 59 | **以为 bundler 会给 deb 签名**（`tauri-bundler` 的 `debian.rs` 没有 `sign_updaters` 调用，只有 NSIS/MSI/AppImage/macOS 产物生成 `.sig`） | 清单脚本因「deb 有文件但无签名」直接失败，Linux 发版必红；若放宽则 deb 用户永远收不到更新 | release.yml 在构建后用 `cargo tauri signer sign` 以同一把 key 补签 `*.deb.sig`，再由清单脚本正常收录 `linux-x86_64-deb` |
+| 60 | **先用 bundler 生成 updater `.sig`、再对同一个 exe 做 Authenticode 签名**（signtool 重写 PE，字节一变 minisign 必然对不上） | 启用 PFX 的那天，所有 Windows 客户端下载后验签失败，无法自动更新，而发布全绿 | 任何改动安装包字节的签名都必须发生在最后，并在之后重跑 `cargo tauri signer sign` 重建 `.sig` 再合成清单（release.yml 的 PFX step 已内置重签；本机签名流程见 `docs/code-signing.md`） |
 
-## 8. 当前能力快照 / Feature map（2026-09-26，v0.9.0+）
+## 8. 当前能力快照 / Feature map（2026-10-30，v0.17.0+）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
   SVG 组件库（侧边栏「组件」tab：8 组件+分类筛选+缩略卡一键插入+手风琴调参+AI 生成+传图/AI 生图占位+取色器；弹窗已退役）/
@@ -202,8 +214,13 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   样板）/ **斑马纹表格**（meta.table_zebra 开关 + table_zebra_bg token）/
   **AI 配图**（jobs kind `illustrate`：文本模型规划锚点插图位 → 云端
   生图 → 按平台画像 fit → 写回文章，工具栏火花按钮）/ **图像跨平台裁剪**
-  （`img::fit_to_profile` + `PlatformSpec::image_profile()` + CLI `image fit`）。
-- 测试 215（208 常规 + 7 条 live 冒烟 ignored）；版本 0.11.2（workspace+tauri.conf）。
+  （`img::fit_to_profile` + `PlatformSpec::image_profile()` + CLI `image fit`）/
+  **在线更新**（右下角版本号即入口：启动 3 秒静默检查、每 6 小时复查、发现新版本
+  变强调按钮，点击下载 + minisign 验签 + NSIS/AppImage/app 原地安装；`updater.rs`
+  两个命令 + `update-progress` 事件；发布侧 `latest.json` 由
+  `tools/make-latest-json.py` 合成，流程见 `docs/auto-update.md`）。
+- 测试 219（212 常规 + 7 条 live 冒烟 ignored）；版本 0.17.0（workspace+tauri.conf
+  + app.js GUI_VERSION 三处同步）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源；`wxwright image fit --platform <id>` 把文章图集裁到目标平台
@@ -240,6 +257,8 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 - [ ] 改过 JS → `node --check` 每个 `gui/ui/*.js`（CI 已加此门禁）
 - [ ] 无 emoji 混入产品文件
 - [ ] release 构建同步 dist + 重启 GUI
+- [ ] 发版时版本号三处同步（workspace Cargo.toml / tauri.conf.json / app.js GUI_VERSION）
+- [ ] 更新器相关改动 → `tools/make-latest-json.py` 用假产物跑通（签名匹配 / 不匹配 / 无签名三条路径）
 - [ ] CHANGELOG.md（Keep a Changelog 格式）+ 必要时 PRD §15 对照表
 - [ ] 浏览器/桌面截图证据交给用户
 - [ ] git commit（含新踩的坑 → 更新本文档第 7 节）

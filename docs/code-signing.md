@@ -32,6 +32,12 @@
 - `release.yml` 里休眠的 PFX 签名 step 只适用于「能导出 PFX 的证书」；2023 年起
   CA/B 规范要求私钥进硬件，新购证书基本都给不了 PFX，该 step 保留仅为将来
   云签名 API 类方案预留。走 Certum 就本地签，不改 CI。
+- **Authenticode 会改写 PE 字节，使 bundler 生成的 updater `.sig` 失效**。
+  CI 的 PFX step 已在签名后自动重跑 `cargo tauri signer sign`；如果你按上面
+  「本机签完再传 Release」的流程操作，签完 `*-setup.exe` 后必须重签：
+  `cargo tauri signer sign wxwright_<ver>_x64-setup.exe`，再重跑
+  `tools/make-latest-json.py` 更新 `latest.json`。顺序反了，客户端会报
+  「更新包签名校验失败」并拒绝安装。
 
 ## macOS（Gatekeeper / notarization）
 

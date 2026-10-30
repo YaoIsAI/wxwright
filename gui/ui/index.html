@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=33" />
+  <link rel="stylesheet" href="styles.css?v=34" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -393,7 +393,10 @@
     <span class="status-author">by <b>AI瑶</b> · 公众号 <button id="malong-btn" class="linklike malong" title="公众号二维码">码聋</button> ·
       <a href="https://github.com/YaoIsAI" id="link-github">github.com/YaoIsAI</a>
     </span>
-    <span class="status-meta" id="status-meta">wxwright</span>
+    <button type="button" id="status-meta" class="status-meta update-chip" data-i18n-title="update_check_idle_title">
+      <span id="status-meta-dot" class="update-dot" hidden></span>
+      <span id="status-meta-text">wxwright</span>
+    </button>
   </footer>
 
   <!-- ---------------------------------------------------- settings modal -->
@@ -879,6 +882,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=56"></script>
+  <script src="app.js?v=59"></script>
 </body>
 </html>

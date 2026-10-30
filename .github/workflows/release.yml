@@ -128,6 +128,10 @@ jobs:
     # always false - configured secrets would have been silently ignored.
     env:
       SIGNING_PFX: ${{ secrets.WINDOWS_PFX_BASE64 }}
+      # Updater signing (minisign). Both empty = releases still build, but no
+      # latest.json is published and in-app updates stay dormant.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
@@ -178,7 +182,16 @@ jobs:
           else
             target_args=""
           fi
-          cargo tauri build --bundles ${{ matrix.bundles }} $target_args -- --locked
+          # updater artifacts (the .app.tar.gz + minisign .sig) only exist when
+          # the signing key is configured; the overlay config turns them on
+          # without forcing every local `cargo tauri build` to hold the key
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            updater_config="--config src-tauri/tauri.updater.conf.json"
+          else
+            echo "::warning title=Updater signing skipped::TAURI_SIGNING_PRIVATE_KEY is not set - this release will not carry updater artifacts."
+            updater_config=""
+          fi
+          cargo tauri build --bundles ${{ matrix.bundles }} $target_args $updater_config -- --locked
           # the cargo workspace shares one target dir at the repo root, while
           # this step's working-directory is gui/ - anchor to the workspace.
           # with a --target triple the bundle lands under target/<triple>/release
@@ -193,10 +206,54 @@ jobs:
             exit 1
           }
           codesign -dvv "$app" 2>&1 | grep -E "Identifier|Signature size" || true
+          # the updater archive has no arch in its name, so the two macOS jobs
+          # would overwrite each other when artifacts are merged - rename now
+          if [ -n "${{ matrix.target }}" ]; then arch=x86_64; else arch=aarch64; fi
+          app_tar="$GITHUB_WORKSPACE/$bundle_root/bundle/macos/wxwright.app.tar.gz"
+          if [ -f "$app_tar" ]; then
+            mv "$app_tar" "${app_tar%.app.tar.gz}_${arch}.app.tar.gz"
+            mv "$app_tar.sig" "${app_tar%.app.tar.gz}_${arch}.app.tar.gz.sig"
+            echo "renamed updater archive: wxwright_${arch}.app.tar.gz"
+          elif [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::updater archive missing - createUpdaterArtifacts did not run"
+            exit 1
+          fi
       - name: Build GUI bundles (windows/linux)
         if: matrix.label == 'windows' || matrix.label == 'linux'
         working-directory: ${{ env.GUI_DIR }}
-        run: cargo tauri build --bundles ${{ matrix.bundles }} -- --locked
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            updater_config="--config src-tauri/tauri.updater.conf.json"
+          else
+            echo "::warning title=Updater signing skipped::TAURI_SIGNING_PRIVATE_KEY is not set - this release will not carry updater artifacts."
+            updater_config=""
+          fi
+          cargo tauri build --bundles ${{ matrix.bundles }} $updater_config -- --locked
+      # tauri-bundler signs NSIS/MSI/AppImage/macOS artifacts but not .deb
+      # (tauri-bundler/src/bundle/linux/debian.rs has no sign_updaters call).
+      # deb-installed clients probe `linux-x86_64-deb`; without a signature the
+      # feed composer would either fail or omit the key, so sign it here with
+      # the same key the client already pins.
+      - name: Sign the deb updater artifact
+        if: matrix.label == 'linux' && env.TAURI_SIGNING_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          deb=$(find target -path '*/release/bundle/deb/*.deb' | head -1)
+          [ -n "$deb" ] || { echo "::error::no .deb found to sign"; exit 1; }
+          cargo tauri signer sign "$deb"
+          ls -l "$deb.sig"
+      - name: Verify updater signatures
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          sigs=$(find target -path '*/release/bundle/*' -name '*.sig' | wc -l)
+          echo "updater signatures: $sigs"
+          [ "$sigs" -gt 0 ] || {
+            echo "::error::updater signing was enabled but no .sig files were produced"
+            exit 1
+          }
+          find target -path '*/release/bundle/*' -name '*.sig' -print
       # Signing is dormant until the maintainer adds the two secrets (see
       # docs/code-signing.md): without them the step skips and the release
       # ships unsigned exactly as before - zero-risk infrastructure-in-waiting.
@@ -221,6 +278,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "signtool failed: $LASTEXITCODE" }
           Remove-Item $pfx
           Write-Output "signed: $($bundle.FullName)"
+          # Authenticode rewrites the PE, which invalidates the minisign .sig
+          # the bundler produced. Regenerate it or every in-app update fails
+          # signature verification the day this dormant step is enabled.
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            cargo tauri signer sign $bundle.FullName
+            if ($LASTEXITCODE -ne 0) { throw "updater re-sign failed: $LASTEXITCODE" }
+            Write-Output "updater signature regenerated after Authenticode"
+          }
       - name: Collect bundle artifacts
         shell: bash
         run: |
@@ -231,7 +296,7 @@ jobs:
           for d in target/release/bundle target/*/release/bundle; do
             [ -d "$d" ] || continue
             find "$d" -type f \
-              \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" \) \
+              \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.sig" \) \
               -exec cp {} dist-artifacts/ \;
           done
           # a collection step that finds nothing must fail loudly - the one
@@ -261,10 +326,32 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # The manifest is the updater's only source of truth: it names one
+      # artifact per platform and carries the minisign signature the plugin
+      # verifies before installing. No signatures (key not configured) means
+      # the script warns and writes nothing, so unsigned releases still ship.
+      - name: Compose updater feed (latest.json)
+        env:
+          # Key rotation escape hatch: the transition release is signed with the
+          # OLD key while the app already pins the NEW pubkey, so the default
+          # cross-check (signature key id == tauri.conf pubkey) must be pointed
+          # at the old key for that one release (docs/auto-update.md).
+          UPDATER_PUBKEY: ${{ vars.UPDATER_PUBKEY }}
+        run: |
+          pubkey_arg=()
+          if [ -n "$UPDATER_PUBKEY" ]; then pubkey_arg=(--pubkey "$UPDATER_PUBKEY"); fi
+          python3 tools/make-latest-json.py \
+            --dir artifacts \
+            --tag "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes "Release notes: https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" \
+            --output artifacts/latest.json \
+            "${pubkey_arg[@]}"
+      # after the feed exists so its hash is covered too
       - name: Generate checksums
         run: |
           cd artifacts
-          find . -type f -not -name "*.sha256" -exec sha256sum {} \; > SHA256SUMS.txt
+          find . -type f -not -name "SHA256SUMS.txt" -exec sha256sum {} \; > SHA256SUMS.txt
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -275,3 +362,21 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/*
+      # An update feed that silently failed to attach looks exactly like a
+      # healthy release from the app's side - the client would keep reporting
+      # "up to date" forever. Assert the asset is really on the release.
+      - name: Verify the update feed is attached
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f artifacts/latest.json ]; then
+            echo "No latest.json (updater signing not configured) - in-app updates stay dormant."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq '.assets[].name' | grep -qx "latest.json" || {
+            echo "::error::latest.json was not attached to the release - clients would never see this update"
+            exit 1
+          }
+          echo "latest.json is attached to $RELEASE_TAG"

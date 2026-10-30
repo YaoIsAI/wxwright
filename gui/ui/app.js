@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.16.0";
+const GUI_VERSION = "0.17.0";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
@@ -20,6 +20,19 @@ const I18N = {
     stab_components: "组件",
     drafts_hint_other: "当前平台的云端草稿箱暂未接入；公众号平台的草稿箱在此查看。", theme: "主题", copy: "复制富文本", ai: "AI 助手",
     ready: "就绪", converting: "转换中...", not_saved: "未保存", saved: "已保存",
+    update_check_idle_title: "检查更新（有新版本时点击即可在线升级）",
+    update_available: (v) => `wxwright ${GUI_VERSION} → ${v}`,
+    update_available_title: (v) => `新版本 v${v} 已就绪，点击立即更新`,
+    update_latest: "已是最新版本",
+    update_downloading: "正在下载更新…",
+    update_progress: (p) => `正在下载更新 ${p}%`,
+    update_installing: "正在安装，wxwright 即将重启…",
+    update_started: "安装程序已启动，wxwright 会自动重启",
+    update_err_network: "更新检查失败：无法连接更新服务器（代理或网络可能拦截了 GitHub）",
+    update_err_feed: "更新检查失败：没有取到有效的更新清单（该版本可能尚未发布更新源）",
+    update_err_signature: "更新包签名校验失败，已阻止安装（请到 Releases 手动下载）",
+    update_err_install: "更新安装失败（请到 Releases 手动下载安装包）",
+    update_err_generic: "更新失败，请稍后重试",
     save: "保存", empty_library: "还没有文章\n点击右上角 + 新建",
     search_ph: "搜索文章...",
     chars: "字符", words: "词数", images: "图片",
@@ -185,6 +198,19 @@ const I18N = {
     stab_components: "Components",
     drafts_hint_other: "No cloud drafts box for this platform yet; the WeChat MP drafts box shows here.", theme: "Theme", copy: "Copy rich text", ai: "AI",
     ready: "Ready", converting: "Converting...", not_saved: "unsaved", saved: "saved",
+    update_check_idle_title: "Check for updates (click to upgrade when one is available)",
+    update_available: (v) => `wxwright ${GUI_VERSION} → ${v}`,
+    update_available_title: (v) => `Version v${v} is ready - click to update now`,
+    update_latest: "You are on the latest version",
+    update_downloading: "Downloading update…",
+    update_progress: (p) => `Downloading update ${p}%`,
+    update_installing: "Installing - wxwright will restart shortly…",
+    update_started: "Installer launched; wxwright will restart automatically",
+    update_err_network: "Update check failed: cannot reach the release server (a proxy or network may be blocking GitHub)",
+    update_err_feed: "Update check failed: no valid update manifest was found (this release may not publish one yet)",
+    update_err_signature: "Update signature verification failed; installation was blocked (download manually from Releases)",
+    update_err_install: "Update installation failed (download the installer from Releases)",
+    update_err_generic: "Update failed; please try again later",
     save: "Save", empty_library: "No articles yet.\nClick + to create.",
     search_ph: "Search articles...",
     chars: "chars", words: "words", images: "images",
@@ -467,6 +493,7 @@ function applyI18n() {
     });
   }
   localStorage.setItem("wxwright-lang", lang);
+  if (typeof renderUpdateChip === "function") renderUpdateChip();
 }
 
 /* -------------------------------------------------------------- preview */
@@ -2701,6 +2728,7 @@ const SHELL_ICONS = {
   chart: "M4.5 20v-9m6 9V4m6 16v-6",
   search: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm9.5 3.5L15.5 16",
   dots: "M5 12h.01M12 12h.01M19 12h.01",
+  edit: "M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z",
   /* 在看/推荐: the six-ray flower WeChat uses for its "wow" mark */
   wow: "M12 4.5v4.2M12 15.3v4.2M5.7 8.25l3.64 2.1M14.66 13.65l3.64 2.1M5.7 15.75l3.64-2.1M14.66 10.35l3.64-2.1",
 };
@@ -2710,9 +2738,19 @@ function shellIcon(name, size, color, opts = {}) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill}" stroke="${stroke}" stroke-width="${opts.sw || 1.7}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${SHELL_ICONS[name]}"/></svg>`;
 }
 /* the phone mock already draws the status bar + notch over the screen; shells
-   only reserve clear space for it */
+   reserve the mock's real status-bar height (iOS 54px / Android 34px), otherwise
+   the clock and battery sit on the first content row and lose contrast */
+function deviceKind() {
+  return localStorage.getItem("wxwright-device") || "ios";
+}
+function statusBarInset() {
+  return deviceKind() === "ios" ? 54 : 34;
+}
+function homeBarInset() {
+  return deviceKind() === "ios" ? 20 : 8;
+}
 function shellTop(bg) {
-  return `<div style="height:34px;background:${bg};"></div>`;
+  return `<div style="height:${statusBarInset()}px;background:${bg};"></div>`;
 }
 function shellAvatar(size, igRing) {
   const inner = `<span style="width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#2F6CEA,#7A50EC);color:#fff;font-size:${Math.round(size * 0.4)}px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">瑶</span>`;
@@ -2721,10 +2759,10 @@ function shellAvatar(size, igRing) {
   }
   return `<span style="flex:none;width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;">${inner}</span>`;
 }
-function shellCaption(caption, tagColor) {
+function shellCaption(caption, tagColor, tagWeight = 600) {
   let cap = escapeHtml(caption || "");
   if (tagColor !== null) {
-    cap = cap.replace(/#[^#\s]{1,40}(#|(?=\s|$))/g, (m) => `<span style="color:${tagColor};font-weight:600;">${m}</span>`);
+    cap = cap.replace(/#[^#\s]{1,40}(#|(?=\s|$))/g, (m) => `<span style="color:${tagColor};font-weight:${tagWeight};">${m}</span>`);
   }
   return cap.replace(/\n/g, "<br/>");
 }
@@ -2774,8 +2812,9 @@ function shellStr() {
   };
 }
 
-/* 1) 小红书笔记详情页: 全出血 3:4 封面轮播 + 圆点 + 图上悬浮操作列(点赞/收藏/评论
-   白圈) + 16px 粗标题 + 话题红标 + 底部固定条(头像/昵称/红色关注 + 说点什么 + 心/星) */
+/* 1) 小红书笔记详情页（2025 现版）：白底状态栏 + 导航栏(返回/作者头像昵称/关注/分享)
+   + 全宽封面(右上 1/N 计数) + 封面下轮播圆点 + 标题/正文/深蓝话题/时间 + 平铺评论区
+   + 底部固定条(说点什么 + 赞/藏/评)，作者与关注在顶栏而不是底栏 */
 function xhsNoteShell(model) {
   const S = shellStr();
   const accent = "#FF2442";
@@ -2784,55 +2823,61 @@ function xhsNoteShell(model) {
   // separate title field, so drop the duplicate
   let cap = model.caption || "";
   if (model.title && cap.startsWith(model.title)) cap = cap.slice(model.title.length).replace(/^\n+/, "");
-  const overlay = imgs.length
-    ? `<div style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:5px;">
-        ${imgs.slice(0, 9).map((_, i) => `<i style="width:6px;height:6px;border-radius:50%;background:${i === 0 ? "#fff" : "rgba(255,255,255,0.45)"};display:block;"></i>`).join("")}
-      </div>
-      <div style="position:absolute;right:10px;bottom:14px;display:flex;flex-direction:column;gap:9px;">
-        ${[["heart", "1.2k", true], ["star", "856", false], ["chat", "45", false]].map(([n, c, hot]) => `
-          <span style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-            <span style="width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;box-sizing:border-box;">${shellIcon(n, 18, hot ? accent : "#fff", { filled: !!hot })}</span>
-            <b style="color:#fff;font-size:11px;font-weight:600;">${c}</b>
-          </span>`).join("")}
+  const n = imgs.length;
+  const media = imgs.length
+    ? `<img src="${imgs[0]}" alt="" style="width:100%;display:block;" />`
+    : shellMedia([], "3 / 4", model.title, accent, cap);
+  const counter = n > 1
+    ? `<span style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.35);color:#fff;font-size:11px;font-weight:500;line-height:1.5;padding:2px 9px;border-radius:999px;">1/${n}</span>`
+    : "";
+  const dots = n > 1
+    ? `<div style="display:flex;justify-content:center;gap:5px;padding-top:8px;">
+        ${imgs.map((_, i) => `<i style="width:5px;height:5px;border-radius:50%;background:${i === 0 ? accent : "#D8D8D8"};display:block;"></i>`).join("")}
       </div>`
     : "";
   return shellDoc("", `
-    ${shellTop("#FFFFFF")}
-    <div style="position:relative;">
-      ${shellMedia(imgs, "3 / 4", model.title, accent, cap)}
-      ${overlay}
-    </div>
-    <div style="padding:12px 14px 0;">
-      <div style="font-size:16px;font-weight:700;color:#333;line-height:1.45;">${escapeHtml(model.title || "")}</div>
-      <div style="font-size:15px;color:#333;line-height:1.7;margin-top:8px;">${shellCaption(cap, accent)}</div>
-      <div style="font-size:12px;color:#999;margin-top:10px;">${S.edited} · ${S.ip}</div>
-      <div style="background:#F8F8F8;border-radius:10px;padding:12px 12px 10px;margin-top:12px;">
-        <div style="font-size:13px;color:#999;">${S.cmtCount}</div>
-        ${[[S.cmtName1, S.cmtText1], [S.cmtName2, S.cmtText2]].map(([n, c]) => `
-          <div style="display:flex;gap:8px;margin-top:10px;">
-            <span style="flex:none;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#FFB199,#FF2442);"></span>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;color:#999;">${n}</div>
-              <div style="font-size:14px;color:#333;line-height:1.5;margin-top:2px;">${c}</div>
-              <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:#999;margin-top:4px;">
-                <span>${S.date}</span><span>${S.cmtReply}</span><span style="margin-left:auto;">${shellIcon("heart", 12, "#999")}</span>
-              </div>
-            </div>
-          </div>`).join("")}
-        <div style="font-size:12px;color:#999;margin-top:10px;border-top:1px solid #ECECEC;padding-top:8px;">${S.cmtOpen}</div>
+    <div style="position:fixed;top:0;left:0;right:0;z-index:10;background:#fff;">
+      ${shellTop("#FFFFFF")}
+      <div style="height:46px;display:flex;align-items:center;gap:9px;padding:0 14px;">
+        ${shellIcon("back", 21, "#222")}
+        ${shellAvatar(29)}
+        <span style="font-size:15px;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${S.persona}</span>
+        <span style="flex:1;"></span>
+        <span style="flex:none;border:1px solid ${accent};color:${accent};font-size:12px;font-weight:600;line-height:1.3;padding:3px 12px;border-radius:999px;">${S.follow}</span>
+        ${shellIcon("send", 20, "#222")}
       </div>
     </div>
-    <div style="height:64px;"></div>
-    <div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #F3F3F3;display:flex;align-items:center;gap:8px;padding:8px 12px;">
-      ${shellAvatar(30)}
-      <span style="font-size:13px;font-weight:600;color:#333;flex:none;">${S.persona}</span>
-      <span style="background:${accent};color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:999px;flex:none;">${S.follow}</span>
-      <span style="flex:1;"></span>
-      <span style="background:#F5F5F5;color:#999;font-size:12px;padding:6px 12px;border-radius:999px;flex:none;">${S.say}</span>
-      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("heart", 19, "#333", { filled: true })}<b style="font-size:12px;color:#333;font-weight:600;">1.2k</b></span>
-      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("star", 19, "#333")}<b style="font-size:12px;color:#333;font-weight:600;">856</b></span>
-      <span style="display:flex;align-items:center;gap:3px;">${shellIcon("chat", 19, "#333")}<b style="font-size:12px;color:#333;font-weight:600;">45</b></span>
-      ${shellIcon("send", 19, "#333")}
+    <div style="height:${statusBarInset() + 46}px;"></div>
+    <div style="position:relative;">
+      ${media}
+      ${counter}
+    </div>
+    ${dots}
+    <div style="padding:${n > 1 ? 8 : 14}px 16px 0;">
+      <div style="font-size:17px;font-weight:700;color:#333;line-height:1.45;">${escapeHtml(model.title || "")}</div>
+      <div style="font-size:15px;color:#333;line-height:1.7;margin-top:6px;">${shellCaption(cap, "#1B375E", 400)}</div>
+      <div style="font-size:12px;color:#999;margin-top:10px;">${S.edited} · ${S.ip}</div>
+    </div>
+    <div style="padding:0 16px;margin-top:16px;">
+      <div style="font-size:13px;color:#999;">${S.cmtCount}</div>
+      ${[[S.cmtName1, S.cmtText1, "#FFB199"], [S.cmtName2, S.cmtText2, "#9DB4E8"]].map(([name, text, tint], i) => `
+        <div style="display:flex;gap:9px;margin-top:12px;padding-bottom:12px;border-bottom:1px solid #F2F2F2;">
+          <span style="flex:none;width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,${tint},${i ? "#5B79C9" : accent});"></span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;color:#999;">${name}</div>
+            <div style="font-size:14px;color:#333;line-height:1.55;margin-top:3px;">${text}</div>
+            <div style="display:flex;align-items:center;gap:12px;font-size:11px;color:#999;margin-top:5px;">
+              <span>${S.date}</span><span>${S.cmtReply}</span><span style="margin-left:auto;">${shellIcon("heart", 13, "#999")}</span>
+            </div>
+          </div>
+        </div>`).join("")}
+      <div style="font-size:12px;color:#999;text-align:center;padding:12px 0 4px;">${S.cmtOpen}</div>
+    </div>
+    <div style="height:${74 + homeBarInset()}px;"></div>
+    <div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #F2F2F2;display:flex;align-items:center;gap:12px;padding:9px 14px ${homeBarInset()}px;">
+      <span style="flex:1;min-width:0;height:34px;background:#F5F5F5;border-radius:999px;display:flex;align-items:center;gap:6px;padding:0 12px;box-sizing:border-box;color:#999;font-size:13px;overflow:hidden;white-space:nowrap;">${shellIcon("edit", 15, "#999")}${S.say}</span>
+      ${[["heart", "227"], ["star", "61"], ["chat", "45"]].map(([icon, count]) => `
+        <span style="display:flex;align-items:center;gap:4px;flex:none;">${shellIcon(icon, 21, "#222")}<b style="font-size:13px;color:#222;font-weight:500;">${count}</b></span>`).join("")}
     </div>`);
 }
 
@@ -4449,8 +4494,11 @@ function bindUI() {
   /* device frame */
   document.querySelectorAll(".seg-btn[data-device]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      const prev = deviceKind();
       localStorage.setItem("wxwright-device", btn.dataset.device);
       applyDevice();
+      // channel shells reserve the mock's status-bar height, so rebuild them
+      if (prev !== btn.dataset.device && articleFormat !== "html" && currentPlatform !== "wechat") convertNow();
     });
   });
   $("btn-device-dark").addEventListener("click", toggleDark);
@@ -5232,6 +5280,124 @@ function bindUI() {
     }
   });
 
+  initUpdateUI();
+}
+
+/* --------------------------------------------------------- online update
+   The version number at the bottom right doubles as the update entry: idle
+   click checks, an available release turns it into an accent button that
+   downloads and installs in place, and the same chip reports progress. */
+const updateState = { info: null, checking: false, installing: false, phase: "idle", progress: null };
+
+function updateErrText(raw) {
+  const cls = String(raw || "").split("|")[0];
+  if (cls === "signature") return t("update_err_signature");
+  if (cls === "install") return t("update_err_install");
+  if (cls === "network") return t("update_err_network");
+  if (cls === "feed") return t("update_err_feed");
+  if (cls === "noupdate") return t("update_latest");
+  return t("update_err_generic");
+}
+
+function renderUpdateChip() {
+  const chip = $("status-meta");
+  const text = $("status-meta-text");
+  const dot = $("status-meta-dot");
+  if (!chip || !text) return;
+  const info = updateState.info;
+  const available = !!(info && info.available);
+  chip.classList.toggle("has-update", available && !updateState.installing);
+  chip.classList.toggle("busy", updateState.installing);
+  chip.disabled = updateState.installing;
+  if (dot) dot.hidden = !(available && !updateState.installing);
+  if (updateState.installing) {
+    if (updateState.phase === "install") {
+      text.textContent = t("update_installing");
+      chip.title = t("update_installing");
+    } else {
+      text.textContent = updateState.progress == null ? t("update_downloading") : t("update_progress", updateState.progress);
+      chip.title = t("update_downloading");
+    }
+  } else if (available) {
+    text.textContent = t("update_available", info.version);
+    const title = t("update_available_title", info.version);
+    chip.title = info.notes ? `${title}\n${info.notes}` : title;
+  } else {
+    text.textContent = `wxwright ${GUI_VERSION}`;
+    chip.title = t("update_check_idle_title");
+  }
+}
+
+async function checkForUpdates({ silent = true } = {}) {
+  if (!invoke || updateState.checking || updateState.installing) return null;
+  updateState.checking = true;
+  try {
+    const info = await invoke("update_check");
+    updateState.info = info;
+    renderUpdateChip();
+    if (!info.available && !silent) toast(t("update_latest"), "ok");
+    return info;
+  } catch (e) {
+    console.error("update check failed:", e);
+    if (!silent) toast(updateErrText(e), "err");
+    return null;
+  } finally {
+    updateState.checking = false;
+  }
+}
+
+async function installUpdate() {
+  if (!invoke || updateState.installing) return;
+  if (!updateState.info || !updateState.info.available) return;
+  updateState.installing = true;
+  updateState.phase = "download";
+  updateState.progress = null;
+  renderUpdateChip();
+  try {
+    await invoke("update_install");
+    // Windows exits into the NSIS installer; macOS/Linux restart inside the
+    // command. Reaching this line means the install finished without exiting.
+    updateState.phase = "install";
+    renderUpdateChip();
+    toast(t("update_started"), "ok");
+  } catch (e) {
+    console.error("update install failed:", e);
+    updateState.installing = false;
+    updateState.phase = "idle";
+    updateState.info = null;
+    renderUpdateChip();
+    toast(updateErrText(e), "err");
+  }
+}
+
+function initUpdateUI() {
+  renderUpdateChip();
+  const chip = $("status-meta");
+  if (chip) {
+    chip.addEventListener("click", () => {
+      if (!invoke) { toast(t("demo_mode"), "err"); return; }
+      if (updateState.installing) return;
+      if (updateState.info && updateState.info.available) installUpdate();
+      else checkForUpdates({ silent: false });
+    });
+  }
+  if (listen) {
+    listen("update-progress", (event) => {
+      const p = event.payload || {};
+      updateState.installing = true;
+      updateState.phase = "download";
+      updateState.progress = p.total ? Math.min(99, Math.floor((p.downloaded / p.total) * 100)) : null;
+      renderUpdateChip();
+    }).catch(() => {});
+    listen("update-installing", () => {
+      updateState.installing = true;
+      updateState.phase = "install";
+      renderUpdateChip();
+    }).catch(() => {});
+  }
+  if (!invoke) return; // browser demo: no backend, no update feed
+  setTimeout(() => checkForUpdates({ silent: true }), 3000);
+  setInterval(() => checkForUpdates({ silent: true }), 6 * 3600 * 1000);
 }
 
 /* ------------------------------------------------------ comfy generation */
@@ -5299,8 +5465,7 @@ function renderComfyResults(paths) {
 async function init() {
   lang = localStorage.getItem("wxwright-lang") || "zh-CN";
   applyI18n();
-  const statusMeta = $("status-meta");
-  if (statusMeta) statusMeta.textContent = `wxwright ${GUI_VERSION}`;
+  renderUpdateChip();
   currentTheme = localStorage.getItem("wxwright-theme") || "minimal";
 
   // 1. bind every listener first: a failing async load can no longer leave

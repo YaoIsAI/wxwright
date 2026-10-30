@@ -9,6 +9,7 @@ mod extract;
 mod jobs;
 mod net;
 mod social;
+mod updater;
 
 use tauri::{DragDropEvent, Emitter, WindowEvent};
 
@@ -16,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::list_themes,
             commands::convert_preview,
@@ -78,6 +80,8 @@ pub fn run() {
             social::social_oauth_cancel,
             social::social_post_article,
             social::social_post_all,
+            updater::update_check,
+            updater::update_install,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {

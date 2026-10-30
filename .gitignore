@@ -37,3 +37,7 @@ build_*.url
 # local AI assistant sessions (work logs, review reports) - never publish
 .workbuddy-ai/
 review/
+
+# Python bytecode caches (tools/*.py)
+__pycache__/
+*.pyc

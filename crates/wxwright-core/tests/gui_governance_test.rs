@@ -90,6 +90,7 @@ fn registered_commands(src: &str) -> BTreeSet<String> {
 fn every_tauri_command_is_registered() {
     let mut declared = declared_commands(&read("gui/src-tauri/src/commands.rs"));
     declared.extend(declared_commands(&read("gui/src-tauri/src/social.rs")));
+    declared.extend(declared_commands(&read("gui/src-tauri/src/updater.rs")));
     let registered = registered_commands(&read("gui/src-tauri/src/lib.rs"));
 
     assert!(

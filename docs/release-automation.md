@@ -1,59 +1,86 @@
 # Release automation (multi-platform build & publish)
 
-评估结论：**完全可行，脚本已预备好**（`.github/workflows/release.yml`）。发布到 GitHub 后，打 tag 即自动产出全平台安装文件并挂到对应 Release。
+发布流水线在 `.github/workflows/release.yml`：打 tag 或手动 dispatch 后，自动构建
+全平台安装包、签名、生成更新清单，并挂到对应的 GitHub Release。
+
+客户端在线更新的设计与排障见 `docs/auto-update.md`。
 
 ## 使用方式（发布一个版本）
 
 ```bash
-# 1. 升版本（workspace Cargo.toml 的 [workspace.package] version + gui/src-tauri/tauri.conf.json 的 version）
+# 1. 升版本（四处同步）
+#    - 根 Cargo.toml 的 [workspace.package] version
+#    - gui/src-tauri/tauri.conf.json 的 version
+#    - gui/ui/app.js 的 GUI_VERSION
+#    - cargo check（刷新 Cargo.lock）
 # 2. 提交并打 tag
-git tag v1.0.1
-git push origin v1.0.1
-# 3. Actions 跑完后，Release 页面自动出现全部产物（generate_release_notes 自动写更新说明）
+git tag v0.17.0
+git push origin v0.17.0
+# 3. Actions 跑完后，Release 自动出现全部产物与 latest.json
 ```
 
-### 方式 B：不本地打 tag（workflow_dispatch，0.12.2 起）
+### 方式 B：不本地打 tag（workflow_dispatch）
 
-到仓库 Actions 页 → 选「Release」→ Run workflow → 输入版本号（不带 v）。
-guard-version 会核对该版本与 workspace `Cargo.toml` 一致，然后自动打 tag、
-构建全平台产物并发布。适合纯网页操作或 CI 环境触发。
-
-> 版本号需要同步四处：workspace `Cargo.toml`、`gui/src-tauri/tauri.conf.json`、
-> `gui/ui/app.js` 的 `GUI_VERSION`，以及 `cargo update --precise` 刷新 Cargo.lock。
-
-## Gitee 镜像
-
-Release 工作流只管 GitHub。Gitee（gitee.com/YaoIsAI/wxwright）的 main/标签
-镜像与发行版附件同步，见 `docs/gitee-sync-sop.md`。
+Actions 页 → Release → Run workflow → 输入版本号（不带 v）。`guard-version`
+会核对输入与 workspace `Cargo.toml` 一致，然后构建并发布。适合纯网页操作。
 
 ## 产物矩阵
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows | `wxwright_*_x64-setup.exe`（NSIS 安装包）+ 便携 `wxwright-gui.exe` + `wxwright-cli-windows-x64.zip` | NSIS 由 tauri bundle 生成 |
-| macOS | `.dmg` + `.app.tar.gz`（universal：x86_64 + aarch64 经 tauri universal target 或双构建）+ CLI arm64/x64 tar.gz | **未签名**；签名/公证见下 |
-| Linux | `.deb` + `.AppImage` + 静态 `wxwright-cli-linux-x64.tar.gz`（musl） | runner 装 webkit2gtk-4.1 等 |
-| 全平台 | `SHA256SUMS.txt` | 发布前自动生成 |
+| Windows | `wxwright_<ver>_x64-setup.exe` + `.sig` | NSIS，`currentUser` 安装，双语；同时是更新载荷 |
+| macOS | `wxwright_<ver>_<arch>.dmg`、`wxwright_<arch>.app.tar.gz` + `.sig` | aarch64 与 x86_64 两条；dmg 供首次安装，app.tar.gz 供更新 |
+| Linux | `.deb`、`.AppImage` 及 `.sig` | deb 与 AppImage 都能在线更新（插件按安装类型选键） |
+| 全平台 | `wxwright-cli-*.zip/tar.gz`、`SHA256SUMS.txt`、`latest.json` | CLI 四目标；清单用于客户端更新 |
 
-## 实现要点（与 PRD 12.3 对齐）
+## 实现要点
 
-- **CLI**：四目标交叉矩阵（windows-msvc / macos-arm64 / macos-x64 / linux-musl 静态），纯 `cargo build`，无 tauri 依赖。
-- **GUI**：`cargo tauri build --bundles <nsis|dmg,app|deb,appimage>`（tauri-cli 经 taiki-e/install-action 安装，不需要 Node——前端是纯静态 `ui/`）。Linux runner 需 `libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev`。
-- **发布**：`softprops/action-gh-release@v2`，`generate_release_notes: true`；权限最小化（`contents: write`）。
-- 版本号单一来源：workspace `Cargo.toml`（tauri.conf.json 需同步，未来可加 CI 校验步骤）。
+- **CLI**：四目标矩阵（windows-msvc / macos-arm64 / macos-x64 / linux-gnu），
+  纯 `cargo build`，不需要 tauri。
+- **GUI**：`cargo tauri build --bundles nsis|dmg,app|deb,appimage`
+  （tauri-cli 经 taiki-e/install-action 安装；前端是纯静态 `ui/`，无需 Node）。
+  Linux runner 需 `libwebkit2gtk-4.1-dev libxdo-dev
+  libayatana-appindicator3-dev librsvg2-dev` 等依赖。
+- **更新产物**：只有配置了 `TAURI_SIGNING_PRIVATE_KEY` 时，构建步骤才追加
+  `--config src-tauri/tauri.updater.conf.json`（`createUpdaterArtifacts: true`），
+  这样本地 `cargo tauri build` 不强制持有私钥。无密钥时打印 warning，发布
+  不带 `latest.json`，客户端更新保持休眠。
+- **签名**：`cargo tauri build` 用 minisign 私钥给 NSIS / AppImage /
+  macOS app.tar.gz 生成 `.sig`。**deb 不在 bundler 的签名清单里**
+  （`debian.rs` 没有 `sign_updaters` 调用），工作流随后用
+  `cargo tauri signer sign` 以同一把 key 补签 `*.deb.sig`；CI 最后校验
+  至少产出一个 `.sig`。
+- **macOS 改名**：updater 归档固定叫 `wxwright.app.tar.gz`，两个架构会互相
+  覆盖，构建后按架构改名为 `wxwright_aarch64.app.tar.gz` /
+  `wxwright_x86_64.app.tar.gz`（改名发生在签名之后，minisign 不校验文件名）。
+- **清单**：`tools/make-latest-json.py` 汇总各平台 URL 与签名，交叉校验签名
+  key id 与 `tauri.conf.json` 公钥，生成 `latest.json`；发布后再用 `gh api`
+  确认它真的挂到了 Release 资产上。
+- **发布**：`softprops/action-gh-release@v2`，`generate_release_notes: true`；
+  权限最小化（只有 release job 有 `contents: write`）。
 
-## macOS 签名与公证（可选，需要 Apple 开发者账号）
+## 签名 secrets
 
-未签名 dmg 会被 Gatekeeper 拦（右键打开可绕过）。要正式分发，在 GitHub Secrets 配置：
+| Secret | 用途 |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | minisign 私钥全文（在线更新，必须与 `plugins.updater.pubkey` 配对） |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥口令 |
+| `WINDOWS_PFX_BASE64` / `WINDOWS_PFX_PASSWORD` | Windows 安装包代码签名（休眠，见 `docs/code-signing.md`） |
+| `APPLE_*` | macOS Developer ID 签名与公证（休眠，配齐即启用） |
 
-```
-APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
-```
+## macOS 签名与公证
 
-然后在 build-gui 的 macOS job 里加 tauri 官方签名环境变量与 `tauri build --bundles dmg`（tauri-cli 自动调用 notarytool）。PRD 12.3 的"Developer ID 签名 + notarize"由此满足。
+无 `APPLE_SIGNING_IDENTITY` 时 tauri-bundler 完全跳过 codesign，产物无密封，
+Apple Silicon 上会被 Gatekeeper 判为「已损坏」。发布流水线已固定
+`APPLE_SIGNING_IDENTITY: '-'` 做 ad-hoc 密封，并用
+`codesign --verify --deep --strict` + `_CodeSignature/CodeResources` 存在性
+做门禁。配置 `APPLE_CERTIFICATE` / `APPLE_ID` / `APPLE_TEAM_ID` 等 secrets
+即升级为 Developer ID 全公证，流程零改动（见 `docs/code-signing.md`）。
 
 ## 已知边界
 
-- Windows ARM（aarch64-pc-windows-msvc）预留：在 build-cli matrix 加一行即可（PRD v1.x 计划）。
-- 更新检查不做常驻（PRD 3.2）：产物不含自动更新通道；如需 tauri updater，属后续 opt-in 功能。
-- 首次跑 Linux/AppImage 构建较慢（appimagetool 下载）；可加缓存层。
+- Windows ARM（aarch64-pc-windows-msvc）预留：在矩阵加一行即可。
+- 不构建 MSI：NSIS 已覆盖安装与更新，见 `docs/auto-update.md` 第 5 节。
+- 发布使用 `GITHUB_TOKEN` 时不能再触发其他工作流（坑 53）；因此 tag 与发布
+  在同一个工作流体内完成，不要另做「打 tag 触发 Release」的壳。
+- 首次 Linux/AppImage 构建较慢（appimagetool 下载）；可按需加缓存。
