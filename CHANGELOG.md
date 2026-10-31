@@ -46,6 +46,11 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
   hashtags, a white comment list, and a fixed bottom bar with the comment pill
   and like/collect/comment counts. The author and Follow action live in the
   top bar, as in the real product.
+- **The release workflow's version guard now runs on tag pushes too.** It was
+  dispatch-only, so a tag-triggered run skipped the guard and GitHub skipped
+  every job that needed it: the tag landed, the run showed `skipped` after one
+  second, and no release was published. Tag names are now checked against
+  `Cargo.toml` as well.
 - `docs/release-automation.md` now covers updater signing, the feed format and
   the key rotation flow; `docs/auto-update.md` records the NSIS/updater design
   and the exact release checklist.

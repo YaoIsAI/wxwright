@@ -31,22 +31,21 @@ env:
   RELEASE_TAG: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
 
 jobs:
-  # ------------------------------------------------- dispatch version guard
-  # Skipped entirely on tag pushes (skipped needs never block dependents).
-  # Reads Cargo.toml from the dispatched commit: assets always carry the
-  # version the maintainer asked for, or the run fails loudly.
+  # ------------------------------------------------------ release version guard
+  # Runs for BOTH triggers. A tag push whose tag disagrees with Cargo.toml is a
+  # publishing mistake (assets would carry a version nobody asked for), and a
+  # skipped job here would silently skip every downstream build as well.
   guard-version:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Cross-check the requested version against Cargo.toml
+      - name: Cross-check the release version against Cargo.toml
         run: |
           VER="$(grep -m1 '^version' Cargo.toml | sed 's/version *= *"\(.*\)"/\1/')"
-          echo "Cargo.toml: $VER  requested: ${{ env.RELEASE_TAG }}"
+          echo "Cargo.toml: $VER  release: ${{ env.RELEASE_TAG }}"
           if [ "v$VER" != "${{ env.RELEASE_TAG }}" ]; then
-            echo "::error::Version mismatch - Cargo.toml says $VER but ${{ env.RELEASE_TAG }} was requested. Bump the version (Cargo.toml + gui/src-tauri/tauri.conf.json), merge, then dispatch again."
+            echo "::error::Version mismatch - Cargo.toml says $VER but ${{ env.RELEASE_TAG }} was requested. Bump the version (Cargo.toml + gui/src-tauri/tauri.conf.json), merge, then tag or dispatch again."
             exit 1
           fi
 

@@ -198,6 +198,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 58 | **清单只写带安装器后缀的键**（NSIS 安装版查 `windows-x86_64-nsis`，便携 exe 的 bundle_type 为空、只查 `windows-x86_64`；本地联调时最容易漏） | 便携用户收不到更新，联调时误判成 feed/网络故障 | `make-latest-json.py` 同时写 `windows-x86_64` 与 `-nsis`（以及 AppImage/deb 变体）；自建本地 feed 时手动补基键，做法见 `docs/auto-update.md` 6.1 |
 | 59 | **以为 bundler 会给 deb 签名**（`tauri-bundler` 的 `debian.rs` 没有 `sign_updaters` 调用，只有 NSIS/MSI/AppImage/macOS 产物生成 `.sig`） | 清单脚本因「deb 有文件但无签名」直接失败，Linux 发版必红；若放宽则 deb 用户永远收不到更新 | release.yml 在构建后用 `cargo tauri signer sign` 以同一把 key 补签 `*.deb.sig`，再由清单脚本正常收录 `linux-x86_64-deb` |
 | 60 | **先用 bundler 生成 updater `.sig`、再对同一个 exe 做 Authenticode 签名**（signtool 重写 PE，字节一变 minisign 必然对不上） | 启用 PFX 的那天，所有 Windows 客户端下载后验签失败，无法自动更新，而发布全绿 | 任何改动安装包字节的签名都必须发生在最后，并在之后重跑 `cargo tauri signer sign` 重建 `.sig` 再合成清单（release.yml 的 PFX step 已内置重签；本机签名流程见 `docs/code-signing.md`） |
+| 61 | **发布流水线的守卫 job 只在 dispatch 运行**（`guard-version` 带 `if: github.event_name == 'workflow_dispatch'`；tag push 时它 skipped，而 GitHub 对 `needs` 的默认规则是上游 skipped → 下游全部 skipped） | tag 已在远端，workflow 1 秒内显示 completed/skipped，Release 根本没有创建；此前发布都靠手动 dispatch，问题被完全掩盖 | 守卫必须对所有触发运行，tag push 时同样校验 tag 名与 Cargo.toml；打完 tag 后先看 `gh run list --workflow release.yml` 不是 skipped，再逐 job 核对 |
 
 ## 8. 当前能力快照 / Feature map（2026-10-30，v0.17.0+）
 
