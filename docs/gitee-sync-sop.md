@@ -129,3 +129,6 @@ curl -s -X POST "https://gitee.com/api/v5/repos/YaoIsAI/wxwright/releases/<RELEA
 | push 报 non-fast-forward | Gitee 侧被网页改过：先 `git fetch gitee` 对齐；**禁止对 main force push** |
 | 中文变乱码 | API payload 一律走 UTF-8 文件 + `--data-binary`，不走命令行拼接 |
 | Gitee 首页仍显示旧 README | 检查「默认页面」是否指向 `README_GITEE.md`；确认文件已推送到 main |
+| PATCH 仓库信息返回 400 `name is missing` | Gitee 要求 PATCH body 同时带 `name`（仓库名），即使只改 description |
+| 发行版已创建但 `/releases` API 列表暂时看不到 | 列表接口有缓存滞后；以 `/releases/latest` 和发行版网页为准，稍后 API 会同步 |
+| 附件上传 201 但资产对象的 `size` 为 null | Gitee 资产对象只返回 `name` 与 `browser_download_url`；下载后比对 SHA-256，本次两个资产均与 GitHub 字节一致 |
