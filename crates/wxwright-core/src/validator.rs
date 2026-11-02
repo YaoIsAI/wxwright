@@ -37,6 +37,56 @@ impl Violation {
     }
 }
 
+/// Structural Markdown checks that the HTML validator cannot see: an unclosed
+/// code fence swallows the rest of the article, and an empty link target ships
+/// a dead link. Both are warnings (they do not violate platform policy) but
+/// they are exactly the mistakes an AI continuation tends to leave behind, so
+/// they belong in the same audit the one-click repair consumes.
+pub fn validate_markdown(md: &str) -> Vec<Violation> {
+    let mut v = Vec::new();
+    let mut fences = 0usize;
+    let mut empty_target_line = 0usize;
+    for (i, line) in md.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            fences += 1;
+        }
+        if empty_target_line == 0 && has_empty_target(line) {
+            empty_target_line = i + 1;
+        }
+    }
+    if !fences.is_multiple_of(2) {
+        v.push(Violation {
+            rule_id: "MD-1".into(),
+            severity: "warn".into(),
+            message: format!("unclosed code fence: {fences} ``` markers, one opener has no closer"),
+            node: "```".into(),
+            fixable: false,
+        });
+    }
+    if empty_target_line > 0 {
+        v.push(Violation {
+            rule_id: "MD-2".into(),
+            severity: "warn".into(),
+            message: "empty link or image target: ]() renders as a dead link".into(),
+            node: format!("line {empty_target_line}"),
+            fixable: false,
+        });
+    }
+    v
+}
+
+fn has_empty_target(line: &str) -> bool {
+    let mut rest = line;
+    while let Some(pos) = rest.find("](") {
+        if rest[pos + 2..].starts_with(')') {
+            return true;
+        }
+        rest = &rest[pos + 2..];
+    }
+    false
+}
+
 #[derive(Default)]
 struct VState {
     stack: Stack,
@@ -602,5 +652,23 @@ mod tests {
             "onload must be a block violation: {v:?}"
         );
         assert!(!is_compliant(html));
+    }
+
+    #[test]
+    fn markdown_syntax_check_catches_unclosed_fences_and_dead_targets() {
+        let clean = "# 标题\n\n```rust\nfn main() {}\n```\n\n[链接](https://example.com)\n";
+        assert!(validate_markdown(clean).is_empty());
+
+        let unclosed = "# 标题\n\n```rust\nfn main() {}\n";
+        let v = validate_markdown(unclosed);
+        assert!(v.iter().any(|x| x.rule_id == "MD-1"), "got: {v:?}");
+
+        let dead = "[空链接]() 与 ![图](https://x/y.png)\n";
+        let v = validate_markdown(dead);
+        assert!(v.iter().any(|x| x.rule_id == "MD-2"), "got: {v:?}");
+        assert!(
+            !v.iter().any(|x| x.is_block()),
+            "syntax findings must not block"
+        );
     }
 }

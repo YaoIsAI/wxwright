@@ -6,6 +6,7 @@ mod articles;
 mod comfy;
 mod commands;
 mod extract;
+mod fix;
 mod jobs;
 mod net;
 mod social;
@@ -54,6 +55,7 @@ pub fn run() {
             commands::comfy_save_config,
             commands::comfy_launch,
             commands::wx_bind_status,
+            commands::wx_check,
             commands::wx_account_switch,
             commands::wx_refresh_account_info,
             commands::wx_draft_list,
@@ -67,7 +69,10 @@ pub fn run() {
             commands::list_platforms,
             commands::platform_export_text,
             commands::platform_validate,
+            commands::platform_audit,
+            commands::platform_agent_brief,
             commands::platform_preview,
+            commands::ai_fix_article,
             commands::ai_save_image_model,
             commands::import_image_from_path,
             commands::import_image_bytes,

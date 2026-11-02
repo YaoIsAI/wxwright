@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wxwright</title>
-  <link rel="stylesheet" href="styles.css?v=34" />
+  <link rel="stylesheet" href="styles.css?v=35" />
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -265,6 +265,7 @@
           <svg class="icon"><use href="#i-spark"/></svg>
           <span data-i18n="ai_assistant">AI 助手</span>
           <span id="ai-provider-chip" class="ai-provider-chip"></span>
+          <span id="ai-platform-chip" class="ai-provider-chip"></span>
           <span class="spacer"></span>
           <button id="btn-ai-clear" class="linklike" data-i18n="clear">清空</button>
           <button id="btn-ai-close" class="btn btn-ghost btn-icon">
@@ -276,6 +277,7 @@
           <button class="chip" data-prompt="polish" data-i18n="q_polish">润色当前文章</button>
           <button class="chip" data-prompt="continue" data-i18n="q_continue">续写</button>
           <button class="chip" data-prompt="title" data-i18n="q_title">起 5 个标题</button>
+          <button class="chip" data-prompt="adapt" data-i18n="ai_adapt">适配当前平台</button>
           <button class="chip" data-prompt="outline" data-i18n="q_outline">帮我列提纲</button>
           <button class="chip" data-prompt="poster" data-i18n="q_poster">生成头图文案</button>
         </div>
@@ -476,6 +478,7 @@
               绑定后可使用「推送草稿」直接把文章写入公众号草稿箱。AppID / AppSecret 存入系统钥匙串，仅保存在本机。
             </p>
             <div id="wx-status" class="ai-provider-chip" style="margin-bottom: 12px;"></div>
+            <div id="wx-health" class="wx-health" hidden></div>
             <div id="wx-accounts"></div>
             <form id="wx-form" class="provider-form">
               <div class="form-grid">
@@ -484,6 +487,7 @@
                 <label class="span2"><span data-i18n="wx_label">备注名（可选）</span><input id="wx-label" placeholder="例如：码聋 / 测试号" data-i18n-placeholder="wx_label_ph" /></label>
               </div>
               <div class="form-actions">
+                <button type="button" id="wx-check" class="btn btn-ghost" data-i18n="wx_check">检测连通性</button>
                 <span class="spacer"></span>
                 <button type="button" id="wx-unbind" class="btn btn-ghost" data-i18n="wx_unbind">解除全部绑定</button>
                 <button type="submit" class="btn btn-primary" data-i18n="wx_bind">绑定 / 更新</button>
@@ -882,6 +886,6 @@
   <script src="pet.js?v=20"></script>
   <script src="brand-logos.js?v=19"></script>
   <script src="ai-jobs.js?v=20"></script>
-  <script src="app.js?v=59"></script>
+  <script src="app.js?v=62"></script>
 </body>
 </html>

@@ -376,6 +376,66 @@ pub fn platform_validate(
     }
 }
 
+/// Same audit the one-click repair uses, exposed so the rule chip and the
+/// 「校验」 button show the active platform's real verdict for every platform
+/// (previously non-WeChat validation was a caption-only side path and the
+/// panel fell back to the WeChat dialect result).
+#[tauri::command]
+pub async fn platform_audit(
+    platform: String,
+    title: String,
+    markdown: String,
+    format: String,
+    theme_id: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let a = crate::fix::audit(&platform, &title, &markdown, &format, &theme_id)?;
+        Ok::<serde_json::Value, String>(serde_json::json!({
+            "platform": a.platform,
+            "mode": a.mode,
+            "caption": a.caption,
+            "images": a.images,
+            "violations": a.violations,
+        }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
+/// The platform's publishing brief (limits + editorial guidance), generated
+/// from the same descriptor the validator reads. The assistant fetches this
+/// on every send so its prompt follows the active platform.
+#[tauri::command]
+pub fn platform_agent_brief(platform: String, lang: String) -> String {
+    wxwright_core::platform::agent_brief(&platform, &lang)
+}
+
+/// One-click repair for validation errors. Two model rounds max; the result
+/// carries before/after violations so the UI can report exactly what changed.
+#[tauri::command]
+pub async fn ai_fix_article(
+    platform: String,
+    title: String,
+    markdown: String,
+    format: String,
+    theme_id: String,
+    lang: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let o = crate::fix::fix_article(&platform, &title, &markdown, &format, &theme_id, &lang)?;
+        Ok::<serde_json::Value, String>(serde_json::json!({
+            "changed": o.changed,
+            "title": o.title,
+            "content": o.content,
+            "before": o.before,
+            "after": o.after,
+            "rounds": o.rounds,
+        }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
 #[tauri::command]
 pub fn delete_article(id: String) -> Result<bool, String> {
     crate::articles::delete_article(&id)
@@ -621,8 +681,62 @@ pub async fn wx_draft_delete(media_id: String) -> Result<(), String> {
     .map_err(|e| format!("task join failed: {e}"))?
 }
 
+/// Classify a WeChat API failure into something the UI can act on. The raw
+/// message is kept for diagnostics, but the kind (and the IP extracted from
+/// 40164) drives the banner and the self-service fix.
+fn wx_problem(message: &str) -> serde_json::Value {
+    let lower = message.to_ascii_lowercase();
+    let kind = if message.contains("40164") || lower.contains("not in whitelist") {
+        "ip_whitelist"
+    } else if message.contains("40013") {
+        "invalid_appid"
+    } else if message.contains("40125") || message.contains("40001") {
+        "invalid_secret"
+    } else if message.contains("45009") {
+        "quota"
+    } else if lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connect")
+        || lower.contains("dns")
+    {
+        "network"
+    } else {
+        "unknown"
+    };
+    serde_json::json!({
+        "kind": kind,
+        "message": message,
+        "ip": invalid_ip(message),
+    })
+}
+
+fn invalid_ip(message: &str) -> Option<String> {
+    let lower = message.to_ascii_lowercase();
+    let start = lower.find("invalid ip ")? + "invalid ip ".len();
+    let ip: String = message[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    (!ip.is_empty()).then_some(ip)
+}
+
+fn wx_bind_failure(kind: &str, message: &str) -> String {
+    match kind {
+        "invalid_appid" => "AppID 无效（微信返回 40013）。请核对公众号后台「设置与开发 → 基本配置」中的 AppID 后重试。".into(),
+        "invalid_secret" => "AppSecret 无效或已重置（微信返回 40001/40125）。请到公众号后台重置 AppSecret，再重新绑定。".into(),
+        "network" => format!("无法连接微信服务器，凭据未保存。请检查网络或代理后重试（原始信息：{message}）"),
+        "quota" => format!("微信接口调用额度已用完，凭据未保存。请稍后重试（原始信息：{message}）"),
+        _ => format!("微信校验失败，凭据未保存：{message}"),
+    }
+}
+
+/// Bind (or update) a WeChat account, but only after the credentials have
+/// actually produced an access token. A saved-but-invalid secret used to fail
+/// later with a cryptic drafts error; an IP-whitelist block is a special case:
+/// the credentials are valid, so the account is stored and returned with a
+/// warning that carries the offending IP.
 #[tauri::command]
-pub fn wx_bind(
+pub async fn wx_bind(
     appid: String,
     secret: String,
     label: Option<String>,
@@ -630,14 +744,97 @@ pub fn wx_bind(
     if appid.trim().is_empty() || secret.trim().is_empty() {
         return Err("AppID 和 AppSecret 不能为空".into());
     }
-    let creds = wxwright_mp::Credentials {
-        appid: appid.trim().to_string(),
-        secret: secret.trim().to_string(),
-    };
-    // keyring first; file fallback stays in %APPDATA% (outside any repo)
-    wxwright_mp::upsert_account(&creds, label.as_deref().unwrap_or(""), true)
-        .map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "bound": true, "appid": wxwright_mp::mask(&creds.appid) }))
+    tauri::async_runtime::spawn_blocking(move || {
+        let creds = wxwright_mp::Credentials {
+            appid: appid.trim().to_string(),
+            secret: secret.trim().to_string(),
+        };
+        let client = wxwright_mp::MpClient::new(creds.clone());
+        let token = client.access_token(false);
+        let info = if token.is_ok() {
+            client.account_basic_info().ok()
+        } else {
+            None
+        };
+        let problem = match &token {
+            Ok(_) => None,
+            Err(e) => {
+                let p = wx_problem(&e.to_string());
+                if p["kind"].as_str() != Some("ip_whitelist") {
+                    return Err(wx_bind_failure(
+                        p["kind"].as_str().unwrap_or("unknown"),
+                        &e.to_string(),
+                    ));
+                }
+                Some(p)
+            }
+        };
+        // keyring first; file fallback stays in %APPDATA% (outside any repo)
+        wxwright_mp::upsert_account(&creds, label.as_deref().unwrap_or(""), true)
+            .map_err(|e| e.to_string())?;
+        let nickname = info.as_ref().map(|(n, _)| n.clone()).unwrap_or_default();
+        if !nickname.is_empty() {
+            let _ = wxwright_mp::set_account_display(&creds.appid, &nickname, "");
+        }
+        Ok(serde_json::json!({
+            "bound": true,
+            "ok": problem.is_none(),
+            "appid": wxwright_mp::mask(&creds.appid),
+            "nickname": nickname,
+            "problem": problem,
+        }))
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
+}
+
+/// Live health of the active account: token + account info. Unlike
+/// `wx_bind_status` (local config only) this proves the current IP and secret
+/// still work, and names the exact problem when they do not.
+#[tauri::command]
+pub async fn wx_check() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(creds) = wxwright_mp::load_credentials() else {
+            return Ok(serde_json::json!({
+                "bound": false,
+                "ok": false,
+                "kind": "unbound",
+                "message": "未绑定公众号",
+            }));
+        };
+        let client = wxwright_mp::MpClient::new(creds.clone());
+        match client.access_token(false) {
+            Ok(_) => {
+                let info = client.account_basic_info().ok();
+                let nickname = info.as_ref().map(|(n, _)| n.clone()).unwrap_or_default();
+                if !nickname.is_empty() {
+                    let _ = wxwright_mp::set_account_display(&creds.appid, &nickname, "");
+                }
+                Ok(serde_json::json!({
+                    "bound": true,
+                    "ok": true,
+                    "kind": "ok",
+                    "appid": wxwright_mp::mask(&creds.appid),
+                    "nickname": nickname,
+                    "message": "接口连通，可读取草稿箱并推送草稿",
+                }))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let p = wx_problem(&msg);
+                Ok(serde_json::json!({
+                    "bound": true,
+                    "ok": false,
+                    "kind": p["kind"],
+                    "appid": wxwright_mp::mask(&creds.appid),
+                    "message": msg,
+                    "ip": p["ip"],
+                }))
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("task join failed: {e}"))?
 }
 
 /// Point the active account at another already-bound appid; push / upload /

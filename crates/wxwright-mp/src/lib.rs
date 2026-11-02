@@ -720,7 +720,7 @@ impl MpClient {
     }
 
     fn post_with_token(&self, path: &str, payload: &serde_json::Value) -> Result<GenericResponse> {
-        let v = self.with_token_retry(|force| self.post_json(path, payload, force))?;
+        let v = self.post_with_token_value(path, payload)?;
         serde_json::from_value(v).map_err(|e| Error::Upload(format!("decode: {}", e)))
     }
 
@@ -729,7 +729,9 @@ impl MpClient {
         path: &str,
         payload: &serde_json::Value,
     ) -> Result<serde_json::Value> {
-        self.with_token_retry(|force| self.post_json(path, payload, force))
+        let v = self.with_token_retry(|force| self.post_json(path, payload, force))?;
+        ensure_ok(&v)?;
+        Ok(v)
     }
 }
 
@@ -765,6 +767,20 @@ fn check(resp: &GenericResponse) -> Result<()> {
             "MP API error {}: {}",
             code,
             resp.errmsg.clone().unwrap_or_default()
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Raw-JSON endpoints (draft list/get, freepublish) used to return WeChat's
+/// error body as if it were data: a 40164 IP-whitelist rejection arrived as
+/// `{"errcode":40164,...}`, the GUI read `item` as an empty array and showed
+/// "no drafts" instead of the real error. Every token call must fail loudly.
+fn ensure_ok(v: &serde_json::Value) -> Result<()> {
+    match v.get("errcode").and_then(|c| c.as_i64()) {
+        Some(code) if code != 0 => Err(Error::Upload(format!(
+            "MP API error {code}: {}",
+            v.get("errmsg").and_then(|m| m.as_str()).unwrap_or_default()
         ))),
         _ => Ok(()),
     }
@@ -1039,6 +1055,22 @@ mod tests {
         assert!(!is_token_expired(&serde_json::json!({ "errcode": 0 })));
         assert!(!is_token_expired(&serde_json::json!({ "errcode": 48001 })));
         assert!(!is_token_expired(&serde_json::json!({ "media_id": "x" })));
+    }
+
+    /// Raw-JSON endpoints must not hand an error body to the UI as data: the
+    /// drafts tab read `.item || []` and turned a 40164 into "empty drafts".
+    #[test]
+    fn raw_json_errors_are_not_silent_success() {
+        let blocked = serde_json::json!({
+            "errcode": 40164,
+            "errmsg": "invalid ip 203.0.113.9 ipv6 ::ffff:1, not in whitelist"
+        });
+        let err = ensure_ok(&blocked).expect_err("40164 must be an error");
+        let msg = err.to_string();
+        assert!(msg.contains("40164"), "code must survive: {msg}");
+        assert!(msg.contains("invalid ip"), "reason must survive: {msg}");
+        assert!(ensure_ok(&serde_json::json!({ "item": [], "total_count": 0 })).is_ok());
+        assert!(ensure_ok(&serde_json::json!({ "errcode": 0 })).is_ok());
     }
 
     #[test]

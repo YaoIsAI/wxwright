@@ -8,6 +8,57 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.18.0] - 2026-11-02
+
+### Added
+- **AI one-click repair for validation errors.** The violations panel now has an
+  `AI 一键修复` action. It audits with the same platform validator the rule chip
+  uses, asks the active provider for strict JSON, preserves frontmatter and
+  existing images, re-audits, feeds residual violations back for a second
+  round, and keeps an undo snapshot. Headless callers get the same engine.
+- **Every platform now has a machine-checked rule table.** X uses weighted
+  length (CJK/emoji count 2) with a 280-character block; Instagram, LinkedIn
+  and Facebook enforce their caption and image ceilings. The AI publishing
+  brief is generated from the same descriptors, so prompt and validator cannot
+  drift.
+- **The assistant behaves as a publishing agent.** Every turn receives the
+  active platform's machine-generated brief (limits, hashtags, format guidance)
+  plus the live article title, format, selection and body. Continuations append
+  at the end, strip a repeated ending/title, reject truncated fences, and refuse
+  to append into an open fence; full rewrites (polish / adapt) can only replace
+  the body, never be spliced mid-article. Long articles send both the opening
+  and the ending for continuation instead of only the first 12k characters.
+- **WeChat connectivity diagnostics.** Binding now validates the credentials
+  against the live token endpoint before storing them; settings gains a
+  `检测连通性` action that shows the account nickname or the exact blocker.
+  A 40164 rejection names the machine's current IP, offers one-click copy and
+  a shortcut to the MP console. The drafts tab and push path share the same
+  classifier, and binding a WeChat account switches the editor to the WeChat
+  channel so the draft box and push button are actually visible.
+
+### Fixed
+- **WeChat error bodies no longer masquerade as data.** Raw-JSON endpoints
+  (draft list/get, freepublish) returned `{"errcode":40164,...}` as a successful
+  payload; the drafts tab read `item` as an empty array and showed "no drafts"
+  instead of the IP-whitelist error. Every token-authenticated call now fails
+  loudly with the WeChat code and message.
+- **Title caps are machine-checked.** WeChat (64 characters, block) and Zhihu
+  (100, warning) title limits come from the platform descriptor, so the audit,
+  the rule chip and the repair prompt agree and an over-limit title can no
+  longer be reported as compliant.
+- **Structural Markdown problems surface in the audit.** An unclosed code
+  fence or an empty link/image target is now reported as `MD-1` / `MD-2`
+  instead of silently corrupting the rendered article.
+- **AI undo snapshots cannot cross articles or manual edits.** Opening another
+  article, switching platform, typing in the editor/title, or applying another
+  AI edit now invalidates the previous fix snapshot and continuation undo, so
+  "undo" can no longer restore old content over newer work. A repair reply that
+  arrives after the user has typed is discarded instead of overwriting the edit.
+- **Direct-HTML articles stay in the WeChat channel.** Opening an HTML article
+  whose stored metadata names another platform now normalizes it to WeChat
+  instead of entering an HTML-plus-caption-platform state that had no valid
+  preview or export.
+
 ## [0.17.0] - 2026-10-30
 
 ### Added

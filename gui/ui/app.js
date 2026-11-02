@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.17.0";
+const GUI_VERSION = "0.18.0";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
@@ -84,7 +84,7 @@ const I18N = {
     drafts_warns: (n) => `${n} 条非阻断提示`,
     illustrate_need_save: "请先保存文章（含正文内容）再使用 AI 配图",
     illustrate_done: (n) => `已插入 ${n} 张插图，文章已更新`,
-    ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，用 ```html 围栏输出富样式块，内容会原样进入文章。铁律：HTML 必须完整包在 ```html 围栏里；严禁在围栏外直接写裸 HTML 标签——围栏外的 HTML 不会渲染，会以源码文本显示。只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。示例：\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">要强调的句子</p></section>\n```",
+    ai_html_channel: (tags) => "需要比 Markdown 更丰富的版式（卡片、徽章、分栏、底色容器）时，优先用 ```html 围栏输出富样式块，内容会原样进入文章。裸块级 HTML（如 <section>、<div>）也会经过白名单校验后渲染，但围栏更稳妥。只允许这些标签——" + tags + "。不支持 img 与 a：图片必须走素材门禁，公众号不保留外链。可用 style 内联样式控制颜色、间距与布局；围栏中只要出现清单之外的标签，整块会降级为普通代码展示。示例：\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">要强调的句子</p></section>\n```",
     push_draft_need_bind: "尚未绑定公众号：请到 设置 → 公众号 API 完成绑定后重试",
     push_draft_need_wechat: "推草稿仅用于微信公众号：请先在顶栏切换平台",
     push_draft_busy: "推送中…",
@@ -109,6 +109,36 @@ const I18N = {
     rule_ok: "规范通过", rule_chip: "规范",
     dark_hint: "深色预览为模拟效果，实际以公众号 Dark Mode 算法为准",
     "violations_none": "未发现规范问题。",
+    violations_title: (p) => `规范检查 · ${p}`,
+    fix_ai: "AI 一键修复", fix_ai_busy: "正在修复…", fix_undo: "撤销修复",
+    fix_none: "没有可自动修复的问题", fix_need_provider: "请先在 设置 → AI Providers 配置并启用一个 Provider",
+    fix_done: (n) => `已修复 ${n} 处问题，重新校验通过`,
+    fix_partial: (b, a) => `已修复 ${Math.max(0, b - a)} 处，仍有 ${a} 处需手动处理`,
+    fix_undone: "已撤销 AI 修复",
+    fix_conflict: "修复期间文章已被修改，已放弃本次结果；请重新校验后再修复",
+    drafts_switch_wechat: "切换到公众号查看草稿箱",
+    drafts_push_now: "推送当前文章",
+    drafts_ip_fix: "处理 IP 白名单",
+    drafts_err_ip: (ip) => `微信拒绝了本机 IP${ip ? " " + ip : ""}：公众号后台的「API IP 白名单」未包含它。添加后即可读取草稿箱、推送草稿。`,
+    drafts_err_secret: "AppSecret 已失效（40001/40125）。请到 设置 → 公众号 API 重新绑定。",
+    drafts_err_network: "无法连接微信服务器，请检查网络或代理后重试。",
+    drafts_health_hint: "先点「检测连通性」，确认 AppID / AppSecret / IP 白名单三者都通过。",
+    wx_check: "检测连通性", wx_checking: "检测中…", wx_recheck: "重新检测",
+    wx_health_ok: (n) => `接口连通${n ? "：" + n : ""} · 可读取草稿箱、推送草稿`,
+    wx_health_fail: "接口不可用", wx_health_unbound: "未绑定公众号",
+    wx_health_ip: (ip) => `IP 白名单拦截${ip ? "（本机出口 IP：" + ip + "）" : ""}。请把本机 IP 加入公众号后台的「API IP 白名单」后重新检测。`,
+    wx_ip_copy: "复制 IP", wx_ip_copied: "IP 已复制",
+    wx_open_dev: "打开微信开发者平台",
+    wx_bind_ip_warning: (ip) => `凭据已保存，但微信 IP 白名单拦截了本机${ip ? "（" + ip + "）" : ""}；加入白名单后草稿箱与推草稿即可用。`,
+    wx_bind_ok_nickname: (n) => `已绑定${n ? "：" + n : ""}，草稿箱与推草稿已就绪`,
+    wx_auto_switch: "已切换到公众号渠道：草稿箱与「推草稿」按钮已显示",
+    ai_adapt: "适配当前平台",
+    ai_append: "追加到末尾", ai_append_done: "续写已追加到文章末尾",
+    ai_need_article: "当前文章为空，先写一点内容或让我起草",
+    ai_unclosed_fence: "回复包含未闭合的代码围栏（可能被截断），已取消写入，请重新生成",
+    ai_article_open_fence: "当前文章有未闭合的代码围栏，追加会落进代码块。请先补全围栏再续写。",
+    html_wechat_only: "直接 HTML 文章来自公众号草稿，只能在公众号渠道预览与发布；如需其他平台，请先把内容转为 Markdown。",
+    ai_after_fix_check: (n) => `AI 修改后仍有 ${n} 处规范问题，已显示在下方`,
     ft_title: "没有 API Key？",
     ft_body: "作者的另一个项目 Free Tokens 持续收录免费模型额度——去逛逛，一起实现 Token 自由。",
     svg_desc_ph: "描述想要的互动效果，例如：点击后头像放大并显示一句祝福语",
@@ -262,7 +292,7 @@ const I18N = {
     drafts_warns: (n) => `${n} non-blocking note(s)`,
     illustrate_need_save: "Save the article (with body text) before using AI illustrations",
     illustrate_done: (n) => `Inserted ${n} illustration(s); article updated`,
-    ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), use a ```html fence and its markup goes into the article verbatim. Iron rule: the HTML must be wrapped COMPLETELY in a ```html fence; never write bare HTML tags outside a fence - HTML outside a fence does not render, it shows as literal source text. Only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block. Example:\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">The sentence to emphasize</p></section>\n```",
+    ai_html_channel: (tags) => "For layouts richer than Markdown can express (cards, badges, columns, tinted containers), prefer a ```html fence and its markup goes into the article verbatim. Bare block-level HTML (such as <section> or <div>) is also allowlist-checked and rendered, but a fence is safer. Only these tags are allowed - " + tags + ". No img and no a: images must go through the material gate, and the MP editor does not keep links. Inline style attributes are fine for colors, spacing and layout; if a fence contains any tag outside this list, the whole block degrades to a plain code block. Example:\n```html\n<section style=\"background:#EEF6FF;border-left:5px solid #2F6CEA;border-radius:10px;padding:18px 20px;margin:20px 0;\"><p style=\"font-weight:600;color:#1E3A8F;margin:0;\">The sentence to emphasize</p></section>\n```",
     push_draft_need_bind: "MP account not bound yet: finish Settings, WeChat MP API first",
     push_draft_need_wechat: "Drafts push is WeChat-only: switch the platform in the topbar first",
     push_draft_busy: "Pushing…",
@@ -287,6 +317,36 @@ const I18N = {
     rule_ok: "Compliant", rule_chip: "Rules",
     dark_hint: "Dark preview is an approximation; the MP Dark Mode algorithm decides",
     "violations_none": "No violations found.",
+    violations_title: (p) => `Rules · ${p}`,
+    fix_ai: "AI fix", fix_ai_busy: "Fixing...", fix_undo: "Undo fix",
+    fix_none: "Nothing to auto-fix", fix_need_provider: "Configure and enable an AI provider in Settings first",
+    fix_done: (n) => `Fixed ${n} issue(s); re-validation passed`,
+    fix_partial: (b, a) => `Fixed ${Math.max(0, b - a)} of ${b}; ${a} still need manual work`,
+    fix_undone: "AI fix undone",
+    fix_conflict: "The article changed while the fix was running; its result was discarded. Validate and run the fix again",
+    drafts_switch_wechat: "Switch to WeChat to see drafts",
+    drafts_push_now: "Push current article",
+    drafts_ip_fix: "Fix IP whitelist",
+    drafts_err_ip: (ip) => `WeChat rejected this machine's IP${ip ? " " + ip : ""}: it is not in the MP API IP whitelist. Add it to read drafts and push.`,
+    drafts_err_secret: "The AppSecret is no longer valid (40001/40125). Re-bind it in Settings → WeChat MP API.",
+    drafts_err_network: "Cannot reach the WeChat API. Check your network or proxy and retry.",
+    drafts_health_hint: "Run Test connection first: AppID, AppSecret and the IP whitelist must all pass.",
+    wx_check: "Test connection", wx_checking: "Checking...", wx_recheck: "Check again",
+    wx_health_ok: (n) => `API reachable${n ? ": " + n : ""} · drafts box and push are ready`,
+    wx_health_fail: "API unavailable", wx_health_unbound: "No WeChat account bound",
+    wx_health_ip: (ip) => `Blocked by the IP whitelist${ip ? " (this machine's IP: " + ip + ")" : ""}. Add this IP to the MP API IP whitelist, then test again.`,
+    wx_ip_copy: "Copy IP", wx_ip_copied: "IP copied",
+    wx_open_dev: "Open WeChat developer platform",
+    wx_bind_ip_warning: (ip) => `Credentials saved, but WeChat's IP whitelist blocks this machine${ip ? " (" + ip + ")" : ""}; add it there to enable drafts and push.`,
+    wx_bind_ok_nickname: (n) => `Bound${n ? ": " + n : ""}; drafts box and push are ready`,
+    wx_auto_switch: "Switched to the WeChat channel: the drafts box and Push draft button are now visible",
+    ai_adapt: "Adapt to platform",
+    ai_append: "Append to end", ai_append_done: "Continuation appended to the article",
+    ai_need_article: "The article is empty; write a little or ask me to draft it",
+    ai_unclosed_fence: "The reply contains an unclosed code fence (likely truncated); nothing was written. Regenerate it.",
+    ai_article_open_fence: "The article has an unclosed code fence, so appended text would land inside it. Close the fence before continuing.",
+    html_wechat_only: "Direct-HTML articles come from the MP draft box and only exist in the WeChat channel; convert the content to Markdown before using another platform.",
+    ai_after_fix_check: (n) => `${n} rule issue(s) remain after the AI edit; shown below`,
     ft_title: "No API key?",
     ft_body: "The author's other project Free Tokens curates free model credits - token freedom for everyone.",
     svg_desc_ph: "Describe the interaction, e.g. avatar zooms in with a blessing on tap",
@@ -379,6 +439,12 @@ let convertTimer = null;
 let aiLanding = false; // one-shot: pulse the preview's last block after AI insert/replace
 const jobBusy = {}; // in-flight guard per AI panel kind
 let lastResult = null;
+// Verdict for the ACTIVE platform. lastResult is always the WeChat dialect
+// render, so using it for other platforms showed WeChat rules on an XHS note.
+let lastPlatformAudit = null;
+let lastFixUndo = null; // { title, markdown, dirty } before the last one-click repair
+let lastAiAppend = null; // { markdown, dirty } before the last auto-appended continuation
+let aiBriefCache = { key: "", text: "" };
 let currentArticleId = null;
 let dirty = false;
 let aiBusy = false;
@@ -609,22 +675,144 @@ function updateRuleChip(violations) {
     chip.innerHTML = `<span>${t("rule_chip")}</span><b class="rc-block">${blocks}</b><span>${lang === "zh-CN" ? "阻断" : "block"}</span>·<b class="rc-warn">${warns}</b><span>${lang === "zh-CN" ? "提示" : "warn"}</span>`;
   }
 }
+function activeViolations() {
+  // A verdict left over from another platform must never be shown as the
+  // current article's result (switching to X used to keep the WeChat list).
+  if (lastPlatformAudit && lastPlatformAudit.platform === currentPlatform && Array.isArray(lastPlatformAudit.violations)) {
+    return lastPlatformAudit.violations;
+  }
+  return (lastResult && lastResult.violations) || [];
+}
+
 function renderViolationsPanel(violations) {
   const panel = $("violations-panel");
+  panel.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "violations-head";
+  const title = document.createElement("span");
+  title.className = "v-title";
+  title.textContent = t("violations_title", platformLabel(currentPlatformSpec()));
+  head.appendChild(title);
+  const spacer = document.createElement("span");
+  spacer.className = "spacer";
+  head.appendChild(spacer);
+  const fix = document.createElement("button");
+  fix.type = "button";
+  fix.className = "btn btn-primary btn-mini";
+  fix.dataset.fix = "1";
+  fix.textContent = t("fix_ai");
+  fix.disabled = !invoke || !violations || violations.length === 0;
+  fix.addEventListener("click", runAiFix);
+  head.appendChild(fix);
+  if (lastFixUndo) {
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.className = "btn btn-ghost btn-mini";
+    undo.textContent = t("fix_undo");
+    undo.addEventListener("click", undoAiFix);
+    head.appendChild(undo);
+  }
+  panel.appendChild(head);
+
   if (!violations || violations.length === 0) {
-    panel.innerHTML = `<div class="violation-row"><span class="v-desc">${t("violations_none")}</span></div>`;
+    const row = document.createElement("div");
+    row.className = "violation-row";
+    const desc = document.createElement("span");
+    desc.className = "v-desc";
+    desc.textContent = t("violations_none");
+    row.appendChild(desc);
+    panel.appendChild(row);
     return;
   }
-  panel.innerHTML = violations
+  const rows = document.createElement("div");
+  rows.innerHTML = violations
     .map(
       (v) => `<div class="violation-row">
-        <span class="v-badge ${v.severity}">${v.severity === "block" ? "BLOCK" : "WARN"}</span>
+        <span class="v-badge ${escapeHtml(v.severity)}">${v.severity === "block" ? "BLOCK" : "WARN"}</span>
         <span class="v-rule">${escapeHtml(v.rule_id)}</span>
         <span class="v-desc">${escapeHtml(v.message)}</span>
         <span class="v-node">${escapeHtml(v.node)}</span>
       </div>`
     )
     .join("");
+  panel.appendChild(rows);
+}
+
+async function refreshPlatformAudit() {
+  if (!invoke) return null;
+  const a = await invoke("platform_audit", {
+    platform: currentPlatform,
+    title: currentTitle(),
+    markdown: $("editor").value,
+    format: articleFormat,
+    themeId: currentTheme,
+  });
+  lastPlatformAudit = a;
+  updateRuleChip(a.violations || []);
+  return a;
+}
+
+async function runAiFix() {
+  if (!invoke) { toast(t("demo_mode"), "err"); return; }
+  const btn = $("violations-panel").querySelector("[data-fix]");
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = t("fix_ai_busy"); }
+  try {
+    if (!(await hasProvider())) { toast(t("fix_need_provider"), "err"); return; }
+    const titleBefore = $("article-title").value;
+    const markdownBefore = $("editor").value;
+    const dirtyBefore = dirty;
+    const r = await invoke("ai_fix_article", {
+      platform: currentPlatform,
+      title: currentTitle(),
+      markdown: markdownBefore,
+      format: articleFormat,
+      themeId: currentTheme,
+      lang: lang === "zh-CN" ? "zh" : "en",
+    });
+    if ($("editor").value !== markdownBefore || $("article-title").value !== titleBefore) {
+      toast(t("fix_conflict"), "err");
+      return;
+    }
+    if (!r.changed) { toast(t("fix_none"), "ok"); return; }
+    lastFixUndo = { title: titleBefore, markdown: markdownBefore, dirty: dirtyBefore };
+    lastAiAppend = null;
+    if (r.title && r.title !== $("article-title").value) {
+      $("article-title").value = r.title;
+      updateTitleCount();
+    }
+    $("editor").value = r.content;
+    dirty = true;
+    $("stat-saved").textContent = t("not_saved");
+    flashEditor();
+    await convertNow();
+    const a = await refreshPlatformAudit();
+    $("violations-panel").hidden = false;
+    renderViolationsPanel(a ? a.violations : []);
+    const after = (r.after || []).length;
+    toast(after === 0 ? t("fix_done", (r.before || []).length) : t("fix_partial", (r.before || []).length, after), after === 0 ? "ok" : "info");
+  } catch (e) {
+    toast(String(e), "err");
+  } finally {
+    const b = $("violations-panel").querySelector("[data-fix]");
+    if (b) { b.disabled = false; b.textContent = t("fix_ai"); }
+  }
+}
+
+async function undoAiFix() {
+  if (!lastFixUndo) return;
+  const wasDirty = !!lastFixUndo.dirty;
+  $("editor").value = lastFixUndo.markdown;
+  $("article-title").value = lastFixUndo.title;
+  lastFixUndo = null;
+  dirty = wasDirty;
+  $("stat-saved").textContent = wasDirty ? t("not_saved") : t("saved");
+  updateTitleCount();
+  await convertNow();
+  const a = await refreshPlatformAudit().catch(() => null);
+  $("violations-panel").hidden = false;
+  renderViolationsPanel(a ? a.violations : []);
+  toast(t("fix_undone"), "ok");
 }
 let convertSeq = 0; // monotonically increasing; stale conversions must not paint
 async function convertNow() {
@@ -632,6 +820,7 @@ async function convertNow() {
   const stale = () => seq !== convertSeq;
   const md = $("editor").value;
   if (!invoke) {
+    lastPlatformAudit = null;
     // Browser demo: channel shells still render so every platform shape is
     // reviewable without the desktop shell (caption is derived from the editor).
     if (currentPlatform !== "wechat") {
@@ -687,6 +876,7 @@ async function convertNow() {
       const res = await invoke("html_preview", { html: md });
       if (stale()) return;
       lastResult = res;
+      lastPlatformAudit = { platform: currentPlatform, mode: "html", violations: res.violations || [] };
       $("preview").srcdoc = wrapPreviewHtml(res.html, { title: currentTitle() });
       updateStats(res.stats, res.violations);
       if (!$("violations-panel").hidden) renderViolationsPanel(res.violations);
@@ -699,17 +889,23 @@ async function convertNow() {
     const res = await invoke("convert_preview", { markdown: src, themeId: currentTheme });
     if (stale()) return; // a newer conversion (platform/typing) superseded this one
     lastResult = res;
+    if (currentPlatform === "wechat") {
+      lastPlatformAudit = { platform: "wechat", mode: "dialect", violations: res.violations || [] };
+    }
     // channel preview: same article, the target platform's own layout
     if (currentPlatform !== "wechat") {
-      // preview + rule verdict race side by side: one wait instead of two
+      // Preview and full-platform audit race side by side: one wait instead
+      // of two. platform_audit runs the platform's real validator (caption
+      // rules OR dialect/HTML pipeline), so the panel can never show the
+      // WeChat verdict on a Xiaohongshu note again.
       const args = {
         platform: currentPlatform,
         title: currentTitle(),
         markdown: md,
       };
-      const [model, pv] = await Promise.all([
+      const [model, audit] = await Promise.all([
         invoke("platform_preview", { ...args, themeId: currentTheme }).catch(() => null),
-        invoke("platform_validate", { ...args, images: res.stats.images || 0 }).catch(() => null),
+        invoke("platform_audit", { ...args, format: articleFormat, themeId: currentTheme }).catch(() => null),
       ]);
       if (stale()) return;
       $("preview").srcdoc = model
@@ -718,10 +914,16 @@ async function convertNow() {
           : zhihuArticleShell(model.html))
         : wrapPreviewHtml(res.html, { title: currentTitle() }); // fall back to dialect
       updateStats(res.stats, res.violations);
-      if (pv) {
+      if (audit) {
         // platform rule table replaces the dialect verdict for non-WeChat targets
-        updateRuleChip(pv.violations || []);
-        if (!$("violations-panel").hidden) renderViolationsPanel(pv.violations || []);
+        lastPlatformAudit = {
+          platform: currentPlatform,
+          mode: audit.mode,
+          caption: audit.caption || "",
+          violations: audit.violations || [],
+        };
+        updateRuleChip(lastPlatformAudit.violations);
+        if (!$("violations-panel").hidden) renderViolationsPanel(lastPlatformAudit.violations);
       }
     } else {
       $("preview").srcdoc = wrapPreviewHtml(res.html, { title: currentTitle() });
@@ -793,6 +995,14 @@ function draftsToolsRow() {
   admin.textContent = t("drafts_admin");
   admin.addEventListener("click", openMpAdmin);
   row.append(refresh, admin);
+  if (currentPlatform === "wechat") {
+    const push = document.createElement("button");
+    push.type = "button";
+    push.className = "btn btn-ghost";
+    push.innerHTML = `<svg class="icon icon-sm"><use href="#i-send"/></svg><span>${t("drafts_push_now")}</span>`;
+    push.addEventListener("click", () => $("btn-push-draft").click());
+    row.appendChild(push);
+  }
   return row;
 }
 
@@ -812,6 +1022,19 @@ async function renderSidebarDrafts(force = false) {
   // platform-aware: only WeChat has a cloud drafts box today
   if (currentPlatform !== "wechat") {
     host.innerHTML = `<div class="sd-empty">${t("drafts_hint_other")}</div>`;
+    const row = document.createElement("div");
+    row.className = "sd-empty sd-tools";
+    const sw = document.createElement("button");
+    sw.type = "button";
+    sw.className = "btn btn-ghost";
+    sw.textContent = t("drafts_switch_wechat");
+    sw.addEventListener("click", () => {
+      applyPlatform("wechat");
+      convertNow();
+      renderSidebarDrafts(true);
+    });
+    row.appendChild(sw);
+    host.appendChild(row);
     return;
   }
   if (!force && draftsCache.items && Date.now() - draftsCache.at < DRAFTS_TTL) {
@@ -826,20 +1049,55 @@ async function renderSidebarDrafts(force = false) {
     draftsCache = { at: Date.now(), items };
     renderDraftItems(host, items);
   } catch (e) {
-    const msg = String(e);
+    // One classifier for the drafts box and the push path: a raw 40164 used
+    // to dead-end here with no way to discover the IP whitelist fix.
+    const info = wxFriendly(e);
     host.innerHTML = "";
     const row = document.createElement("div");
     row.className = "sd-empty";
-    if (/绑定|credentials|login/i.test(msg)) {
-      row.textContent = msg;
+    row.textContent = info.text;
+    if (info.kind === "unbound") {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-ghost";
       btn.textContent = t("drafts_go_bind");
       btn.addEventListener("click", openWxSettingsPane);
       row.appendChild(btn);
-    } else {
-      row.textContent = msg;
+    } else if (info.kind === "ip_whitelist") {
+      const fix = document.createElement("button");
+      fix.type = "button";
+      fix.className = "btn btn-ghost";
+      fix.textContent = t("drafts_ip_fix");
+      fix.addEventListener("click", async () => {
+        openWxSettingsPane();
+        await wxHealthCheck(true);
+      });
+      row.appendChild(fix);
+      if (info.ip) {
+        const cp = document.createElement("button");
+        cp.type = "button";
+        cp.className = "btn btn-ghost";
+        cp.textContent = t("wx_ip_copy");
+        cp.addEventListener("click", async () => {
+          await copyPlain(info.ip);
+          toast(t("wx_ip_copied"), "ok");
+        });
+        row.appendChild(cp);
+      }
+    } else if (info.kind === "invalid_secret") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-ghost";
+      btn.textContent = t("drafts_go_bind");
+      btn.addEventListener("click", openWxSettingsPane);
+      row.appendChild(btn);
+    } else if (info.kind === "network") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn btn-ghost";
+      retry.textContent = t("wx_recheck");
+      retry.addEventListener("click", () => renderSidebarDrafts(true));
+      row.appendChild(retry);
     }
     host.appendChild(row);
     host.appendChild(draftsToolsRow());
@@ -1138,6 +1396,8 @@ async function openArticle(id) {
   $("article-title").value = loadedTitle;
   updateTitleCount();
   articleFormat = art.meta.format === "html" ? "html" : "markdown";
+  lastFixUndo = null;
+  lastAiAppend = null;
   $("editor").value = art.markdown;
   dirty = false;
   $("stat-saved").textContent = t("saved");
@@ -1146,9 +1406,15 @@ async function openArticle(id) {
     $("theme-select").value = currentTheme;
     localStorage.setItem("wxwright-theme", currentTheme);
   }
-  if (art.meta.platform && art.meta.platform !== currentPlatform) {
-    applyPlatform(art.meta.platform); // silent: platform is a per-article property
+  // Direct-HTML articles only exist in the WeChat channel; an old file whose
+  // metadata names another platform must not put the app into an invalid
+  // HTML+never-WeChat state. Unknown ids fall back to the remembered platform.
+  const target = articleFormat === "html" ? "wechat" : art.meta.platform;
+  const known = !PLATFORMS.length || PLATFORMS.some((p) => p.id === target);
+  if (target && target !== currentPlatform && known) {
+    applyPlatform(target); // silent: platform is a per-article property
   }
+  resetAiContext(); // a different article must not inherit the previous chat
   refreshLibrary();
   convertNow();
 }
@@ -1156,12 +1422,15 @@ async function newArticle() {
   if (invoke && $("editor").value.trim().length > 0 && dirty) await persistCurrent(true);
   currentArticleId = null;
   loadedTitle = null;
+  lastFixUndo = null;
+  lastAiAppend = null;
   articleFormat = "markdown";
   $("article-title").value = "";
   updateTitleCount();
   $("editor").value = "# " + (lang === "zh-CN" ? "新文章" : "New article") + "\n\n";
   $("stat-saved").textContent = t("not_saved");
   dirty = false;
+  resetAiContext();
   refreshLibrary();
   $("editor").focus();
   convertNow();
@@ -1625,6 +1894,115 @@ async function refreshWxStatus() {
   } catch (e) {
     chip.textContent = t("wx_status_fail");
   }
+  updatePushDraftButton();
+}
+
+/* ---- WeChat connectivity: the binding can be locally "present" while the
+   API is unusable (IP whitelist, reset secret). The drafts box used to fail
+   with a raw 40164 string and no path forward; classify once and offer the
+   exact recovery action. */
+let lastWxHealth = null;
+
+function wxFriendly(raw) {
+  const msg = String(raw);
+  if (/40164|not in whitelist|invalid ip/i.test(msg)) {
+    const m = msg.match(/invalid ip\s+([0-9.]+)/i);
+    const ip = m ? m[1] : "";
+    return { kind: "ip_whitelist", ip, text: t("drafts_err_ip", ip) };
+  }
+  if (/40001|40125|invalid credential|invalid appsecret/i.test(msg)) {
+    return { kind: "invalid_secret", ip: "", text: t("drafts_err_secret") };
+  }
+  if (/timed out|timeout|connect|dns|network|os error|connection/i.test(msg)) {
+    return { kind: "network", ip: "", text: t("drafts_err_network") };
+  }
+  if (/绑定|not bound|未绑定|credentials|login/i.test(msg)) {
+    return { kind: "unbound", ip: "", text: msg };
+  }
+  return { kind: "unknown", ip: "", text: msg };
+}
+
+function renderWxHealth(h) {
+  const host = $("wx-health");
+  if (!host) return;
+  lastWxHealth = h;
+  host.hidden = false;
+  host.className = "wx-health" + (h && h.ok ? " ok" : " warn");
+  host.innerHTML = "";
+  const main = document.createElement("div");
+  main.className = "wh-main";
+  const title = document.createElement("b");
+  title.textContent = h && h.ok
+    ? t("wx_health_ok", h.nickname || "")
+    : h && h.bound
+      ? t("wx_health_fail")
+      : t("wx_health_unbound");
+  main.appendChild(title);
+  const detail = h && h.bound && !h.ok && h.kind === "ip_whitelist"
+    ? t("wx_health_ip", h.ip || "")
+    : h && h.bound && !h.ok
+      ? (h.message || "")
+      : h && !h.bound ? t("drafts_health_hint") : "";
+  if (detail) {
+    const p = document.createElement("span");
+    p.textContent = detail;
+    main.appendChild(p);
+  }
+  host.appendChild(main);
+  const actions = document.createElement("div");
+  actions.className = "wh-actions";
+  if (h && h.kind === "ip_whitelist" && h.ip) {
+    const cp = document.createElement("button");
+    cp.type = "button";
+    cp.className = "btn btn-ghost btn-mini";
+    cp.textContent = t("wx_ip_copy");
+    cp.addEventListener("click", async () => {
+      await copyPlain(h.ip);
+      toast(t("wx_ip_copied"), "ok");
+    });
+    actions.appendChild(cp);
+  }
+  if (h && !h.ok) {
+    const dev = document.createElement("button");
+    dev.type = "button";
+    dev.className = "btn btn-ghost btn-mini";
+    dev.textContent = t("wx_open_dev");
+    dev.addEventListener("click", () => openExternal("https://developers.weixin.qq.com/"));
+    actions.appendChild(dev);
+  }
+  const again = document.createElement("button");
+  again.type = "button";
+  again.className = "btn btn-ghost btn-mini";
+  again.textContent = t("wx_recheck");
+  again.addEventListener("click", () => wxHealthCheck(true));
+  actions.appendChild(again);
+  host.appendChild(actions);
+}
+
+async function wxHealthCheck(showResult = true) {
+  if (!invoke) { toast(t("demo_mode"), "err"); return null; }
+  const btn = $("wx-check");
+  if (btn) { btn.disabled = true; btn.textContent = t("wx_checking"); }
+  if ($("wx-health")) {
+    $("wx-health").hidden = false;
+    $("wx-health").textContent = t("wx_checking");
+  }
+  try {
+    const h = await invoke("wx_check");
+    renderWxHealth(h);
+    if (showResult) {
+      if (h.ok) toast(t("wx_health_ok", h.nickname || ""), "ok");
+      else if (h.bound && h.kind === "ip_whitelist") toast(t("wx_health_ip", h.ip || ""), "err");
+      else if (h.bound) toast(`${t("wx_health_fail")}：${h.message || ""}`, "err");
+      else toast(t("wx_health_unbound"), "info");
+    }
+    return h;
+  } catch (e) {
+    if (showResult) toast(String(e), "err");
+    return null;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t("wx_recheck"); }
+  }
 }
 function renderWxAccounts(st) {
   const host = $("wx-accounts");
@@ -1877,7 +2255,16 @@ async function doExport() {
 async function doValidate() {
   await convertNow();
   $("violations-panel").hidden = false;
-  renderViolationsPanel(lastResult ? lastResult.violations : []);
+  let list = activeViolations();
+  // convertNow paints the active platform's verdict; if it fell back (audit
+  // request failed) ask once more so the panel and chip never disagree.
+  if (invoke && (!lastPlatformAudit || lastPlatformAudit.platform !== currentPlatform)) {
+    try {
+      const a = await refreshPlatformAudit();
+      if (a) list = a.violations || [];
+    } catch (e) { toast(String(e), "err"); }
+  }
+  renderViolationsPanel(list);
 }
 
 /* ------------------------------------------------------------- AI chat */
@@ -1969,25 +2356,30 @@ function finalizeAiMessage(el, content, info = {}) {
   contentEl.innerHTML = renderMd(content);
   const actions = document.createElement("div");
   actions.className = "msg-actions";
-  const actionsSpec = [
-    [t("ai_insert"), () => insertAtCursor(content)],
-    [t("ai_replace"), () => {
-      const ed = $("editor");
-      ed.value = content;
-      dirty = true;
-      $("stat-saved").textContent = t("not_saved");
-      ed.focus();
-      ed.setSelectionRange(0, Math.min(400, content.length));
-      flashEditor();
-      aiLanding = true;
-      convertNow();
-    }],
-    [t("ai_copy"), async () => { await copyPlain(content); toast(t("copied_text"), "ok"); }],
-    [t("ai_copy_rich"), async () => {
+  const intent = info.intent || "";
+  const canApply = !info.stopped && normalizeAiReply(content, intent).length > 0;
+  const actionsSpec = [];
+  // Apply actions follow the intent: a continuation must land at the end (the
+  // old generic "insert at caret" could drop it at the top or inside a fence),
+  // and a full rewrite must replace the body - inserting it mid-article would
+  // duplicate the whole piece.
+  const fullRewrite = intent === "polish" || intent === "adapt";
+  if (canApply && intent === "continue") {
+    actionsSpec.push([t("ai_append"), () => appendAiReply(content)]);
+    actionsSpec.push([t("ai_insert"), () => insertAtCursor(normalizeAiReply(content, intent))]);
+  } else if (canApply && fullRewrite) {
+    actionsSpec.push([t("ai_replace"), () => replaceArticleWithAi(content, intent)]);
+  } else if (canApply && intent !== "title" && intent !== "poster") {
+    actionsSpec.push([t("ai_insert"), () => insertAtCursor(normalizeAiReply(content, intent))]);
+    actionsSpec.push([t("ai_replace"), () => replaceArticleWithAi(content, intent)]);
+  }
+  actionsSpec.push([t("ai_copy"), async () => { await copyPlain(content); toast(t("copied_text"), "ok"); }]);
+  if (canApply && intent !== "title" && intent !== "poster") {
+    actionsSpec.push([t("ai_copy_rich"), async () => {
       if (!invoke) { toast(t("demo_mode"), "err"); return; }
       try { await copyRichMarkdown(content); } catch (e) { toast(t("copy_failed") + String(e), "err"); }
-    }],
-  ];
+    }]);
+  }
   for (const [label, fn] of actionsSpec) {
     const b = document.createElement("button");
     b.className = "chip";
@@ -1995,26 +2387,123 @@ function finalizeAiMessage(el, content, info = {}) {
     b.addEventListener("click", fn);
     actions.appendChild(b);
   }
-  el.appendChild(actions);
+  if (actionsSpec.length) el.appendChild(actions);
   msgScrollBottom();
 }
 
 function insertAtCursor(text) {
+  lastFixUndo = null;
+  lastAiAppend = null;
   const ed = $("editor");
-  const start = ed.selectionStart ?? ed.value.length;
-  const before = ed.value.slice(0, start);
-  const after = ed.value.slice(ed.selectionEnd ?? start);
-  ed.value = before + text + after;
+  const md = ed.value;
+  const selStart = ed.selectionStart ?? md.length;
+  const selEnd = ed.selectionEnd ?? selStart;
+  let start = selStart;
+  // never splice into frontmatter or inside an open code fence: both corrupt
+  // the source silently (metadata becomes prose, the fence swallows text)
+  if (start < frontmatterEnd(md)) start = md.length;
+  if ((md.slice(0, start).match(/^[ \t]*```/gm) || []).length % 2 === 1) start = md.length;
+  const atEnd = start !== selStart;
+  const prefix = atEnd
+    ? md.length && !md.endsWith("\n") ? md + "\n\n" : md
+    : md.slice(0, start);
+  const suffix = atEnd ? "" : md.slice(selEnd);
+  ed.value = prefix + text + suffix;
   dirty = true;
   $("stat-saved").textContent = t("not_saved");
   // visual guidance: select the inserted range + glow the editor
   ed.focus();
-  ed.setSelectionRange(start, start + text.length);
+  ed.setSelectionRange(prefix.length, prefix.length + text.length);
   flashEditor();
   if (window.Mozai) Mozai.typing();
   aiLanding = true;
-  scheduleConvert();
+  afterAiEdit();
 }
+
+/* Validate right after an AI edit: the rule chip and violations panel must
+   show the new content, not the pre-edit verdict. */
+function afterAiEdit() {
+  convertNow()
+    .then(() => {
+      const list = activeViolations();
+      if (!list.length) return;
+      $("violations-panel").hidden = false;
+      renderViolationsPanel(list);
+      toast(t("ai_after_fix_check", list.length), list.some((v) => v.severity === "block") ? "err" : "info");
+    })
+    .catch(() => {});
+}
+
+function toastUndo(message, fn) {
+  toast(message, "ok");
+  const b = $("status-note-undo");
+  if (!b) return;
+  b.hidden = false;
+  b.textContent = t("undo");
+  b.onclick = () => {
+    fn();
+    b.hidden = true;
+    b.onclick = null;
+  };
+}
+
+/* Continuation is the failure-prone path: it used to insert at the caret
+   (often at the top, or inside an open fence) and could repeat the article's
+   ending. Append to the end, after normalizing the reply, and keep an undo. */
+function appendAiReply(text) {
+  const reply = normalizeAiReply(text, "continue");
+  if (!reply) { toast(t("ai_need_article"), "err"); return; }
+  if (fenceCount(reply) % 2 === 1) { toast(t("ai_unclosed_fence"), "err"); return; }
+  const ed = $("editor");
+  const md = ed.value;
+  // appending to a body with an open fence would put the new text inside the
+  // code block; refuse instead of silently corrupting the source
+  if (fenceCount(articleBody(md)) % 2 === 1) { toast(t("ai_article_open_fence"), "err"); return; }
+  lastFixUndo = null;
+  lastAiAppend = { markdown: md, dirty };
+  const body = md.replace(/\s+$/, "");
+  ed.value = body + (body ? "\n\n" : "") + reply + "\n";
+  dirty = true;
+  $("stat-saved").textContent = t("not_saved");
+  ed.focus();
+  ed.setSelectionRange(body.length + (body ? 2 : 0), ed.value.length - 1);
+  flashEditor();
+  aiLanding = true;
+  afterAiEdit();
+  toastUndo(t("ai_append_done"), undoAiAppend);
+}
+function undoAiAppend() {
+  if (!lastAiAppend) return;
+  const wasDirty = !!lastAiAppend.dirty;
+  $("editor").value = lastAiAppend.markdown;
+  lastAiAppend = null;
+  dirty = wasDirty;
+  $("stat-saved").textContent = wasDirty ? t("not_saved") : t("saved");
+  convertNow();
+}
+function replaceArticleWithAi(text, intent = "replace") {
+  lastFixUndo = null;
+  lastAiAppend = null;
+  const ed = $("editor");
+  const md = ed.value;
+  const body = normalizeAiReply(text, intent);
+  if (!body) { toast(t("ai_need_article"), "err"); return; }
+  if (fenceCount(body) % 2 === 1) { toast(t("ai_unclosed_fence"), "err"); return; }
+  // the article's metadata belongs to the article, never to the model
+  ed.value = md.slice(0, frontmatterEnd(md)) + body + "\n";
+  dirty = true;
+  $("stat-saved").textContent = t("not_saved");
+  ed.focus();
+  ed.setSelectionRange(0, Math.min(400, body.length));
+  flashEditor();
+  aiLanding = true;
+  afterAiEdit();
+}
+function resetAiContext() {
+  aiHistory = [];
+  aiBriefCache = { key: "", text: "" };
+}
+
 /* brief glow on the editor pane so the user sees where AI content landed */
 function flashEditor() {
   const ed = $("editor");
@@ -2022,42 +2511,197 @@ function flashEditor() {
   clearTimeout(flashEditor._t);
   flashEditor._t = setTimeout(() => ed.classList.remove("land-flash"), 1200);
 }
-function buildQuickPrompt(kind) {
-  const md = $("editor").value;
-  const ctx = md.trim().length > 0 ? `
+/* ---- platform-aware assistant context ----------------------------------
+   The assistant is a publishing agent, not a generic chat box: every turn
+   gets the active platform's machine-checked limits (platform_agent_brief,
+   generated from PlatformSpec) plus the live article. Quick prompts only
+   state the intent - limits live in the system prompt so the prompt and the
+   validator can never disagree. */
 
-当前文章内容：
-
-${md.slice(0, 6000)}` : "";
-  const zh = lang === "zh-CN";
-  switch (kind) {
-    case "polish": return (zh ? "请润色下面这篇公众号文章，保持 Markdown 格式与结构，直接输出润色后的全文。" : "Polish this article, keep Markdown format, output the full text.") + ctx;
-    case "continue": return (zh ? "请为下面的公众号文章续写 2-3 个段落，保持风格一致，直接输出续写内容。" : "Continue this article by 2-3 paragraphs in the same style.") + ctx;
-    case "title": return (zh ? "为下面的公众号文章起 5 个吸引人的标题，每行一个，不要编号。" : "Propose 5 catchy titles for this article, one per line.") + ctx;
-    case "outline": return (zh ? "我想写一篇公众号文章，请给出一份结构清晰的文章提纲（Markdown 列表）。主题：请结合我的描述。" : "Draft a clear article outline (Markdown list). Topic: see my description.") + ctx;
-    case "poster": return (zh ? "为公众号头图写一句主标题文案与一句副标题文案（共两行，直接输出，不要解释），主题结合当前文章。" : "Write one headline and one subline for an MP cover image, two lines only.") + ctx;
-    default: return kind;
+function frontmatterEnd(md) {
+  const m = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/.exec(md);
+  return m ? m[0].length : 0;
+}
+function articleBody(md = $("editor").value) {
+  return md.slice(frontmatterEnd(md));
+}
+function fenceCount(s) {
+  return (s.match(/^[ \t]*```/gm) || []).length;
+}
+function stripWholeFence(s) {
+  const v = String(s).trim();
+  const m = v.match(/^```[\w-]*[ \t]*\r?\n([\s\S]*?)\r?\n```$/);
+  return m ? m[1].trim() : v;
+}
+/* Normalize a model reply before it touches the article: a whole-document
+   fence is unwrapped, an injected frontmatter block is dropped, and a
+   continuation that repeats the article's last paragraph or title is trimmed.
+   This is the engine-side guard against the "continuation repeats the ending"
+   and "AI wraps the whole reply in ```markdown" failures. */
+function normalizeAiReply(text, intent = "") {
+  let out = stripWholeFence(text);
+  const fm = out.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (fm) out = out.slice(fm[0].length).trim();
+  if (intent === "continue") {
+    const body = articleBody().trim();
+    const last = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).pop() || "";
+    if (last && out.startsWith(last)) out = out.slice(last.length).replace(/^\s+/, "");
+    const title = currentTitle().trim();
+    const firstLine = (out.match(/^[^\n]*/) || [""])[0].trim();
+    if (title && (firstLine === `# ${title}` || firstLine === title)) {
+      out = out.slice(firstLine.length).replace(/^\s+/, "");
+    }
+  } else if (intent === "polish" || intent === "adapt") {
+    // a full rewrite must not re-introduce the title as an H1: the title lives
+    // in its own field, and a duplicate heading breaks the visual hierarchy
+    const title = currentTitle().trim();
+    const firstLine = (out.match(/^[^\n]*/) || [""])[0].trim();
+    if (title && firstLine === `# ${title}`) {
+      out = out.slice(firstLine.length).replace(/^\s+/, "");
+    }
+  }
+  return out.trim();
+}
+async function platformBrief() {
+  const key = `${currentPlatform}:${lang}`;
+  if (aiBriefCache.key === key) return aiBriefCache.text;
+  if (!invoke) return "";
+  try {
+    const text = await invoke("platform_agent_brief", {
+      platform: currentPlatform,
+      lang: lang === "zh-CN" ? "zh" : "en",
+    });
+    aiBriefCache = { key, text };
+    return text;
+  } catch (e) {
+    return "";
   }
 }
-const AI_SYSTEM = () => {
-  // HTML-format articles need an HTML-native assistant: replies are spliced
-  // into inline-styled HTML, so teaching Markdown fences would corrupt them.
-  if (typeof articleFormat !== "undefined" && articleFormat === "html") {
-    return lang === "zh-CN"
-      ? "你是一位微信公众号写作助手。当前文章以 HTML 格式编写（内联样式、section/p/span 结构）。你的回复必须是 HTML 片段，与文章现有结构与风格保持一致。合规铁律（引擎会自动复核，但请直接写对）：只用内联 style 属性；禁用 font-family；禁用固定像素宽度（用百分比）；禁用 <script>/<iframe>/<style> 标签；图片只用 https 直链。可用标签：section、p、span、strong、em、b、i、u、s、br、table、thead、tbody、tr、td、th、ul、ol、li、blockquote、h1-h6、figure、figcaption、center。"
-      : "You are a WeChat Official Account writing assistant. The current article is written in HTML (inline styles, section/p/span structure). Your replies must be HTML fragments consistent with the article's existing structure and style. Compliance rules (the engine re-checks, but write them correctly): inline style attributes only; no font-family; no fixed pixel widths (use percentages); no <script>/<iframe>/<style> tags; images via https URLs only. Allowed tags: section, p, span, strong, em, b, i, u, s, br, table, thead, tbody, tr, td, th, ul, ol, li, blockquote, h1-h6, figure, figcaption, center.";
+function aiEditorContext(intent = "") {
+  const zh = lang === "zh-CN";
+  const spec = currentPlatformSpec();
+  const md = $("editor").value;
+  const body = articleBody(md);
+  const ed = $("editor");
+  const sel = ed && ed.selectionStart !== ed.selectionEnd
+    ? md.slice(ed.selectionStart, ed.selectionEnd).trim()
+    : "";
+  const cap = 12000;
+  let excerpt = body;
+  if (body.length > cap) {
+    if (intent === "continue") {
+      // Continuation needs the voice (opening) AND the exact ending to attach
+      // to; sending only the first 12k made long articles continue at the top.
+      const head = body.slice(0, 2000);
+      const tail = body.slice(-(cap - 2000));
+      excerpt = head + (zh
+        ? "\n\n（中间内容省略；续写必须紧接最后一段）\n\n"
+        : "\n\n(middle omitted; the new text must follow the final paragraph)\n\n") + tail;
+    } else {
+      excerpt = body.slice(0, cap) + (zh
+        ? `\n\n（正文过长，仅提供前 ${cap} 字；未提供的部分请保持不变）`
+        : `\n\n(Truncated to the first ${cap} chars; keep the rest unchanged)`);
+    }
   }
-  return lang === "zh-CN"
-    ? "你是一位微信公众号写作助手。始终输出标准 Markdown（GFM）。风格自然、信息密度高、适合移动端阅读。可以使用引用提示卡语法（> [!NOTE] / [!KEYPOINT] 等）与表格。需要展示数据时优先使用图表围栏：```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"标题\",\"labels\":[\"标签\"…],\"values\":[数值…],\"unit\":\"单位(可选)\"}\\n```，labels 与 values 数量必须一致，pie 的 values 表示占比。铁律：图表 JSON 必须完整包在 ```chart 围栏里，不要把 JSON 直接写在正文中。"
-    : "You are a WeChat Official Account writing assistant. Always output standard Markdown (GFM). Natural style, high information density, mobile-friendly. You may use blockquote alert syntax (> [!NOTE] / [!KEYPOINT]) and tables. When presenting data, prefer chart fences: ```chart\\n{\"kind\":\"bar|line|pie\",\"title\":\"...\",\"labels\":[...],\"values\":[...],\"unit\":\"(optional)\"}\\n``` — labels and values must match in length; pie values are proportions. Iron rule: the chart JSON must be wrapped COMPLETELY in a ```chart fence, never written bare into the body.";
-};
+  return [
+    zh ? "【当前文章】" : "[Current article]",
+    `${zh ? "标题" : "Title"}: ${currentTitle().trim() || (zh ? "（未命名）" : "(untitled)")}`,
+    `${zh ? "平台" : "Platform"}: ${platformLabel(spec)} (${spec.id})`,
+    `${zh ? "源格式" : "Format"}: ${articleFormat === "html" ? "HTML" : "Markdown"}`,
+    sel ? `${zh ? "用户在编辑器中选中的片段（优先处理它，不要改动选区之外的内容）" : "Selected fragment (work on it first; leave everything outside it alone)"}:\n${sel}` : "",
+    `${zh ? "正文" : "Body"}:\n${excerpt || (zh ? "（空）" : "(empty)")}`,
+  ].filter(Boolean).join("\n");
+}
+async function buildSystemPrompt(intent = "") {
+  const zh = lang === "zh-CN";
+  const spec = currentPlatformSpec();
+  const name = platformLabel(spec);
+  const parts = [];
+  parts.push(zh
+    ? `你是 wxwright 的社交媒体发文助手，当前目标平台是「${name}」。你熟悉该平台的发布形态、字数/图片/话题限制与合规红线；输出必须是可直接发布或直接插入文章的内容。不要寒暄，不要解释过程，不要输出 frontmatter。`
+    : `You are wxwright's social-media publishing assistant. The active target platform is "${name}". You know its publishing format, length/image/hashtag limits and compliance rules; every reply must be publish-ready or directly insertable. No greetings, no process narration, no frontmatter.`);
+  const brief = await platformBrief();
+  if (brief) parts.push(brief);
+  if (articleFormat === "html") {
+    parts.push(zh
+      ? "当前文章是直接 HTML 源：回复必须是可拼接的 HTML 片段，只使用内联 style；禁止 font-family、固定像素宽度、script/iframe/style 与站外图片。"
+      : "The article is a direct HTML source: reply with spliceable HTML fragments using inline styles only; no font-family, no fixed pixel widths, no script/iframe/style, no external images.");
+  } else {
+    parts.push(zh
+      ? "当前文章是 Markdown（GFM）：保持标准语法；```chart 围栏中的 JSON 必须完整闭合，labels 与 values 等长；表格后空一行；不要在围栏外裸写 HTML 或 JSON。"
+      : "The article is Markdown (GFM): keep standard syntax; chart JSON must be fully fenced with equal labels/values; leave a blank line after tables; never write bare HTML or JSON outside fences.");
+    // The rich-HTML channel only exists in the WeChat dialect renderer.
+    if (currentPlatform === "wechat" && aiHtmlTags) {
+      parts.push(t("ai_html_channel", aiHtmlTags));
+    }
+  }
+  parts.push(zh
+    ? "输出铁律：\n1. 代码围栏必须成对闭合，绝不输出半截围栏；\n2. 续写只输出新增内容，不重复原文结尾、不重写标题；\n3. 需要图片时只引用素材库相对路径或 https 直链，绝不编造不存在的本地文件；\n4. 平台上限宁短勿超（以上方平台清单为准）；\n5. 不编造事实、数据或引用，示例数据必须标注「示例」；\n6. 除非用户明确要求，否则不要输出整篇文章的标题行。"
+    : "Output rules:\n1. Every code fence must be paired; never emit a half-open fence.\n2. For continuations output only the new text: do not restate the ending or rewrite the title.\n3. Reference only asset-library relative paths or https URLs; never invent local files.\n4. Stay under the platform limits above - shorter is safer.\n5. Never invent facts, data or quotes; label sample data as sample.\n6. Do not output the article's title line unless explicitly asked.");
+  if (intent === "continue") {
+    parts.push(zh
+      ? "本轮是续写：只输出紧接着原文末尾的新段落，不要复述任何已有内容。"
+      : "This turn is a continuation: output only new paragraphs that follow the current ending; restate nothing.");
+  }
+  parts.push(aiEditorContext(intent));
+  return parts.join("\n\n");
+}
+
+function buildQuickPrompt(kind) {
+  const zh = lang === "zh-CN";
+  const spec = currentPlatformSpec();
+  const name = platformLabel(spec);
+  const empty = articleBody().trim().length === 0;
+  switch (kind) {
+    case "polish":
+      return zh
+        ? `请按「${name}」的发布规范润色当前文章：保留事实、结构与全部 Markdown/HTML 语法，收紧冗余表达，直接输出润色后的完整正文（不要标题行、不要 frontmatter、不要解释）。`
+        : `Polish the current article for ${name}: keep facts, structure and all Markdown/HTML syntax; tighten the prose. Output the full polished body only (no title line, no frontmatter, no explanation).`;
+    case "continue":
+      return zh
+        ? (empty
+          ? `当前文章为空。请按「${name}」的调性写一个自然的开头（2-3 段），直接输出正文，不要标题与解释。`
+          : "请为当前文章续写 2-3 个自然段，承接原文最后一段的语气与论点。只输出新增内容：不要重复已有结尾、不要重写标题、不要输出 frontmatter。")
+        : (empty
+          ? `The article is empty. Write a natural opening (2-3 paragraphs) that fits ${name}; output body text only, no title, no explanation.`
+          : "Continue the current article by 2-3 paragraphs, matching the voice and argument of its final paragraph. Output ONLY the new text: do not restate the ending, do not rewrite the title, no frontmatter.");
+    case "title":
+      return zh
+        ? `为当前文章起 5 个适合「${name}」的标题，遵守该平台的标题长度限制；每行一个，不要编号、不要解释。`
+        : `Propose 5 titles for the current article that fit ${name} and its title-length limit; one per line, no numbering, no explanation.`;
+    case "outline":
+      return zh
+        ? `请给出一份适合「${name}」发布的结构化提纲（Markdown 列表），结合当前文章主题；只输出提纲。`
+        : `Draft a structured outline (Markdown list) suited to ${name}, based on the current article's topic; output the outline only.`;
+    case "adapt":
+      return zh
+        ? `把当前文章改编成「${name}」的发布稿：按平台清单控制篇幅、结构与话题，输出改编后的 ${articleFormat === "html" ? "HTML" : "Markdown"} 正文（保留原有图片引用；不要输出平台文案、标题行、frontmatter 或解释）。`
+        : `Adapt the current article for ${name}: follow the platform brief for length, structure and hashtags; output the adapted ${articleFormat === "html" ? "HTML" : "Markdown"} body (keep existing image references; no caption, title line, frontmatter or explanation).`;
+    case "poster":
+      return zh
+        ? "为当前文章的头图写一句主标题与一句副标题（共两行，直接输出，不要解释）。"
+        : "Write one cover headline and one subline for the current article (two lines only, no explanation).";
+    default:
+      return kind;
+  }
+}
 
 
-async function aiSend(text) {
-  if (!invoke) { demoStream(text); return; }
-  if (aiBusy) return;
+/* Typed continuations must follow the same append-safe path as the quick chip.
+   Match explicit continuation verbs, plus a bare "继续" style message - but not
+   "继续优化标题", which is a different task. */
+function detectContinueIntent(text) {
+  const t = String(text).trim();
+  if (/^(请)?(继续|接着|往下写|继续写|接着写|写下去|继续吧|接着吧)[。.!！]?$/.test(t)) return true;
+  return /(续写|接着写|继续写|继续往下写|接着往下写|continue (writing|the article)|keep writing)/i.test(t);
+}
+
+async function aiSend(text, intent = "") {
   const baseText = text.trim();
   if (!baseText) return;
+  const turnIntent = intent || (detectContinueIntent(baseText) ? "continue" : "");
+  if (!invoke) { demoStream(text, turnIntent); return; }
+  if (aiBusy) return;
   aiBusy = true;
   aiStopped = false;
   aiStartedAt = Date.now();
@@ -2120,7 +2764,7 @@ async function aiSend(text) {
     const stopped = !!(ev && ev.payload && ev.payload.stopped);
     const usage = ev && ev.payload ? ev.payload.usage : null;
     if (!acc) acc = stopped ? (lang === "zh-CN" ? "（已停止）" : "(stopped)") : "";
-    finalizeAiMessage(el, acc, { stopped, usage });
+    finalizeAiMessage(el, acc, { stopped, usage, intent: turnIntent });
     if (!stopped) {
       aiHistory.push({ role: "assistant", content: acc });
       if (aiHistory.length > 24) aiHistory = aiHistory.slice(-24);
@@ -2163,11 +2807,9 @@ async function aiSend(text) {
     updateJumpChip();
   }
   try {
-    // The html-channel clause is appended only when the backend supplied the
-    // allowlist; an empty tag list means older backend, plain prompt.
-    const sys = aiHtmlTags
-      ? AI_SYSTEM() + "\n\n" + t("ai_html_channel", aiHtmlTags)
-      : AI_SYSTEM();
+    // Rebuilt every turn: platform brief + live article come from the backend,
+    // so a platform switch or an edit between messages is always reflected.
+    const sys = await buildSystemPrompt(turnIntent);
     await invoke("ai_chat", {
       messages: [{ role: "system", content: sys }, ...aiHistory],
       temperature: 0.7,
@@ -2180,7 +2822,7 @@ async function aiSend(text) {
 
 /* demo harness: canned markdown streamed locally so the whole UX is
    verifiable without a backend */
-async function demoStream(text) {
+async function demoStream(text, intent = "") {
   if (aiBusy) { toast(lang === "zh-CN" ? "正在生成中，请稍候" : "Still generating, please wait"); return; }
   aiBusy = true;
   aiStopped = false;
@@ -2224,7 +2866,7 @@ async function demoStream(text) {
     sendBtn.classList.remove("stopping");
     if (!el.isConnected) return; // drawer cleared while streaming
     if (!acc) acc = stopped ? (lang === "zh-CN" ? "（已停止）" : "(stopped)") : "";
-    finalizeAiMessage(el, acc, { stopped });
+    finalizeAiMessage(el, acc, { stopped, intent });
     if (!stopped) {
       aiHistory.push({ role: "assistant", content: acc });
       if (aiHistory.length > 24) aiHistory = aiHistory.slice(-24);
@@ -2418,6 +3060,13 @@ function renderPlatformOptions() {
       e.stopPropagation();
       $("platform-menu").hidden = true;
       if (item.dataset.id === currentPlatform) return;
+      // Direct-HTML articles are imported from the MP draft box; their layout
+      // only exists in the WeChat dialect. Other platforms would silently
+      // parse raw HTML as Markdown - refuse instead of exporting garbage.
+      if (articleFormat === "html" && item.dataset.id !== "wechat") {
+        toast(t("html_wechat_only"), "info");
+        return;
+      }
       applyPlatform(item.dataset.id);
       if (currentArticleId) {
         dirty = true; // platform is part of the article; persist on next save
@@ -2464,11 +3113,15 @@ function renderPlatformPresets() {
 
 function applyPlatform(id) {
   currentPlatform = id;
+  lastFixUndo = null; // an undo snapshot belongs to the platform it was taken on
+  lastAiAppend = null;
   localStorage.setItem("wxwright-platform", id);
   renderPlatformOptions();
   renderPlatformPresets();
   refreshCopyButton();
   updatePushDraftButton();
+  const aiPlat = $("ai-platform-chip");
+  if (aiPlat) aiPlat.textContent = platformLabel(currentPlatformSpec());
   if (sidebarTab === "drafts") renderSidebarDrafts();
   if (!$("modal-poster").hidden) {
     // untouched template follows the new platform's canvas; edited HTML stays
@@ -2511,6 +3164,9 @@ async function initPlatformSwitcher() {
   renderPlatformOptions();
   renderPlatformPresets();
   refreshCopyButton();
+  updatePushDraftButton();
+  const aiPlat = $("ai-platform-chip");
+  if (aiPlat) aiPlat.textContent = platformLabel(currentPlatformSpec());
   $("platform-trigger").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("platform-menu");
@@ -4445,12 +5101,15 @@ let currentTpl = "cover";
 function bindUI() {
   /* editor + preview */
   $("editor").addEventListener("input", () => {
+    lastFixUndo = null; // manual edits invalidate both AI undo snapshots
+    lastAiAppend = null;
     dirty = true;
     $("stat-saved").textContent = t("not_saved");
     scheduleConvert();
     window.Mozai && Mozai.typing();
   });
   $("article-title").addEventListener("input", () => {
+    lastFixUndo = null;
     dirty = true;
     $("stat-saved").textContent = t("not_saved");
     updateTitleCount();
@@ -4488,7 +5147,7 @@ function bindUI() {
   $("rule-chip").addEventListener("click", () => {
     const panel = $("violations-panel");
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) renderViolationsPanel((lastResult && lastResult.violations) || []);
+    if (!panel.hidden) renderViolationsPanel(activeViolations());
   });
 
   /* device frame */
@@ -4660,10 +5319,16 @@ function bindUI() {
             toast(msg, "err");
           }
         } catch (e2) {
-          toast(String(e2), "err");
+          const info2 = wxFriendly(e2);
+          toast(info2.kind === "unknown" ? String(e2) : info2.text, "err");
         }
       } else {
-        toast(msg, "err");
+        const info = wxFriendly(e);
+        toast(info.kind === "unknown" ? msg : info.text, "err");
+        if (info.kind === "ip_whitelist") {
+          // keep the fix one click away in Settings without yanking focus
+          renderWxHealth({ bound: true, ok: false, kind: "ip_whitelist", ip: info.ip, message: msg });
+        }
       }
     } finally {
       btnBusy(false);
@@ -4743,7 +5408,7 @@ function bindUI() {
         updatePosterPreview();
         return;
       }
-      aiSend(buildQuickPrompt(kind));
+      aiSend(buildQuickPrompt(kind), kind);
     });
   });
   const jump = document.createElement("button");
@@ -4833,14 +5498,36 @@ function bindUI() {
     const secret = $("wx-secret").value.trim();
     const label = $("wx-label").value.trim();
     try {
-      await invoke("wx_bind", { appid, secret, label });
-      toast(t("wx_bind_ok"), "ok");
+      const r = await invoke("wx_bind", { appid, secret, label });
       $("wx-secret").value = "";
+      invalidateDrafts();
       await refreshWxStatus();
+      if (r && r.problem && r.problem.kind === "ip_whitelist") {
+        renderWxHealth({ bound: true, ok: false, kind: "ip_whitelist", ip: r.problem.ip || "", message: r.problem.message || "" });
+        toast(t("wx_bind_ip_warning", r.problem.ip || ""), "err");
+      } else {
+        lastWxHealth = null;
+        toast(t("wx_bind_ok_nickname", (r && r.nickname) || ""), "ok");
+      }
+      // Binding is about the WeChat channel: if the user was previewing
+      // another platform, that's exactly why the drafts box looked empty and
+      // the push button was missing. Show the channel the account serves.
+      if (currentPlatform !== "wechat") {
+        applyPlatform("wechat");
+        if (currentArticleId) {
+          dirty = true;
+          $("stat-saved").textContent = t("not_saved");
+        }
+        convertNow();
+        toast(t("wx_auto_switch"), "info");
+      }
+      if (sidebarTab === "drafts") renderSidebarDrafts(true);
     } catch (err) {
-      toast(String(err), "err");
+      const info = wxFriendly(err);
+      toast(info.kind === "unknown" ? String(err) : info.text, "err");
     }
   });
+  $("wx-check").addEventListener("click", () => wxHealthCheck(true));
   $("wx-unbind").addEventListener("click", async () => {
     if (!invoke) return;
     try {

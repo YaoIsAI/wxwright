@@ -663,7 +663,6 @@ fn should_try_whole_body_json(saw_data: bool, stopped: bool) -> bool {
 /// Budget ladder: reasoning models can burn the whole initial budget on
 /// thinking, so an empty content with finish_reason=length retries at a
 /// doubled budget (capped) before giving up with a clear diagnostic.
-#[cfg(test)]
 pub fn complete(
     system: &str,
     user: &str,
@@ -699,7 +698,6 @@ pub(crate) struct OnceReply {
 }
 
 /// One raw non-streaming chat call, parsed into content + finish_reason.
-#[cfg(test)]
 fn chat_once(
     base_url: &str,
     key: &str,

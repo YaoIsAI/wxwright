@@ -14,8 +14,8 @@
 #    - gui/ui/app.js 的 GUI_VERSION
 #    - cargo check（刷新 Cargo.lock）
 # 2. 提交并打 tag
-git tag v0.17.0
-git push origin v0.17.0
+git tag v0.18.0
+git push origin v0.18.0
 # 3. Actions 跑完后，Release 自动出现全部产物与 latest.json
 ```
 

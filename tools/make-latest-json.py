@@ -14,7 +14,7 @@ release still ships. Once one signature exists, every expected platform must
 carry one, otherwise the release would be silently half-updatable.
 
 Usage:
-  python tools/make-latest-json.py --dir artifacts --tag v0.17.0 \
+  python tools/make-latest-json.py --dir artifacts --tag v0.18.0 \
       --repo YaoIsAI/wxwright --notes "See the release notes" \
       --output artifacts/latest.json
 """
@@ -89,7 +89,7 @@ def entry(artifact, repo, tag, expected_key_id):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", required=True, help="directory with downloaded release artifacts")
-    parser.add_argument("--tag", required=True, help="release tag, e.g. v0.17.0")
+    parser.add_argument("--tag", required=True, help="release tag, e.g. v0.18.0")
     parser.add_argument("--repo", required=True, help="GitHub repository, owner/name")
     parser.add_argument("--notes", default="", help="short release notes embedded in the feed")
     parser.add_argument("--output", required=True, help="path of the latest.json to write")

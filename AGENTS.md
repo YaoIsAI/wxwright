@@ -199,8 +199,11 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 59 | **以为 bundler 会给 deb 签名**（`tauri-bundler` 的 `debian.rs` 没有 `sign_updaters` 调用，只有 NSIS/MSI/AppImage/macOS 产物生成 `.sig`） | 清单脚本因「deb 有文件但无签名」直接失败，Linux 发版必红；若放宽则 deb 用户永远收不到更新 | release.yml 在构建后用 `cargo tauri signer sign` 以同一把 key 补签 `*.deb.sig`，再由清单脚本正常收录 `linux-x86_64-deb` |
 | 60 | **先用 bundler 生成 updater `.sig`、再对同一个 exe 做 Authenticode 签名**（signtool 重写 PE，字节一变 minisign 必然对不上） | 启用 PFX 的那天，所有 Windows 客户端下载后验签失败，无法自动更新，而发布全绿 | 任何改动安装包字节的签名都必须发生在最后，并在之后重跑 `cargo tauri signer sign` 重建 `.sig` 再合成清单（release.yml 的 PFX step 已内置重签；本机签名流程见 `docs/code-signing.md`） |
 | 61 | **发布流水线的守卫 job 只在 dispatch 运行**（`guard-version` 带 `if: github.event_name == 'workflow_dispatch'`；tag push 时它 skipped，而 GitHub 对 `needs` 的默认规则是上游 skipped → 下游全部 skipped） | tag 已在远端，workflow 1 秒内显示 completed/skipped，Release 根本没有创建；此前发布都靠手动 dispatch，问题被完全掩盖 | 守卫必须对所有触发运行，tag push 时同样校验 tag 名与 Cargo.toml；打完 tag 后先看 `gh run list --workflow release.yml` 不是 skipped，再逐 job 核对 |
+| 62 | **原始 JSON 接口把微信错误当数据返回**（`draft_list` / `draft_get` / `freepublish_submit` 走 `post_with_token_value`，只做 token 刷新不做 errcode 判定；40164 白名单错误原样返回，GUI `v.item \|\| []` 读成空草稿箱） | 用户看到「草稿箱是空的」而不是「IP 不在白名单」；推送/群发同类失败也无提示 | 所有拿原始 body 的调用必须过 `ensure_ok`：errcode 非 0 一律转成带 code+errmsg 的错误；回归测试 `raw_json_errors_are_not_silent_success` 锁定 |
+| 63 | **续写的上下文只取正文前 12k 字**（长文续写时模型看不到结尾，接不上最后一段，或从开头重写；同时旧版「插入光标」会把续写塞到顶部/未闭合围栏里） | 续写结果重复、断裂，或把正文写进代码块 | 续写上下文取「开头 2k + 结尾 10k」；追加前断言文章与回复的 ``` 围栏均为偶数；整篇润色/适配只能「替换正文」，不提供光标插入 |
+| 64 | **AI 撤销快照跨文章/跨手工编辑存活**（`lastFixUndo` / `lastAiAppend` 只在下一次 AI 操作时被覆盖；切换文章、切平台、手动输入后仍能点「撤销」，把另一篇文章或更早的正文写回编辑器；快照也没记 dirty，撤销后「未保存」状态错乱） | 撤销一次 AI 修复会静默覆盖用户此后写的内容，甚至把别的文章注入当前文章；一旦保存就落盘 | 快照只属于「某篇文章 + 某个平台 + 某次编辑」：手动输入、切换/新建文章、切平台、插入/替换/追加都必须立即置空；快照记录并恢复 dirty；打开 HTML 文章时渠道强制回 wechat，未知 platform id 不切换 |
 
-## 8. 当前能力快照 / Feature map（2026-10-30，v0.17.0+）
+## 8. 当前能力快照 / Feature map（2026-11-02，v0.18.0+）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
   SVG 组件库（侧边栏「组件」tab：8 组件+分类筛选+缩略卡一键插入+手风琴调参+AI 生成+传图/AI 生图占位+取色器；弹窗已退役）/
@@ -219,8 +222,16 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   **在线更新**（右下角版本号即入口：启动 3 秒静默检查、每 6 小时复查、发现新版本
   变强调按钮，点击下载 + minisign 验签 + NSIS/AppImage/app 原地安装；`updater.rs`
   两个命令 + `update-progress` 事件；发布侧 `latest.json` 由
-  `tools/make-latest-json.py` 合成，流程见 `docs/auto-update.md`）。
-- 测试 219（212 常规 + 7 条 live 冒烟 ignored）；版本 0.17.0（workspace+tauri.conf
+  `tools/make-latest-json.py` 合成，流程见 `docs/auto-update.md`）/
+  **校验一键修复**（`fix.rs`：同一 `platform_audit` 判定 → 严格 JSON → 前后复核
+  + 回喂二轮 + 撤销；`ai_fix_article` 命令走 spawn_blocking；撤销快照随
+  文章切换/手工编辑/平台切换失效）/
+  **发文 Agent 助手**（每轮注入 `platform_agent_brief` + 实时文章上下文；续写
+  追加到末尾、护栏围栏、长文头尾上下文；润色/适配只允许替换正文；
+  HTML 文章固定微信渠道）/
+  **公众号连通性诊断**（绑定前实测 token；`wx_check` 显示昵称或 40164 的当前 IP，
+  复制 IP/打开 MP 后台/重新检测；草稿箱与推送共用错误分类；绑定后自动切到公众号渠道）。
+- 测试 231（224 常规 + 7 条 live 冒烟 ignored）；版本 0.18.0（workspace+tauri.conf
   + app.js GUI_VERSION 三处同步）。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是

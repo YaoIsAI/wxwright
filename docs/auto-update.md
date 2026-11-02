@@ -87,17 +87,17 @@ https://github.com/YaoIsAI/wxwright/releases/latest/download/latest.json
 
 ```json
 {
-  "version": "0.17.0",
-  "notes": "Release notes: https://github.com/YaoIsAI/wxwright/releases/tag/v0.17.0",
+  "version": "0.18.0",
+  "notes": "Release notes: https://github.com/YaoIsAI/wxwright/releases/tag/v0.18.0",
   "pub_date": "2026-10-30T12:00:00Z",
   "platforms": {
-    "windows-x86_64": { "signature": "...", "url": "https://.../wxwright_0.17.0_x64-setup.exe" },
-    "windows-x86_64-nsis": { "signature": "...", "url": "https://.../wxwright_0.17.0_x64-setup.exe" },
+    "windows-x86_64": { "signature": "...", "url": "https://.../wxwright_0.18.0_x64-setup.exe" },
+    "windows-x86_64-nsis": { "signature": "...", "url": "https://.../wxwright_0.18.0_x64-setup.exe" },
     "darwin-aarch64": { "signature": "...", "url": "https://.../wxwright_aarch64.app.tar.gz" },
     "darwin-x86_64": { "signature": "...", "url": "https://.../wxwright_x86_64.app.tar.gz" },
-    "linux-x86_64": { "signature": "...", "url": "https://.../wxwright_0.17.0_amd64.AppImage" },
-    "linux-x86_64-appimage": { "signature": "...", "url": "https://.../wxwright_0.17.0_amd64.AppImage" },
-    "linux-x86_64-deb": { "signature": "...", "url": "https://.../wxwright_0.17.0_amd64.deb" }
+    "linux-x86_64": { "signature": "...", "url": "https://.../wxwright_0.18.0_amd64.AppImage" },
+    "linux-x86_64-appimage": { "signature": "...", "url": "https://.../wxwright_0.18.0_amd64.AppImage" },
+    "linux-x86_64-deb": { "signature": "...", "url": "https://.../wxwright_0.18.0_amd64.deb" }
   }
 }
 ```
@@ -217,7 +217,7 @@ cargo test --workspace
 cargo fmt --all -- --check
 node --check gui/ui/app.js
 # 3. 提交后打 tag 或走 Actions 的 Release 工作流
-git tag v0.17.0 && git push origin v0.17.0
+git tag v0.18.0 && git push origin v0.18.0
 ```
 
 发布完成后在本地复核：
@@ -228,7 +228,7 @@ curl -sL https://github.com/YaoIsAI/wxwright/releases/latest/download/latest.jso
 ```
 
 客户端复核：启动已安装的旧版本，3 秒内右下角版本号应变成
-`wxwright 0.16.0 → 0.17.0`；点击后应显示下载百分比并自动重启。
+`wxwright 0.17.0 → 0.18.0`；点击后应显示下载百分比并自动重启。
 
 ### 6.1 本地联调更新链路（不依赖 GitHub）
 
