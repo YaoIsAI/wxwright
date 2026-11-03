@@ -11,6 +11,14 @@ invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 ## [0.18.1] - 2026-11-03
 
 ### Fixed
+- **The updater compiled only on Windows.** `install_inner` called the
+  diverging `AppHandle::restart()` under a non-Windows `cfg` and then fell
+  through to `Ok(())`, so on macOS and Linux the trailing expression was
+  unreachable code - which `-D warnings` rejects. `main` was red on both
+  platforms for six consecutive CI runs (since 2026-10-30) while every local
+  gate stayed green, because this machine only builds Windows. The relaunch is
+  now the tail of an `if cfg!(...)` branch, so no platform sees code after a
+  diverging call. Behavior is unchanged on all three.
 - **`copy --dry-run` no longer uploads.** The dry run built the real upload
   transport, so "check without touching my material library" wrote drafts of
   the article's images into the permanent library - and then reported the

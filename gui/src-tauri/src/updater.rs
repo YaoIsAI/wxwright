@@ -121,8 +121,13 @@ async fn install_inner(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(updater_error)?;
     // Windows: the plugin launches the NSIS installer and exits this process
     // itself (the installer's /R flag restarts the app). macOS and Linux get
-    // the new bundle in place and need an explicit relaunch.
-    #[cfg(not(target_os = "windows"))]
-    app.restart();
-    Ok(())
+    // the new bundle in place and need an explicit relaunch. `restart()`
+    // diverges (`-> !`), so it must be the *tail* of a branch rather than a
+    // statement followed by `Ok(())`: anything after a diverging call is
+    // unreachable code, and `-D warnings` rejects it on those two platforms.
+    if cfg!(target_os = "windows") {
+        Ok(())
+    } else {
+        app.restart()
+    }
 }

@@ -207,6 +207,8 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 67 | **frontmatter 只认 `\n`，CRLF 文件整块被当正文**（Windows 编辑器存的 `.md`：title/theme/platform 全部失效， yet 命令照常成功） | 平台/主题/标题静默不生效，产物回到默认，排查时看不出是换行符 | `util::strip_frontmatter` 接受 CRLF + BOM（`split_inclusive('\n')` + `trim_end_matches(['\r','\n'])`）；回归测试 `validate_reads_crlf_frontmatter_and_its_platform_and_title` 用真实 `\r\n` 夹具 |
 | 68 | **手写文档与 agent card 漂移**（`docs/agent-integration.md` 把 `publish` 说成群发、MCP 只列 9 个工具、退出码表漏 1；README/PRD/教程同样有旧数字；卡片是生成的，文档不是） | Agent 按文档操作 CLI 就会误判出口（把 freepublish 当群发不敢用/当成群发乱用），且没人发现 | `tests/doc_drift_test.rs` 把文档钉回 `agentcard::card_json()`：20 条命令逐条命中、12 工具+计数、输出/退出码契约、publish 措辞（禁 “群发 (publish)”/“Mass publish (publish)”）；改命令面必须同步 card + handbook + 两套 README + 教程 |
 | 69 | **CLI 行为测试的沙箱里，`s.path(x)` 不是子进程 cwd**（子进程 `current_dir(s.work())`，`path()` 指沙箱根；用 `s.path("-").exists()` 断言「没有多余文件」→ 放了坏代码仍然全绿） | 假绿的守卫比没有守卫更糟 | 断言产物/残留文件一律用 `s.stray(name)`（查 `work()`）或 `s.read(name)`；`exec` 里任何「文件不该出现」的断言先确认查的是 cwd |
+| 70 | **cfg 门控的发散调用后面还写 `Ok(())`**（`updater.rs` 的 `#[cfg(not(windows))] app.restart(); Ok(())`：`restart() -> !`，非 Windows 分支上尾表达式恒不可达 → `unreachable_code` 被 `-D warnings` 判编译失败；本机只编 Windows，永远看不到） | macOS/Linux 编译直接失败，发布产物缺两个平台 | 发散调用必须是**分支尾表达式**（`if cfg!(target_os="windows") { Ok(()) } else { app.restart() }`）；`return app.restart();` **同样报 unreachable**，别以为加 return 就没事。跨平台 lint 用 10 行独立 `rustc -D warnings` 探针在 $TEMP 先验证形状，再动真库 |
+| 71 | **只看本地门禁就发版**（v0.17.0 起 `main` 的 CI 连续 6 次红（macOS+Linux 同一编译错误），本地 `cargo test --workspace` 一直全绿，期间还照常发了 v0.18.0） | 红代码持续入库、tag 指向不能在 CI 里编译的源码，且「已全绿」的证据是假的 | **发版前必查远端 CI**：`gh run list --workflow ci.yml -L 5`，main 不绿先修再打 tag；本地只有单平台时，跨平台 lint/编译问题只能靠 CI，别把「本地绿」当「全平台绿」 |
 
 ## 8. 当前能力快照 / Feature map（2026-11-03，v0.18.1）
 
@@ -282,5 +284,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 - [ ] 发版时版本号三处同步（workspace Cargo.toml / tauri.conf.json / app.js GUI_VERSION）
 - [ ] 更新器相关改动 → `tools/make-latest-json.py` 用假产物跑通（签名匹配 / 不匹配 / 无签名三条路径）
 - [ ] CHANGELOG.md（Keep a Changelog 格式）+ 必要时 PRD §15 对照表
+- [ ] **发版前**查远端 CI：`gh run list --workflow ci.yml -L 5`，main 必须绿再打 tag
+      （本机只有 Windows，跨平台 `-D warnings` 编译错误只能在 CI 暴露，见坑 70/71）
 - [ ] 浏览器/桌面截图证据交给用户
 - [ ] git commit（含新踩的坑 → 更新本文档第 7 节）
