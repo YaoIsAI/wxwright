@@ -861,11 +861,17 @@ fn theme_lifecycle_scaffolds_protects_and_validates() {
     assert_eq!(vj["theme"]["id"], "probe");
 
     // A theme is loadable by id once it lives in the user theme directory.
-    std::fs::copy(
-        s.work().join("probe.toml"),
-        s.path("appdata/wxwright/themes/fromdir.toml"),
-    )
-    .expect("copy into the user theme dir");
+    // `util::config_root()` branches per platform (APPDATA on Windows,
+    // XDG_CONFIG_HOME else HOME/.config on unix), so the fixture has to land in
+    // both layouts or this passes on Windows and fails on the Linux/macOS
+    // runners (AGENTS.md pitfall 52).
+    for dir in ["appdata/wxwright/themes", "config/wxwright/themes"] {
+        std::fs::copy(
+            s.work().join("probe.toml"),
+            s.path(dir).join("fromdir.toml"),
+        )
+        .unwrap_or_else(|e| panic!("copy into {dir}: {e}"));
+    }
     let r = s.run(&[
         "--json",
         "convert",
