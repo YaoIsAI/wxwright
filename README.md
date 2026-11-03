@@ -81,14 +81,14 @@ be inserted, used to replace the article, or copied:
 ## Download
 
 Grab the latest build from the [Releases page](https://github.com/YaoIsAI/wxwright/releases).
-Current version: **0.18.0**.
+Current version: **0.18.1**.
 
 | Platform | File |
 |---|---|
-| Windows 10/11 x64 | `wxwright_0.18.0_x64-setup.exe` (per-user NSIS installer) |
-| macOS 11+ (Apple silicon) | `wxwright_0.18.0_aarch64.dmg` |
-| macOS 11+ (Intel) | `wxwright_0.18.0_x64.dmg` |
-| Linux x86_64 | `wxwright_0.18.0_amd64.AppImage` or `wxwright_0.18.0_amd64.deb` |
+| Windows 10/11 x64 | `wxwright_0.18.1_x64-setup.exe` (per-user NSIS installer) |
+| macOS 11+ (Apple silicon) | `wxwright_0.18.1_aarch64.dmg` |
+| macOS 11+ (Intel) | `wxwright_0.18.1_x64.dmg` |
+| Linux x86_64 | `wxwright_0.18.1_amd64.AppImage` or `wxwright_0.18.1_amd64.deb` |
 | CLI only | `wxwright-cli-windows-x64.zip`, `wxwright-cli-macos-arm64.tar.gz`, `wxwright-cli-macos-x64.tar.gz`, `wxwright-cli-linux-x64.tar.gz` |
 
 Mainland China mirror: [gitee.com/YaoIsAI/wxwright](https://gitee.com/YaoIsAI/wxwright)
@@ -126,8 +126,8 @@ for the full signing story.
 
 ### Linux notes
 
-- AppImage: `chmod +x wxwright_0.18.0_amd64.AppImage && ./wxwright_0.18.0_amd64.AppImage`
-- deb: `sudo apt install ./wxwright_0.18.0_amd64.deb` (apt pulls
+- AppImage: `chmod +x wxwright_0.18.1_amd64.AppImage && ./wxwright_0.18.1_amd64.AppImage`
+- deb: `sudo apt install ./wxwright_0.18.1_amd64.deb` (apt pulls
   `libwebkit2gtk-4.1-0` and `libgtk-3-0`; verified on Ubuntu 24.04)
 - The Chinese UI needs a CJK font: desktop installs usually have one; on minimal
   systems run `sudo apt install fonts-noto-cjk`.

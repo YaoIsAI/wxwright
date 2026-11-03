@@ -77,14 +77,14 @@ AI 助手在正文下方陪你写——流式输出、随时停止，每条回�
 ## 下载
 
 到 [发行版页面](https://gitee.com/YaoIsAI/wxwright/releases) 获取最新版本。
-当前版本：**0.18.0**。
+当前版本：**0.18.1**。
 
 | 平台 | 文件 |
 |---|---|
-| Windows 10/11 x64 | `wxwright_0.18.0_x64-setup.exe`（当前用户级 NSIS 安装包） |
-| macOS 11+（Apple 芯片） | `wxwright_0.18.0_aarch64.dmg` |
-| macOS 11+（Intel 芯片） | `wxwright_0.18.0_x64.dmg` |
-| Linux x86_64 | `wxwright_0.18.0_amd64.AppImage` 或 `wxwright_0.18.0_amd64.deb` |
+| Windows 10/11 x64 | `wxwright_0.18.1_x64-setup.exe`（当前用户级 NSIS 安装包） |
+| macOS 11+（Apple 芯片） | `wxwright_0.18.1_aarch64.dmg` |
+| macOS 11+（Intel 芯片） | `wxwright_0.18.1_x64.dmg` |
+| Linux x86_64 | `wxwright_0.18.1_amd64.AppImage` 或 `wxwright_0.18.1_amd64.deb` |
 | 仅 CLI | `wxwright-cli-windows-x64.zip`、`wxwright-cli-macos-arm64.tar.gz`、`wxwright-cli-macos-x64.tar.gz`、`wxwright-cli-linux-x64.tar.gz` |
 
 发行版附件与仓库 tag 一一对应，由同一份源码构建；从 0.17.0 起，更新器产物同时
@@ -121,8 +121,8 @@ CLI 二进制解压后需要 `xattr -d com.apple.quarantine wxwright`。完整�
 
 ### Linux 说明
 
-- AppImage：`chmod +x wxwright_0.18.0_amd64.AppImage && ./wxwright_0.18.0_amd64.AppImage`
-- deb：`sudo apt install ./wxwright_0.18.0_amd64.deb`（apt 自动拉取
+- AppImage：`chmod +x wxwright_0.18.1_amd64.AppImage && ./wxwright_0.18.1_amd64.AppImage`
+- deb：`sudo apt install ./wxwright_0.18.1_amd64.deb`（apt 自动拉取
   `libwebkit2gtk-4.1-0` 与 `libgtk-3-0`；已在 Ubuntu 24.04 实测）
 - 中文界面需要系统 CJK 字体：桌面版通常自带；极简系统执行
   `sudo apt install fonts-noto-cjk`。

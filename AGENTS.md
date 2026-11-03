@@ -208,7 +208,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 68 | **手写文档与 agent card 漂移**（`docs/agent-integration.md` 把 `publish` 说成群发、MCP 只列 9 个工具、退出码表漏 1；README/PRD/教程同样有旧数字；卡片是生成的，文档不是） | Agent 按文档操作 CLI 就会误判出口（把 freepublish 当群发不敢用/当成群发乱用），且没人发现 | `tests/doc_drift_test.rs` 把文档钉回 `agentcard::card_json()`：20 条命令逐条命中、12 工具+计数、输出/退出码契约、publish 措辞（禁 “群发 (publish)”/“Mass publish (publish)”）；改命令面必须同步 card + handbook + 两套 README + 教程 |
 | 69 | **CLI 行为测试的沙箱里，`s.path(x)` 不是子进程 cwd**（子进程 `current_dir(s.work())`，`path()` 指沙箱根；用 `s.path("-").exists()` 断言「没有多余文件」→ 放了坏代码仍然全绿） | 假绿的守卫比没有守卫更糟 | 断言产物/残留文件一律用 `s.stray(name)`（查 `work()`）或 `s.read(name)`；`exec` 里任何「文件不该出现」的断言先确认查的是 cwd |
 
-## 8. 当前能力快照 / Feature map（2026-11-02，v0.18.1）
+## 8. 当前能力快照 / Feature map（2026-11-03，v0.18.1）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
   SVG 组件库（侧边栏「组件」tab：8 组件+分类筛选+缩略卡一键插入+手风琴调参+AI 生成+传图/AI 生图占位+取色器；弹窗已退役）/
@@ -237,8 +237,7 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   **公众号连通性诊断**（绑定前实测 token；`wx_check` 显示昵称或 40164 的当前 IP，
   复制 IP/打开 MP 后台/重新检测；草稿箱与推送共用错误分类；绑定后自动切到公众号渠道）。
 - 测试 253（246 常规 + 7 条 live 冒烟 ignored）；版本 0.18.1（workspace+tauri.conf
-  + app.js GUI_VERSION 三处同步；README 下载表还指向上一个已发布的 0.18.0 资产，
-  发版时一并同步）。
+  + app.js GUI_VERSION 三处同步；三套 README 下载表已指向 0.18.1 资产）。
 - **CLI 是 Agent 的信源**：`crates/wxwright-cli/tests/cli_behavior.rs`（20 条端到端，
   跑真实二进制、沙箱化四个配置根、零网络零凭据）锁退出码/JSON 纯净/制品/门禁/凭据；
   `crates/wxwright-core/tests/doc_drift_test.rs` 把 `docs/agent-integration.md` + 两套

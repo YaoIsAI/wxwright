@@ -8,7 +8,7 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
-## [0.18.1] - Unreleased
+## [0.18.1] - 2026-11-03
 
 ### Fixed
 - **`copy --dry-run` no longer uploads.** The dry run built the real upload
