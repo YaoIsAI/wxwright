@@ -142,6 +142,9 @@ CLI 二进制解压后需要 `xattr -d com.apple.quarantine wxwright`。完整�
 # 无需任何凭据即可转换
 wxwright convert article.md --theme minimal --out article.html
 
+# 合规门禁：退出码 0 通过 / 1 存在阻断违规 / 2 未能运行
+wxwright validate article.md --strict
+
 # 可粘贴全链路：转换 -> 上传/内联图片 -> 规范化 -> 校验 -> 写剪贴板
 wxwright copy article.md
 # 然后打开公众号编辑器，Ctrl+V 粘贴
@@ -215,8 +218,9 @@ wxwright mcp serve                     # stdio MCP server
 
 ### 发布
 
-- **公众号**：创建草稿、图片上传永久素材库、更新草稿、浏览草稿箱；群发
-  （`publish`）必须显式 `--yes`。
+- **公众号**：创建草稿、图片上传永久素材库、更新草稿、浏览草稿箱；`publish`
+  走的是 freepublish（发布，把文章公开），不是群发，必须显式 `--yes`；群发仍由
+  本人在公众号后台操作。
 - **X 与 LinkedIn**：自带开发者应用。OAuth 2.0 PKCE / code flow + 本地回环回调，
   令牌存系统钥匙串；支持带图直接发文（X 最多四张、LinkedIn 一张），X 令牌自动
   续期。
@@ -282,7 +286,7 @@ README 不会悄悄各说各话。
 - AppSecret 与 OAuth 令牌只存系统钥匙串（Windows 凭据管理器 / macOS Keychain /
   libsecret），配置文件只存引用。
 - 日志与状态接口中的令牌、密钥始终掩码。
-- 写公众号默认只写草稿；群发必须显式确认。
+- 写公众号默认只写草稿；发布（freepublish）必须显式确认，群发不做自动化。
 - 零遥测、零云端依赖。AI Provider 与 ComfyUI 都是可选项，只有你配置后才会联网。
 - 更新包在执行前必须通过签名校验。
 

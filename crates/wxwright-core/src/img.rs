@@ -69,6 +69,18 @@ impl ImageOutcome {
         }
         self.final_src.to_ascii_lowercase().starts_with("http://")
     }
+
+    /// Paste hostility as a dry run should predict it. A dry run never uploads,
+    /// so a readable local image is inlined here while the real run would paste
+    /// a mmbiz URL; base64 input, unreadable files and `http://` keep the real
+    /// verdict because an upload would not rescue them.
+    pub fn dry_run_hostile(&self, uploads_enabled: bool) -> bool {
+        let would_upload = uploads_enabled
+            && self.inlined
+            && !self.source.starts_with("data:")
+            && !self.final_src.is_empty();
+        !would_upload && self.paste_hostile()
+    }
 }
 
 pub struct Resolved {
@@ -509,5 +521,66 @@ mod fit_tests {
         let r = fit_to_profile(&bytes, &p).expect("fit ok");
         assert!(!r.cropped && r.resized);
         assert_eq!((r.width, r.height), (1080, 486));
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::ImageOutcome;
+
+    fn outcome(source: &str, final_src: &str, inlined: bool, mmbiz: bool) -> ImageOutcome {
+        ImageOutcome {
+            source: source.into(),
+            final_src: final_src.into(),
+            data_w: None,
+            data_ratio: None,
+            media_id: None,
+            warning: None,
+            inlined,
+            mmbiz,
+        }
+    }
+
+    /// A dry run must not disagree with the real copy about anything except the
+    /// image a real run would have uploaded. Each other case is pinned both
+    /// ways so a future "optimistic" prediction cannot hide a paste failure.
+    #[test]
+    fn dry_run_prediction_only_relaxes_uploadable_local_images() {
+        let local = outcome("a.png", "data:image/png;base64,AAAA", true, false);
+        assert!(local.paste_hostile());
+        assert!(!local.dry_run_hostile(true), "with creds it would upload");
+        assert!(
+            local.dry_run_hostile(false),
+            "without creds it stays inlined"
+        );
+
+        let b64_source = outcome(
+            "data:image/png;base64,AAAA",
+            "data:image/png;base64,AAAA",
+            true,
+            false,
+        );
+        assert!(
+            b64_source.dry_run_hostile(true),
+            "base64 input is never uploaded"
+        );
+
+        let missing = outcome("gone.png", "", false, false);
+        assert!(
+            missing.dry_run_hostile(true),
+            "an unreadable image has no src"
+        );
+
+        let insecure = outcome("http://x/y.png", "http://x/y.png", false, false);
+        assert!(
+            insecure.dry_run_hostile(true),
+            "http is not rescued by a prediction"
+        );
+
+        let https = outcome("https://x/y.png", "https://x/y.png", false, false);
+        assert!(!https.dry_run_hostile(true));
+
+        let uploaded = outcome("a.png", "https://mmbiz.qpic.cn/1", false, true);
+        assert!(!uploaded.paste_hostile() && !uploaded.dry_run_hostile(false));
     }
 }

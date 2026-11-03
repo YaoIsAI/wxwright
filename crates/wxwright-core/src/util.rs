@@ -243,42 +243,59 @@ pub fn probe_tcp(host: &str, port: u16, timeout_ms: u64) -> bool {
 /// header must parse at least one `key: value` pair, otherwise the document
 /// is treated as having no frontmatter at all.
 pub fn strip_frontmatter(md: &str) -> (Vec<(String, String)>, String) {
-    let Some(rest) = md.trim_start().strip_prefix("---") else {
+    // Windows-authored files carry CRLF; the old line detection only accepted
+    // "\n", so every frontmatter block written by a Windows editor was
+    // silently rendered as body text (platform/title/theme all ignored).
+    let trimmed = md.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    let Some(rest) = trimmed.strip_prefix("---") else {
         return (Vec::new(), md.to_string());
     };
     // The opening fence must be alone on its line too: "----" or "---text"
     // is just text.
-    if !rest.is_empty() && !rest.starts_with('\n') {
+    let after_open = if let Some(r) = rest.strip_prefix("\r\n") {
+        r
+    } else if let Some(r) = rest.strip_prefix('\n') {
+        r
+    } else if rest.is_empty() {
+        ""
+    } else {
+        return (Vec::new(), md.to_string());
+    };
+    let mut header_end = after_open.len();
+    let mut body_start = after_open.len();
+    let mut found_close = false;
+    let mut offset = 0usize;
+    for line in after_open.split_inclusive('\n') {
+        if line.trim_end_matches(['\r', '\n']).trim() == "---" {
+            header_end = offset;
+            body_start = offset + line.len();
+            found_close = true;
+            break;
+        }
+        offset += line.len();
+    }
+    if !found_close {
         return (Vec::new(), md.to_string());
     }
-    let after_open = rest.strip_prefix('\n').unwrap_or(rest);
-    let mut offset = 0usize;
-    for line in after_open.split('\n') {
-        if line.trim() == "---" {
-            let header = &after_open[..offset];
-            let mut pairs = Vec::new();
-            for hl in header.lines() {
-                if let Some((k, v)) = hl.split_once(':') {
-                    pairs.push((
-                        k.trim().to_string(),
-                        v.trim().trim_matches('"').trim_matches('\'').to_string(),
-                    ));
-                }
-            }
-            // No keys means a pair of horizontal rules around prose, not
-            // frontmatter.
-            if pairs.is_empty() {
-                return (Vec::new(), md.to_string());
-            }
-            let body_start = (offset + line.len() + 1).min(after_open.len());
-            let body = after_open[body_start..]
-                .trim_start_matches('\n')
-                .to_string();
-            return (pairs, body);
+    let header = &after_open[..header_end];
+    let mut pairs = Vec::new();
+    for hl in header.lines() {
+        let hl = hl.trim_end_matches('\r');
+        if let Some((k, v)) = hl.split_once(':') {
+            pairs.push((
+                k.trim().to_string(),
+                v.trim().trim_matches('"').trim_matches('\'').to_string(),
+            ));
         }
-        offset += line.len() + 1;
     }
-    (Vec::new(), md.to_string())
+    // No keys means a pair of horizontal rules around prose, not frontmatter.
+    if pairs.is_empty() {
+        return (Vec::new(), md.to_string());
+    }
+    let body = after_open[body_start..]
+        .trim_start_matches(['\r', '\n'])
+        .to_string();
+    (pairs, body)
 }
 
 #[cfg(test)]
@@ -327,6 +344,20 @@ mod tests {
             "wechat"
         );
         assert_eq!(body, "");
+    }
+
+    /// Windows-authored files use CRLF; frontmatter typed in Notepad/VS Code
+    /// on Windows must not be rendered as body text.
+    #[test]
+    fn strip_frontmatter_accepts_crlf() {
+        let md = "---\r\ntitle: 你好\r\ntheme: minimal\r\nplatform: xhs\r\n---\r\n\r\n# H\r\n";
+        let (pairs, body) = strip_frontmatter(md);
+        assert_eq!(pairs.iter().find(|(k, _)| k == "title").unwrap().1, "你好");
+        assert_eq!(
+            pairs.iter().find(|(k, _)| k == "platform").unwrap().1,
+            "xhs"
+        );
+        assert_eq!(body, "# H\r\n");
     }
 
     #[test]

@@ -6,15 +6,17 @@ use std::io::{IsTerminal, Write};
 pub struct Out {
     pub json_mode: bool,
     pub color: bool,
+    pub verbose: bool,
 }
 
 impl Out {
-    pub fn new(json_flag: bool, no_color: bool) -> Self {
+    pub fn new(json_flag: bool, no_color: bool, verbose: bool) -> Self {
         let color =
             !no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
         Out {
             json_mode: json_flag || !std::io::stdout().is_terminal(),
             color,
+            verbose,
         }
     }
 
@@ -26,12 +28,25 @@ impl Out {
         }
     }
 
+    /// Status lines go to stderr whenever stdout carries JSON, so a
+    /// `--json` / piped invocation always emits exactly one parseable
+    /// document. `err` is stderr in both modes.
+    fn status(&self, code: &str, prefix: &str, s: &str) {
+        let line = format!("{} {}", self.paint(code, prefix), s);
+        if self.json_mode {
+            let _ = std::io::stdout().flush();
+            eprintln!("{}", line);
+        } else {
+            println!("{}", line);
+        }
+    }
+
     pub fn ok(&self, s: &str) {
-        println!("{} {}", self.paint("32", "OK"), s);
+        self.status("32", "OK", s);
     }
 
     pub fn warn(&self, s: &str) {
-        println!("{} {}", self.paint("33", "WARN"), s);
+        self.status("33", "WARN", s);
     }
 
     pub fn err(&self, s: &str) {
@@ -40,11 +55,36 @@ impl Out {
     }
 
     pub fn info(&self, s: &str) {
-        println!("{} {}", self.paint("36", "->"), s);
+        self.status("36", "->", s);
+    }
+
+    /// Extra diagnostics behind `--verbose`; never mixes into JSON stdout.
+    pub fn diag(&self, s: &str) {
+        if self.verbose {
+            let _ = std::io::stdout().flush();
+            eprintln!("{}", self.paint("36", &format!("-> {}", s)));
+        }
     }
 
     pub fn plain(&self, s: &str) {
         println!("{}", s);
+    }
+
+    /// Unprefixed line on stderr, used for finding lists so a command that
+    /// writes its artifact to stdout stays pipeable.
+    pub fn note_plain(&self, s: &str) {
+        let _ = std::io::stdout().flush();
+        eprintln!("{}", s);
+    }
+
+    /// A view whose status/finding lines all go to stderr. Commands that
+    /// emit an artifact on stdout use this for their human diagnostics.
+    pub fn stderr_notes(&self) -> Out {
+        Out {
+            json_mode: true,
+            color: self.color,
+            verbose: self.verbose,
+        }
     }
 
     pub fn print_json(&self, v: &impl serde::Serialize) {

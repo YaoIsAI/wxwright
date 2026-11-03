@@ -8,6 +8,78 @@ This project had no git history when the changelog was normalized (2026-09-25),
 so earlier entries describe the feature set as it stood rather than an
 invent­ed commit timeline. `docs/` is the source of truth for the current spec.
 
+## [0.18.1] - Unreleased
+
+### Fixed
+- **`copy --dry-run` no longer uploads.** The dry run built the real upload
+  transport, so "check without touching my material library" wrote drafts of
+  the article's images into the permanent library - and then reported the
+  clipboard as clean. A dry run now runs with `ImageMode::Keep` and predicts the
+  image gate through `ImageOutcome::dry_run_hostile()`, so it blocks exactly
+  what the real copy would block (`uploads_skipped: true` when credentials are
+  present, no network at all).
+- **A failing `--out` no longer reports success.** `convert` printed its report
+  before writing the artifact, so an unwritable destination produced
+  `ok: true` followed by a second `{ok: false}` document - an agent reading the
+  first one believed the file existed. The artifact is now written before
+  anything is printed; an unwritable destination is a refusal (exit 2), with one
+  error document and no partial file.
+- **`convert` and `fix` report what actually happened.** Both hard-coded
+  `ok: true`: a converted article with blocking violations exited 0, and in
+  `--json` mode (the agent default) `fix` exited 0 even when blocking issues
+  survived the repair. Blocking findings now set `ok: false` and exit 1, and
+  `fix --out -` writes to stdout instead of creating a file literally named `-`.
+- **Windows frontmatter was being ignored.** `strip_frontmatter()` only accepted
+  `\n` line endings, so any `.md` saved with CRLF (Notepad, VS Code on Windows)
+  had its `title` / `theme` / `platform` block silently rendered as body text.
+  CRLF and a leading BOM are now accepted.
+- **An AI undo snapshot no longer outlives a save.** `persistCurrent()` clears
+  the one-click-repair and continuation snapshots, so "undo" cannot revert
+  content that is already committed to disk (and re-dirty the article the user
+  just saved).
+- **JSON stdout is exactly one document.** Status, warnings, finding lists and
+  the new `--verbose` diagnostics now go to stderr whenever stdout carries
+  JSON, so a pipe never mixes an artifact with a log.
+- **Every command that can fail says so.** `theme list`, `mcp install`,
+  `image fit` and `bench` all carry `ok`; `image fit` treats a remote or inline
+  image as an informational skip instead of failing an article whose images are
+  all remote; `image upload` reports an unreadable path as that entry's error
+  instead of discarding the uploads that already succeeded.
+- **Login stores nothing on rejection.** Credentials are verified before they
+  are written, a rejected AppID/Secret aborts without touching the keychain, and
+  `--secret-stdin` keeps the secret out of shell history and the process list.
+  Only `mask()`ed forms ever reach output.
+- **`publish` is documented as what it is.** The command calls freepublish
+  (发布 - makes the article public), not 群发 (mass send, which has no API). The
+  agent card, the handbook, both README sets, the PRD command list and the GUI
+  help text said otherwise; the refusal message now names freepublish.
+- **`bench --iters 0` refuses** instead of indexing an empty sample set, and the
+  result states which build ran (the P-2 budget is a release-build number).
+
+### Added
+- **`wxwright doctor --verify`** does a live token check and reports the account
+  nickname; without it the credentials check is presence-only, and a 40164
+  whitelist rejection is reported as a warning with the fix instead of being
+  mistaken for bad credentials. A non-writable state directory is the one
+  error-level check, so `doctor --strict` works as a CI/SCP preflight gate.
+- **`crates/wxwright-cli/tests/cli_behavior.rs`** - 20 end-to-end tests that run
+  the built binary in a sandboxed config root: exit contract, JSON purity,
+  per-platform artifacts, frontmatter, dry-run guarantees, credential handling,
+  refusals. They need no network and no real credentials.
+- **`crates/wxwright-core/tests/doc_drift_test.rs`** pins the hand-written docs
+  to the generated agent card: the full 20-command surface, all 12 MCP tools and
+  their count, the output/exit-code contract, and the publish wording.
+
+### Changed
+- **`docs/agent-integration.md` rewritten** to the real surface: the command
+  table gained `--platform`, `--input-format`, `image fit`, `draft delete`,
+  `--secret-stdin`, `--no-verify`, `--no-keyring`, `doctor --verify` and
+  `platforms`; `convert` and `doctor` can exit 1, `bench` can refuse, and the
+  MCP tool list was three tools short.
+- **The agent card states the output contract** (one JSON document, `ok` always
+  present, artifact written before the report) and the per-platform artifacts,
+  so an agent no longer has to guess what `convert --platform xhs` returns.
+
 ## [0.18.0] - 2026-11-02
 
 ### Added

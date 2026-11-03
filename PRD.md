@@ -348,7 +348,7 @@ wxwright fix     <input.html>       --out <fixed.html>   # normalizer 报告模�
 wxwright copy    <input.md>         --theme <name>       # 全链路：转换→mmbiz→校验→剪贴板 [--dry-run]
 wxwright image   upload <paths...>  # 手动素材上传，输出 mmbiz 映射表
 wxwright draft   create|update|list # 公众号草稿箱
-wxwright publish <draft_id> --yes   # 群发（P2）
+wxwright publish <draft_id> --yes   # freepublish 发布（P2；群发无 API，仍由人工在后台）
 wxwright theme   list|new|validate  # 主题脚手架（模板开发用）
 wxwright doctor                     # 环境体检：剪贴板/网络/凭据/node(官方CLI)/字体
 wxwright mcp     serve              # 启动本地 MCP server（stdio）

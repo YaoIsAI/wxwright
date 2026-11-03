@@ -11,6 +11,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use output::Out;
 use wxwright_core::i18n::{set_lang, Lang};
 use wxwright_core::img::ImageMode;
+use wxwright_core::platform::{ExportKind, PlatformSpec};
 use wxwright_core::theme;
 use wxwright_core::validator::Violation;
 use wxwright_core::{clipboard, ConvertOptions, PipelineOutput};
@@ -22,6 +23,12 @@ enum LangArg {
     ZhCn,
 }
 
+#[derive(ValueEnum, Clone, Copy, PartialEq, Eq)]
+enum InputFormat {
+    Markdown,
+    Html,
+}
+
 #[derive(Parser)]
 #[command(
     name = "wxwright",
@@ -30,7 +37,7 @@ enum LangArg {
     long_about = None
 )]
 struct Cli {
-    /// Human-output language (en | zh-CN). Default: auto-detect.
+    /// Human-output language for rule descriptions (en | zh-CN). Default: auto-detect.
     #[arg(long, value_enum)]
     lang: Option<LangArg>,
     /// Machine-readable JSON output (also the default when stdout is not a TTY).
@@ -59,31 +66,39 @@ enum Commands {
         /// Target platform id (see `wxwright platforms`). Default: wechat.
         #[arg(long)]
         platform: Option<String>,
-        /// Source format: markdown (default) or html. HTML input skips the
-        /// template renderer and runs the compliance normalizer + validator
-        /// directly - arbitrary HTML from any tool goes in, official-spec
-        /// HTML comes out.
-        #[arg(long, default_value = "markdown")]
-        input_format: String,
+        /// Source format. Omitted: frontmatter `format: html`, an .html/.htm
+        /// extension, or (stdin) a leading "<" switches to html; otherwise
+        /// markdown. HTML input skips the template renderer and runs the
+        /// compliance normalizer + validator directly - arbitrary HTML from
+        /// any tool goes in, official-spec HTML comes out. HTML is a
+        /// WeChat-only entry; other platforms are generated from Markdown.
+        #[arg(long, value_enum)]
+        input_format: Option<InputFormat>,
         /// Output file, or "-" for stdout.
         #[arg(long, default_value = "-")]
         out: String,
     },
-    /// Validate markdown/HTML against the official editor spec.
+    /// Validate markdown/HTML against the official editor spec and the
+    /// target platform's title/caption rules.
     Validate {
         /// Input .md or .html file, or "-" for stdin.
         input: String,
-        /// Exit with code 1 on blocking violations.
+        /// Platform id for title/caption rules (default: frontmatter
+        /// `platform`, else wechat). See `wxwright platforms`.
+        #[arg(long)]
+        platform: Option<String>,
+        /// Exit 1 on warnings too. Blocking violations always exit 1.
         #[arg(long)]
         strict: bool,
         /// Note the official puppeteer bridge (CI truth) availability.
         #[arg(long)]
         official_check: bool,
     },
-    /// Auto-fix violations in an HTML file (normalizer report mode).
+    /// Auto-fix violations in an HTML or Markdown file (normalizer report mode).
     Fix {
         input: String,
-        #[arg(long)]
+        /// Output file, or "-" for stdout.
+        #[arg(long, default_value = "-")]
         out: String,
     },
     /// Full chain: convert -> images -> normalize -> validate -> clipboard.
@@ -105,7 +120,8 @@ enum Commands {
         #[command(subcommand)]
         cmd: DraftCmd,
     },
-    /// 群发 (mass send) a draft via freepublish. Explicit confirmation required.
+    /// Publish a draft via freepublish (发布). This makes the article public;
+    /// it is not 群发 (mass send). Explicit confirmation required.
     Publish {
         draft_id: String,
         #[arg(long)]
@@ -121,6 +137,9 @@ enum Commands {
         /// Treat warnings as failures too (strict CI gate mode).
         #[arg(long)]
         strict: bool,
+        /// Verify the stored MP credentials with a live token request.
+        #[arg(long)]
+        verify: bool,
     },
     /// List supported social platforms and their capabilities (PRD §16).
     Platforms,
@@ -129,19 +148,27 @@ enum Commands {
         #[command(subcommand)]
         cmd: McpCmd,
     },
-    /// Print the agent hand-off card.
+    /// Print the agent hand-off card. Plain Markdown by default in a
+    /// terminal; JSON when stdout is piped or --json is passed.
     AgentCard {
+        /// Force Markdown even when stdout is a pipe / --json is set.
         #[arg(long)]
         md: bool,
-        #[arg(long)]
-        json: bool,
     },
     /// Store MP credentials in the OS keychain (AppID/Secret, PRD 5.6).
     Login {
         #[arg(long)]
         appid: String,
+        /// Secret on the command line (visible in shell history and the
+        /// process list; prefer --secret-stdin).
         #[arg(long)]
-        secret: String,
+        secret: Option<String>,
+        /// Read the secret from stdin instead of argv.
+        #[arg(long)]
+        secret_stdin: bool,
+        /// Skip the live credential check (offline / CI).
+        #[arg(long)]
+        no_verify: bool,
         /// Store the secret in the config file instead of the keychain.
         #[arg(long)]
         no_keyring: bool,
@@ -160,7 +187,8 @@ enum Commands {
 enum ImageCmd {
     /// Upload images to the permanent material library; prints mmbiz mapping.
     Upload {
-        /// Image files to upload.
+        /// Image files to upload (at least one).
+        #[arg(required = true)]
         paths: Vec<String>,
     },
     /// Fit the article's local image set to the platform's shape: centre-crop
@@ -182,30 +210,57 @@ enum ImageCmd {
 enum DraftCmd {
     /// Create a draft from markdown (images uploaded to mmbiz automatically).
     Create {
+        /// Article file, or "-" for stdin. Frontmatter supplies title,
+        /// author, digest and theme when the flags are omitted.
         #[arg(long)]
         file: String,
+        /// Draft title (default: frontmatter `title`).
         #[arg(long)]
-        title: String,
+        title: Option<String>,
         #[arg(long)]
         author: Option<String>,
         #[arg(long)]
         digest: Option<String>,
         #[arg(long)]
         theme: Option<String>,
+        /// Original-article URL stored on the draft.
+        #[arg(long)]
+        source_url: Option<String>,
         /// thumb_media_id; defaults to the first uploaded article image.
         #[arg(long)]
         thumb_media_id: Option<String>,
+        /// Cover image file to upload when the article has no image (required
+        /// for HTML sources, which carry no uploadable image references).
+        #[arg(long)]
+        cover: Option<String>,
     },
-    /// Update an existing draft.
+    /// Update an existing draft. Metadata not passed on the command line is
+    /// preserved from the draft being updated.
     Update {
         #[arg(long)]
         media_id: String,
         #[arg(long)]
         file: String,
+        /// New title (default: the existing draft title).
         #[arg(long)]
-        title: String,
+        title: Option<String>,
+        #[arg(long)]
+        author: Option<String>,
+        #[arg(long)]
+        digest: Option<String>,
         #[arg(long)]
         theme: Option<String>,
+        #[arg(long)]
+        source_url: Option<String>,
+        /// New thumb_media_id (default: the existing draft cover).
+        #[arg(long)]
+        thumb_media_id: Option<String>,
+        /// New cover image file to upload (default: the existing draft cover).
+        #[arg(long)]
+        cover: Option<String>,
+        /// Article index inside a multi-article draft.
+        #[arg(long, default_value = "0")]
+        index: u64,
     },
     /// List drafts.
     List {
@@ -218,6 +273,9 @@ enum DraftCmd {
     Delete {
         #[arg(long)]
         media_id: String,
+        /// Confirm the irreversible delete.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -227,6 +285,9 @@ enum ThemeCmd {
     /// Scaffold a new theme TOML.
     New {
         name: String,
+        /// Overwrite an existing file.
+        #[arg(long)]
+        force: bool,
     },
     /// Validate a theme file by rendering a sample document.
     Validate {
@@ -276,7 +337,7 @@ fn detect_lang(arg: Option<LangArg>) -> Lang {
 fn main() {
     let cli = Cli::parse();
     set_lang(detect_lang(cli.lang));
-    let out = Out::new(cli.json, cli.no_color);
+    let out = Out::new(cli.json, cli.no_color, cli.verbose);
     let code = match run(&cli, &out) {
         Ok(code) => code,
         Err(e) => {
@@ -303,15 +364,16 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
             input,
             theme.as_deref(),
             platform.as_deref(),
-            input_format.as_str(),
+            *input_format,
             out_path,
             out,
         ),
         Commands::Validate {
             input,
+            platform,
             strict,
             official_check,
-        } => cmd_validate(input, *strict, *official_check, out),
+        } => cmd_validate(input, platform.as_deref(), *strict, *official_check, out),
         Commands::Fix {
             input,
             out: out_path,
@@ -332,15 +394,24 @@ fn run(cli: &Cli, out: &Out) -> Result<i32, String> {
         Commands::Draft { cmd } => cmd_draft(cmd, out),
         Commands::Publish { draft_id, yes } => cmd_publish(draft_id, *yes, out),
         Commands::Theme { cmd } => cmd_theme(cmd, out),
-        Commands::Doctor { strict } => cmd_doctor(out, *strict),
+        Commands::Doctor { strict, verify } => cmd_doctor(out, *strict, *verify),
         Commands::Platforms => cmd_platforms(out),
         Commands::Mcp { cmd } => cmd_mcp(cmd, out),
-        Commands::AgentCard { md, json } => cmd_agent_card(*md, *json, out),
+        Commands::AgentCard { md } => cmd_agent_card(*md, out),
         Commands::Login {
             appid,
             secret,
+            secret_stdin,
+            no_verify,
             no_keyring,
-        } => cmd_login(appid, secret, *no_keyring, out),
+        } => cmd_login(
+            appid,
+            secret.as_deref(),
+            *secret_stdin,
+            *no_verify,
+            *no_keyring,
+            out,
+        ),
         Commands::Logout => cmd_logout(out),
         Commands::Bench { iters } => cmd_bench(*iters, out),
     }
@@ -375,9 +446,181 @@ fn read_stdin_if_dash(path: &str) -> Result<(String, Option<PathBuf>), String> {
     output::read_input(path).map_err(|e| format!("cannot read {}: {}", path, e))
 }
 
-/// Article-library files carry YAML frontmatter; strip it for rendering.
-fn strip_frontmatter(md: &str) -> String {
-    wxwright_core::util::strip_frontmatter(md).1
+/// Article-library files carry YAML frontmatter; split it for rendering.
+fn split_frontmatter(md: &str) -> (Vec<(String, String)>, String) {
+    wxwright_core::util::strip_frontmatter(md)
+}
+
+fn front_value<'a>(front: &'a [(String, String)], keys: &[&str]) -> Option<&'a str> {
+    front
+        .iter()
+        .find(|(k, _)| keys.iter().any(|want| k.eq_ignore_ascii_case(want)))
+        .map(|(_, v)| v.trim())
+        .filter(|v| !v.is_empty())
+}
+
+fn theme_from(front: &[(String, String)], flag: Option<&str>) -> Option<String> {
+    flag.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| front_value(front, &["theme"]))
+        .map(str::to_string)
+}
+
+fn detect_input_format(
+    input: &str,
+    front: &[(String, String)],
+    flag: Option<InputFormat>,
+    body: &str,
+) -> InputFormat {
+    if let Some(f) = flag {
+        return f;
+    }
+    if let Some(fmt) = front_value(front, &["format"]) {
+        if fmt.eq_ignore_ascii_case("html") {
+            return InputFormat::Html;
+        }
+        if fmt.eq_ignore_ascii_case("markdown") || fmt.eq_ignore_ascii_case("md") {
+            return InputFormat::Markdown;
+        }
+    }
+    let lower = input.to_ascii_lowercase();
+    if lower.ends_with(".html") || lower.ends_with(".htm") {
+        return InputFormat::Html;
+    }
+    if lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".mdown") {
+        return InputFormat::Markdown;
+    }
+    // stdin or an unknown extension: a leading tag means the source is already
+    // HTML (the direct-entry mode), otherwise treat it as Markdown.
+    if body.trim_start().starts_with('<') {
+        return InputFormat::Html;
+    }
+    InputFormat::Markdown
+}
+
+fn platform_id_list() -> String {
+    wxwright_core::platform::list_platforms()
+        .iter()
+        .map(|p| p.id)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+struct PlatformChoice {
+    spec: PlatformSpec,
+    known: bool,
+    source: &'static str,
+}
+
+/// CLI flag > frontmatter > wechat. An explicitly passed unknown id is a
+/// usage error (a typo must not silently render WeChat dialect); an unknown
+/// id in frontmatter falls back with a warning, matching the GUI.
+fn select_platform(
+    flag: Option<&str>,
+    front: &[(String, String)],
+    out: &Out,
+) -> Result<PlatformChoice, String> {
+    if let Some(id) = flag.map(str::trim).filter(|s| !s.is_empty()) {
+        let (spec, known) = wxwright_core::platform::resolve_platform(id);
+        if !known {
+            return Err(format!(
+                "unknown platform {:?}; supported: {}",
+                id,
+                platform_id_list()
+            ));
+        }
+        return Ok(PlatformChoice {
+            spec,
+            known,
+            source: "flag",
+        });
+    }
+    if let Some(id) = front_value(front, &["platform"]) {
+        let (spec, known) = wxwright_core::platform::resolve_platform(id);
+        if !known {
+            out.warn(&format!(
+                "unknown platform {:?} in frontmatter; falling back to {} - run `wxwright platforms` for the id list",
+                id, spec.id
+            ));
+        }
+        return Ok(PlatformChoice {
+            spec,
+            known,
+            source: "frontmatter",
+        });
+    }
+    Ok(PlatformChoice {
+        spec: wxwright_core::platform::get_platform("wechat"),
+        known: true,
+        source: "default",
+    })
+}
+
+fn title_violations(spec: &PlatformSpec, title: Option<&str>) -> Vec<Violation> {
+    match title.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => wxwright_core::platform::validate_platform_title(spec.id, t),
+        None => Vec::new(),
+    }
+}
+
+fn blocking_count(v: &[Violation]) -> usize {
+    v.iter().filter(|x| x.is_block()).count()
+}
+
+fn paste_hostile_sources(result: &PipelineOutput) -> Vec<String> {
+    result
+        .images
+        .iter()
+        .filter(|i| i.paste_hostile())
+        .map(|i| i.source.clone())
+        .collect()
+}
+
+/// A dry run must not touch WeChat's material library, so local images are
+/// kept/inlined instead of uploaded. The engine's own prediction says which of
+/// them a real run would have uploaded; everything else keeps the real verdict.
+fn dry_run_hostile_sources(result: &PipelineOutput, uploads_enabled: bool) -> Vec<String> {
+    result
+        .images
+        .iter()
+        .filter(|i| i.dry_run_hostile(uploads_enabled))
+        .map(|i| i.source.clone())
+        .collect()
+}
+
+fn credential_rejected(msg: &str) -> bool {
+    let lower = msg.to_ascii_lowercase();
+    ["40013", "40001", "40125", "invalid appid", "invalid secret"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+}
+
+/// Write a file destination *before* anything is printed. Emitting the report
+/// first made a failing `--out` print `ok: true` and then a second JSON
+/// document, so an agent reading the first one believed the file existed.
+fn write_artifact(out_path: &str, artifact: &str) -> Result<(), String> {
+    if out_path == "-" {
+        return Ok(());
+    }
+    std::fs::write(out_path, artifact).map_err(|e| format!("cannot write {}: {}", out_path, e))
+}
+
+/// Say where the artifact went, after the report. Stdout stays the single
+/// JSON document; a file destination and the human-mode stream differ here.
+fn announce_artifact(out_path: &str, artifact: &str, out: &Out, notes: &Out) -> Result<(), String> {
+    if out_path == "-" {
+        if !out.json_mode {
+            std::io::stdout()
+                .write_all(artifact.as_bytes())
+                .map_err(|e| e.to_string())?;
+            if !artifact.ends_with('\n') {
+                println!();
+            }
+        }
+    } else if !out.json_mode {
+        notes.ok(&format!("written to {}", out_path));
+    }
+    Ok(())
 }
 
 fn violation_report<'a, I>(out: &Out, violations: I)
@@ -393,14 +636,14 @@ where
             .filter(|d| !d.is_empty())
             .unwrap_or_else(|| v.message.clone());
         let sev = if v.is_block() { "BLOCK" } else { "WARN" };
-        out.plain(&format!(
+        out.note_plain(&format!(
             "  {} {} {} - {}",
             if v.is_block() { "[ERR]" } else { "[WARN]" },
             v.rule_id,
             sev,
             desc
         ));
-        out.plain(&format!("      node: {}", v.node));
+        out.note_plain(&format!("      node: {}", v.node));
         let _ = std::io::stdout().flush();
     }
 }
@@ -439,55 +682,77 @@ fn cmd_convert(
     input: &str,
     theme_name: Option<&str>,
     platform: Option<&str>,
-    input_format: &str,
+    input_format: Option<InputFormat>,
     out_path: &str,
     out: &Out,
 ) -> Result<i32, String> {
     let (raw, base_dir) = read_stdin_if_dash(input)?;
-    let (front, md) = wxwright_core::util::strip_frontmatter(&raw);
-    let platform_id = platform.unwrap_or("wechat");
-    let (spec, known) = wxwright_core::platform::resolve_platform(platform_id);
-    if !known {
-        out.warn(&format!(
-            "unknown platform {:?}; falling back to {} - run `wxwright platforms` for the id list",
-            platform_id, spec.id
-        ));
-    }
+    let (front, md) = split_frontmatter(&raw);
+    let fmt = detect_input_format(input, &front, input_format, &md);
+    let notes = out.stderr_notes();
+    let choice = select_platform(platform, &front, &notes)?;
+    let spec = &choice.spec;
+    let title = front_value(&front, &["title"]);
+    let out_json = if out_path == "-" {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!(out_path)
+    };
+    out.diag(&format!(
+        "convert: input={} format={} platform={} (source={}, known={}) title={:?}",
+        input,
+        fmt.as_str(),
+        spec.id,
+        choice.source,
+        choice.known,
+        title.unwrap_or("")
+    ));
 
     // Direct-HTML entry: the source is already HTML, so the template renderer
     // is skipped - the compliance normalizer + validator are the whole chain
     // (PRD 5.1: the normalizer as the fixer for hand-authored HTML).
-    if input_format.eq_ignore_ascii_case("html") {
-        let result = wxwright_core::pipeline_html(&raw).map_err(|e| e.to_string())?;
+    if fmt == InputFormat::Html {
+        if spec.id != "wechat" {
+            return Err(format!(
+                "direct HTML input is WeChat-only; platform {:?} is generated from Markdown. \
+                 Use a .md source and drop --input-format html.",
+                spec.id
+            ));
+        }
+        if theme_name.is_some() {
+            notes.warn(
+                "--theme does not apply to direct HTML input (the template renderer is skipped)",
+            );
+        }
+        let mut result = wxwright_core::pipeline_html(&md).map_err(|e| e.to_string())?;
+        result.violations.extend(title_violations(spec, title));
+        let blocking = blocking_count(&result.violations);
         let html = wxwright_core::wrap_document(&result.html, "#FFFFFF");
-        let blocking = result.blocking_violations().len();
-        let payload = serde_json::json!({
-            "ok": true,
-            "input_format": "html",
-            "html": html,
-            "fixes": result.fixes,
-            "violations": result.violations,
-            "blocking_count": blocking,
-        });
+        write_artifact(out_path, &html)?;
         if out.json_mode {
-            out.print_json(&payload);
+            out.print_json(&serde_json::json!({
+                "ok": blocking == 0,
+                "platform": spec.id,
+                "platform_known": choice.known,
+                "platform_source": choice.source,
+                "input_format": "html",
+                "export_kind": "rich_text_dialect",
+                "out": out_json,
+                "html": html,
+                "fixes": &result.fixes,
+                "violations": &result.violations,
+                "blocking_count": blocking,
+            }));
         } else {
-            violation_report(out, &result.violations);
-        }
-        if out_path == "-" {
-            if !out.json_mode {
-                std::io::stdout()
-                    .write_all(html.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                println!();
+            if blocking == 0 {
+                notes.ok(&format!(
+                    "converted HTML ({} fix group(s))",
+                    result.fixes.len()
+                ));
             }
-        } else {
-            std::fs::write(out_path, &html)
-                .map_err(|e| format!("cannot write {}: {}", out_path, e))?;
-            if !out.json_mode {
-                out.ok(&format!("written to {}", out_path));
-            }
+            print_violations_human(&notes, &result);
         }
+        announce_artifact(out_path, &html, out, &notes)?;
         return Ok(if blocking > 0 { 1 } else { 0 });
     }
 
@@ -496,143 +761,215 @@ fn cmd_convert(
     // the Markdown unchanged.
     // One engine, three hosts: the artifact and the platform's caption rules
     // both come from core, so the CLI cannot drift from the MCP tool.
-    let title = front
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("title"))
-        .map(|(_, v)| v.as_str());
     if let Some((artifact, violations)) =
         wxwright_core::platform::export_text_artifact(spec.id, &md, title)
     {
         let kind = artifact.kind();
         let text = artifact.text().to_string();
-        let blocking = violations.iter().filter(|v| v.is_block()).count();
+        let mut all = violations;
+        all.extend(wxwright_core::validator::validate_markdown(&md));
+        // Caption exports already validate the title. Markdown hosts expose
+        // no caption rules, but their title guidance still applies.
+        if matches!(spec.export_kind, ExportKind::Markdown) {
+            all.extend(title_violations(spec, title));
+        }
+        let blocking = blocking_count(&all);
+        write_artifact(out_path, &text)?;
         if out.json_mode {
             out.print_json(&serde_json::json!({
-                "ok": true,
+                "ok": blocking == 0,
                 "platform": spec.id,
-                "platform_known": known,
+                "platform_known": choice.known,
+                "platform_source": choice.source,
                 "export_kind": kind,
+                "out": out_json,
+                "title": title,
                 "text": text,
-                "violations": violations,
+                "violations": &all,
                 "blocking_count": blocking,
             }));
         } else {
-            out.ok(&format!(
+            notes.ok(&format!(
                 "exported for {} ({} mode, {} chars)",
                 spec.name_en,
                 kind,
                 text.chars().count()
             ));
-            violation_report(out, &violations);
+            violation_report(&notes, &all);
         }
-        if out_path == "-" {
-            if !out.json_mode {
-                std::io::stdout()
-                    .write_all(text.as_bytes())
-                    .map_err(|e| e.to_string())?;
-                println!();
-            }
-        } else {
-            std::fs::write(out_path, &text)
-                .map_err(|e| format!("cannot write {}: {}", out_path, e))?;
-            if !out.json_mode {
-                out.ok(&format!("written to {}", out_path));
-            }
-        }
+        announce_artifact(out_path, &text, out, &notes)?;
         // A blocking caption rule means the artifact cannot be posted as-is,
         // so the exit code has to say so - the same contract `validate` uses.
         return Ok(if blocking > 0 { 1 } else { 0 });
     }
 
-    let opts = build_options(theme_name, ImageMode::Inline, base_dir)?;
-    let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-    let html = wxwright_core::wrap_document(&result.html, opts.theme.canvas());
-    let payload = serde_json::json!({
-        "ok": true,
-        "html": html,
-        "stats": result.stats,
-        "images": result.images,
-        "fixes": result.fixes,
-        "violations": result.violations,
-        "blocking_count": result.blocking_violations().len(),
-    });
-    if out.json_mode {
-        out.print_json(&payload);
+    let theme_id = theme_from(&front, theme_name);
+    let creds = wxwright_mp::load_credentials();
+    let mode = if creds.is_some() {
+        ImageMode::Upload
     } else {
-        out.ok(&format!(
-            "converted ({} chars, {} images, {} violations)",
+        ImageMode::Inline
+    };
+    let opts = build_options(theme_id.as_deref(), mode, base_dir)?;
+    out.diag(&format!(
+        "images: mode={:?} (credentials {}) theme={}",
+        mode,
+        if creds.is_some() { "found" } else { "absent" },
+        opts.theme.meta.id
+    ));
+    let mut result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+    result
+        .violations
+        .extend(wxwright_core::validator::validate_markdown(&md));
+    result.violations.extend(title_violations(spec, title));
+    let blocking = result.blocking_violations().len();
+    let hostile = paste_hostile_sources(&result);
+    let html = wxwright_core::wrap_document(&result.html, opts.theme.canvas());
+    write_artifact(out_path, &html)?;
+    if out.json_mode {
+        out.print_json(&serde_json::json!({
+            "ok": blocking == 0,
+            "platform": spec.id,
+            "platform_known": choice.known,
+            "platform_source": choice.source,
+            "input_format": "markdown",
+            "export_kind": "rich_text_dialect",
+            "out": out_json,
+            "theme": opts.theme.meta.id,
+            "image_mode": match mode { ImageMode::Upload => "upload", _ => "inline" },
+            "html": html,
+            "stats": &result.stats,
+            "images": &result.images,
+            "paste_hostile_images": &hostile,
+            "fixes": &result.fixes,
+            "violations": &result.violations,
+            "blocking_count": blocking,
+        }));
+    } else {
+        notes.ok(&format!(
+            "converted ({} chars, {} images, {} blocking violation(s))",
             result.stats.chars,
             result.images.len(),
-            result.blocking_violations().len()
+            blocking
         ));
-        print_violations_human(out, &result);
-    }
-    if out_path == "-" {
-        if !out.json_mode {
-            std::io::stdout()
-                .write_all(html.as_bytes())
-                .map_err(|e| e.to_string())?;
-            println!();
+        if !hostile.is_empty() && mode != ImageMode::Upload {
+            notes.warn(&format!(
+                "{} image(s) are inlined as base64 and will not survive a paste into the MP editor; \
+                 run `wxwright login` for mmbiz upload, or use `wxwright copy`",
+                hostile.len()
+            ));
         }
-    } else {
-        std::fs::write(out_path, &html).map_err(|e| format!("cannot write {}: {}", out_path, e))?;
-        if !out.json_mode {
-            out.ok(&format!("written to {}", out_path));
-        }
+        print_violations_human(&notes, &result);
     }
-    Ok(0)
+    announce_artifact(out_path, &html, out, &notes)?;
+    Ok(if blocking > 0 { 1 } else { 0 })
 }
 
-fn cmd_validate(input: &str, strict: bool, official_check: bool, out: &Out) -> Result<i32, String> {
-    let (content, base_dir) = read_stdin_if_dash(input)?;
-    let lower = input.to_ascii_lowercase();
-    let content = if lower.ends_with(".md") || lower.ends_with(".markdown") {
-        strip_frontmatter(&content)
+impl InputFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            InputFormat::Markdown => "markdown",
+            InputFormat::Html => "html",
+        }
+    }
+}
+
+fn cmd_validate(
+    input: &str,
+    platform: Option<&str>,
+    strict: bool,
+    official_check: bool,
+    out: &Out,
+) -> Result<i32, String> {
+    let (raw, base_dir) = read_stdin_if_dash(input)?;
+    let (front, md) = split_frontmatter(&raw);
+    let fmt = detect_input_format(input, &front, None, &md);
+    let choice = select_platform(platform, &front, out)?;
+    let spec = &choice.spec;
+    let title = front_value(&front, &["title"]);
+    out.diag(&format!(
+        "validate: input={} format={} platform={} (source={}) title={:?}",
+        input,
+        fmt.as_str(),
+        spec.id,
+        choice.source,
+        title.unwrap_or("")
+    ));
+
+    let mut violations: Vec<Violation> = Vec::new();
+    let mut caption: Option<String> = None;
+    let export_kind = spec.export_kind;
+    if fmt == InputFormat::Html {
+        // validate_html is the WeChat official-spec checker: it is the only
+        // HTML contract that exists, so a non-WeChat target can only be told
+        // that caption rules need a Markdown source.
+        if spec.export_kind != ExportKind::RichTextDialect {
+            out.info(&format!(
+                "HTML input is checked against the WeChat official spec; {} caption rules need a Markdown source",
+                spec.id
+            ));
+        }
+        violations.extend(wxwright_core::validator::validate_html(&md));
+        violations.extend(title_violations(spec, title));
     } else {
-        content
+        // Structure checks are independent of platform rendering: unclosed
+        // fences and empty link targets survive every exporter.
+        violations.extend(wxwright_core::validator::validate_markdown(&md));
+        if let Some((artifact, caption_violations)) =
+            wxwright_core::platform::export_text_artifact(spec.id, &md, title)
+        {
+            violations.extend(caption_violations);
+            match spec.export_kind {
+                ExportKind::Caption => caption = Some(artifact.text().to_string()),
+                ExportKind::Markdown => violations.extend(title_violations(spec, title)),
+                ExportKind::RichTextDialect => {}
+            }
+        } else {
+            // Rich-text targets are checked through the exact convert chain,
+            // so "validate passes" means "convert produces compliant HTML".
+            let theme_id = theme_from(&front, None);
+            let opts = build_options(theme_id.as_deref(), ImageMode::Inline, base_dir)?;
+            let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+            violations.extend(result.violations);
+            violations.extend(title_violations(spec, title));
+        }
     };
-    let is_html = if lower.ends_with(".md") || lower.ends_with(".markdown") {
-        false
-    } else if lower.ends_with(".html") || lower.ends_with(".htm") {
-        true
-    } else {
-        // stdin / unknown extension: sniff
-        content.trim_start().starts_with('<')
-    };
-    let html = if is_html {
-        content
-    } else {
-        let opts = build_options(None, ImageMode::Inline, base_dir)?;
-        wxwright_core::convert_markdown(&content, &opts)
-            .map_err(|e| e.to_string())?
-            .html
-    };
-    let violations = wxwright_core::validator::validate_html(&html);
-    let blocking: Vec<_> = violations.iter().filter(|v| v.is_block()).collect();
-    let payload = serde_json::json!({
-        "ok": blocking.is_empty(),
-        "compliant": blocking.is_empty(),
-        "blocking_count": blocking.len(),
-        "violations": violations,
-    });
+
+    let blocking = blocking_count(&violations);
+    let warnings = violations.len().saturating_sub(blocking);
+    // Blocking always fails; warnings fail only under --strict. The old
+    // implementation only failed when --strict was on *and* a block existed,
+    // so a strict CI gate silently passed broken articles.
+    let failed = blocking > 0 || (strict && warnings > 0);
     if out.json_mode {
-        out.print_json(&payload);
-    } else if blocking.is_empty() {
-        out.ok(&format!(
-            "compliant ({} warning(s))",
-            violations.len() - blocking.len()
-        ));
-        violation_report(
-            out,
-            &violations
-                .iter()
-                .filter(|v| !v.is_block())
-                .cloned()
-                .collect::<Vec<_>>(),
-        );
-    } else {
-        out.err(&format!("{} blocking violation(s)", blocking.len()));
+        out.print_json(&serde_json::json!({
+            "ok": !failed,
+            "compliant": blocking == 0,
+            "platform": spec.id,
+            "platform_known": choice.known,
+            "platform_source": choice.source,
+            "input_format": fmt.as_str(),
+            "export_kind": export_kind,
+            "title": title,
+            "strict": strict,
+            "violations": &violations,
+            "blocking_count": blocking,
+            "warnings_count": warnings,
+            "caption": caption,
+        }));
+    } else if failed {
+        if blocking > 0 {
+            out.err(&format!(
+                "{} blocking violation(s), {} warning(s)",
+                blocking, warnings
+            ));
+        } else {
+            out.err(&format!("{} warning(s) and --strict is on", warnings));
+        }
         violation_report(out, &violations);
+    } else {
+        out.ok(&format!("compliant ({} warning(s))", warnings));
+        violation_report(out, violations.iter().filter(|v| !v.is_block()));
     }
 
     if official_check {
@@ -647,48 +984,70 @@ fn cmd_validate(input: &str, strict: bool, official_check: bool, out: &Out) -> R
         }
     }
 
-    if strict && !blocking.is_empty() {
-        Ok(1)
-    } else {
-        Ok(0)
-    }
+    Ok(if failed { 1 } else { 0 })
 }
 
 fn cmd_fix(input: &str, out_path: &str, out: &Out) -> Result<i32, String> {
-    let (html, _) = read_stdin_if_dash(input)?;
-    let result = wxwright_core::normalizer::normalize_html(&html, Default::default())
-        .map_err(|e| e.to_string())?;
-    std::fs::write(out_path, &result.html)
-        .map_err(|e| format!("cannot write {}: {}", out_path, e))?;
-    let remaining = wxwright_core::validator::validate_html(&result.html);
-    let payload = serde_json::json!({
-        "ok": true,
-        "out": out_path,
-        "fixes": result.fixes,
-        "remaining_violations": remaining,
-    });
-    if out.json_mode {
-        out.print_json(&payload);
+    let (raw, base_dir) = read_stdin_if_dash(input)?;
+    let (front, body) = split_frontmatter(&raw);
+    let fmt = detect_input_format(input, &front, None, &body);
+    let notes = out.stderr_notes();
+    let (html, mut violations, fixes) = if fmt == InputFormat::Html {
+        let result = wxwright_core::normalizer::normalize_html(&body, Default::default())
+            .map_err(|e| e.to_string())?;
+        let violations = wxwright_core::validator::validate_html(&result.html);
+        (result.html, violations, result.fixes)
     } else {
-        out.ok(&format!(
-            "fixed {} issue group(s) -> {}",
-            result.fixes.len(),
-            out_path
+        // Markdown repair runs the full render -> normalize -> validate chain,
+        // so `fix article.md` returns an already-fixed HTML artifact instead
+        // of demanding a separate convert step.
+        let theme_id = theme_from(&front, None);
+        let opts = build_options(theme_id.as_deref(), ImageMode::Inline, base_dir)?;
+        let result = wxwright_core::pipeline(&body, &opts).map_err(|e| e.to_string())?;
+        (result.html, result.violations, result.fixes)
+    };
+    if fmt == InputFormat::Markdown {
+        violations.extend(wxwright_core::validator::validate_markdown(&body));
+        violations.extend(title_violations(
+            &wxwright_core::platform::get_platform("wechat"),
+            front_value(&front, &["title"]),
         ));
-        for f in &result.fixes {
-            out.info(&format!("[{}] x{}: {}", f.rule_id, f.count, f.detail));
+    }
+    let blocking = blocking_count(&violations);
+    let out_json = if out_path == "-" {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!(out_path)
+    };
+    write_artifact(out_path, &html)?;
+    if out.json_mode {
+        out.print_json(&serde_json::json!({
+            "ok": blocking == 0,
+            "input_format": fmt.as_str(),
+            "out": out_json,
+            "html": &html,
+            "fixes": &fixes,
+            "remaining_violations": &violations,
+            "blocking_count": blocking,
+        }));
+    } else {
+        notes.ok(&format!("fixed {} issue group(s)", fixes.len()));
+        for f in &fixes {
+            notes.info(&format!("[{}] x{}: {}", f.rule_id, f.count, f.detail));
         }
-        let remaining_blocks: Vec<_> = remaining.iter().filter(|v| v.is_block()).collect();
-        if !remaining_blocks.is_empty() {
-            out.warn(&format!(
+        if blocking > 0 {
+            notes.err(&format!(
                 "{} blocking issue(s) need manual attention",
-                remaining_blocks.len()
+                blocking
             ));
-            violation_report(out, remaining_blocks.iter().copied());
-            return Ok(1);
+            violation_report(&notes, violations.iter().filter(|v| v.is_block()));
+        } else if !violations.is_empty() {
+            notes.warn(&format!("{} warning(s) remain", violations.len()));
+            violation_report(&notes, &violations);
         }
     }
-    Ok(0)
+    announce_artifact(out_path, &html, out, &notes)?;
+    Ok(if blocking > 0 { 1 } else { 0 })
 }
 
 fn cmd_copy(
@@ -698,28 +1057,41 @@ fn cmd_copy(
     out: &Out,
 ) -> Result<i32, String> {
     let (raw, base_dir) = read_stdin_if_dash(input)?;
-    let md = strip_frontmatter(&raw);
+    let (front, md) = split_frontmatter(&raw);
+    let theme_id = theme_from(&front, theme_name);
+    let title = front_value(&front, &["title"]);
     let creds = wxwright_mp::load_credentials();
-    let mode = if creds.is_some() {
+    let has_creds = creds.is_some();
+    // A dry run must not upload anything: use Keep (local files are inlined,
+    // no network IO) and predict the upload outcome at the image gate below.
+    let mode = if dry_run {
+        ImageMode::Keep
+    } else if has_creds {
         ImageMode::Upload
     } else {
         ImageMode::Keep
     };
-    let mut opts = build_options(theme_name, mode, base_dir)?;
-    if let Some(c) = &creds {
-        opts.transport = Some(Arc::new(MpClient::new(c.clone())));
-    }
-    let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+    let opts = build_options(theme_id.as_deref(), mode, base_dir)?;
+    let theme_id_used = opts.theme.meta.id.clone();
+    let mut result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
+    result
+        .violations
+        .extend(wxwright_core::validator::validate_markdown(&md));
+    result.violations.extend(title_violations(
+        &wxwright_core::platform::get_platform("wechat"),
+        title,
+    ));
 
     // Blocking violations: never copy a non-compliant payload.
     let blocks = result.blocking_violations();
     if !blocks.is_empty() {
         if out.json_mode {
             out.print_json(&serde_json::json!({
-                "ok": false, "copied": false,
+                "ok": false, "copied": false, "dry_run": dry_run,
                 "reason": "blocking violations",
-                "violations": result.violations,
-                "fixes": result.fixes,
+                "violations": &result.violations,
+                "fixes": &result.fixes,
+                "blocking_count": blocks.len(),
             }));
         } else {
             out.err("copy blocked: blocking violations (fix the markdown first)");
@@ -730,20 +1102,20 @@ fn cmd_copy(
 
     // I-03: clipboard payload must be mmbiz or https images; base64 payloads,
     // plain-http hosts and images that failed to load all break on paste.
-    // Block and list them. The predicate lives in the engine so the GUI paths
-    // cannot drift away from it.
-    let paste_hostile: Vec<_> = result
-        .images
-        .iter()
-        .filter(|i| i.paste_hostile())
-        .map(|i| i.source.clone())
-        .collect();
-    if !paste_hostile.is_empty() && !dry_run {
+    // The predicate lives in the engine so the GUI paths cannot drift away
+    // from it. A dry run predicts the real outcome instead of skipping the
+    // gate and reporting a false success.
+    let paste_hostile = if dry_run {
+        dry_run_hostile_sources(&result, has_creds)
+    } else {
+        paste_hostile_sources(&result)
+    };
+    if !paste_hostile.is_empty() {
         if out.json_mode {
             out.print_json(&serde_json::json!({
-                "ok": false, "copied": false,
+                "ok": false, "copied": false, "dry_run": dry_run,
                 "reason": "paste-hostile images: clipboard requires mmbiz or https URLs (I-03)",
-                "local_images": paste_hostile,
+                "local_images": &paste_hostile,
                 "hint": "run `wxwright login` to enable mmbiz upload, or use `convert --out file.html`",
             }));
         } else {
@@ -760,9 +1132,24 @@ fn cmd_copy(
 
     if dry_run {
         if out.json_mode {
-            out.print_json(&serde_json::json!({ "ok": true, "dry_run": true, "report": report_payload(&result) }));
+            out.print_json(&serde_json::json!({
+                "ok": true, "dry_run": true, "copied": false,
+                "platform": "wechat",
+                "title": title,
+                "theme": theme_id_used,
+                "uploads_skipped": has_creds,
+                "note": if has_creds {
+                    "dry run did not upload; local images are assumed to upload successfully - a failed upload still blocks the real copy"
+                } else {
+                    "no credentials: local images would be inlined and blocked by the real copy"
+                },
+                "report": report_payload(&result),
+            }));
         } else {
             out.ok("dry run passed: chain is clean, clipboard not touched");
+            if has_creds {
+                out.info("image uploads were not performed (dry run)");
+            }
             print_violations_human(out, &result);
         }
         return Ok(0);
@@ -792,11 +1179,21 @@ fn cmd_image_upload(paths: &[String], out: &Out) -> Result<i32, String> {
     let client = MpClient::new(creds);
     let mut results = Vec::new();
     for p in paths {
-        let bytes = std::fs::read(p).map_err(|e| format!("cannot read {}: {}", p, e))?;
         let name = PathBuf::from(p)
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| "image.png".into());
+        // One unreadable path must not discard the uploads that already
+        // succeeded: report it as that entry's error and keep going.
+        let bytes = match std::fs::read(p) {
+            Ok(b) => b,
+            Err(e) => {
+                results.push(
+                    serde_json::json!({ "source": p, "ok": false, "error": format!("cannot read {}: {}", p, e) }),
+                );
+                continue;
+            }
+        };
         match client.upload_material(bytes, &name) {
             Ok((media_id, url)) => {
                 results.push(serde_json::json!({ "source": p, "media_id": media_id, "url": url, "ok": true }));
@@ -836,18 +1233,23 @@ fn cmd_image_upload(paths: &[String], out: &Out) -> Result<i32, String> {
 /// into --out-dir in document order. Remote/inline images are reported as
 /// skipped - fitting those would mean fetching, which core never does.
 fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Result<i32, String> {
-    if !wxwright_core::platform::list_platforms()
-        .iter()
-        .any(|p| p.id == platform)
-    {
+    let (spec, known) = wxwright_core::platform::resolve_platform(platform);
+    if !known {
         return Err(format!(
-            "unknown platform {platform:?}; see `wxwright platforms`"
+            "unknown platform {:?}; supported: {}",
+            platform,
+            platform_id_list()
         ));
     }
-    let spec = wxwright_core::platform::get_platform(platform);
     let profile = spec.image_profile();
-    let md = std::fs::read_to_string(input).map_err(|e| format!("cannot read {input}: {e}"))?;
-    let doc = wxwright_core::parser::parse_markdown(&md);
+    let (raw, base_dir) = read_stdin_if_dash(input)?;
+    let (front, body) = split_frontmatter(&raw);
+    if detect_input_format(input, &front, None, &body) == InputFormat::Html {
+        return Err(
+            "image fit reads Markdown image references; HTML input is not supported".into(),
+        );
+    }
+    let doc = wxwright_core::parser::parse_markdown(&body);
     let images = wxwright_core::ir::collect_images(&doc);
     if images.is_empty() {
         return Err(format!("{input} contains no images to fit"));
@@ -855,18 +1257,25 @@ fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Resul
     std::fs::create_dir_all(out_dir).map_err(|e| format!("cannot create {out_dir}: {e}"))?;
 
     // Image sources are resolved like the renderer resolves them: relative
-    // to the markdown file's directory.
-    let base = Path::new(input).parent().unwrap_or(Path::new("."));
+    // to the markdown file's directory (cwd for stdin).
+    let base = base_dir.unwrap_or_else(|| PathBuf::from("."));
     let mut manifest = Vec::new();
-    for (i, img) in images.iter().enumerate() {
+    let mut fitted = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+    let mut seq = 0usize;
+    for img in &images {
         let src = img.src.as_str();
         if src.starts_with("http://")
             || src.starts_with("https://")
             || src.starts_with("data:")
             || src.is_empty()
         {
+            skipped += 1;
+            // Skipping a remote/inline image is the documented behaviour, not
+            // a failure; `failed` is the only per-entry outcome that fails.
             manifest.push(serde_json::json!({
-                "source": src, "ok": false,
+                "source": src, "ok": true,
                 "skipped": "remote or inline image; only local files are fitted",
             }));
             continue;
@@ -875,66 +1284,82 @@ fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Resul
         let entry = match std::fs::read(&path) {
             Ok(bytes) => match wxwright_core::img::fit_to_profile(&bytes, &profile) {
                 Ok(fit) => {
-                    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+                    seq += 1;
                     let stem = path
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "image".into());
-                    let name = format!(
-                        "{:02}-{}.{}",
-                        i + 1,
-                        stem,
-                        if is_png { "png" } else { "jpg" }
-                    );
+                    let name = format!("{:02}-{}.{}", seq, stem, fitted_ext(&fit.bytes, &path));
                     let dest = Path::new(out_dir).join(&name);
                     match std::fs::write(&dest, &fit.bytes) {
-                        Ok(()) => serde_json::json!({
-                            "source": src, "ok": true, "file": dest.display().to_string(),
-                            "alt": img.alt, "width": fit.width, "height": fit.height,
-                            "cropped": fit.cropped, "resized": fit.resized,
-                        }),
-                        Err(e) => serde_json::json!({
-                            "source": src, "ok": false, "error": format!("cannot write {}: {}", dest.display(), e),
-                        }),
+                        Ok(()) => {
+                            fitted += 1;
+                            serde_json::json!({
+                                "source": src, "ok": true, "file": dest.display().to_string(),
+                                "alt": img.alt, "width": fit.width, "height": fit.height,
+                                "cropped": fit.cropped, "resized": fit.resized,
+                            })
+                        }
+                        Err(e) => {
+                            failed += 1;
+                            serde_json::json!({
+                                "source": src, "ok": false, "error": format!("cannot write {}: {}", dest.display(), e),
+                            })
+                        }
                     }
                 }
-                Err(e) => serde_json::json!({ "source": src, "ok": false, "error": e.to_string() }),
+                Err(e) => {
+                    failed += 1;
+                    serde_json::json!({ "source": src, "ok": false, "error": e.to_string() })
+                }
             },
-            Err(e) => serde_json::json!({
-                "source": src, "ok": false,
-                "error": format!("cannot read {}: {}", path.display(), e),
-            }),
+            Err(e) => {
+                failed += 1;
+                serde_json::json!({
+                    "source": src, "ok": false,
+                    "error": format!("cannot read {}: {}", path.display(), e),
+                })
+            }
         };
         manifest.push(entry);
     }
-    let fitted = manifest
-        .iter()
-        .filter(|e| e["ok"] == serde_json::json!(true))
-        .count();
-    let all_ok = fitted == manifest.len();
+    // Skips are informational; only a local image that failed to fit or
+    // write makes the command fail. The old rule ("at least one fitted")
+    // reported failure for an article whose images are all remote.
+    let ok = failed == 0;
     if out.json_mode {
         out.print_json(&serde_json::json!({
-            "ok": all_ok,
-            "platform": platform,
+            "ok": ok,
+            "platform": spec.id,
+            "out_dir": out_dir,
             "profile": { "max_width": profile.max_width, "cover_aspect": profile.cover_aspect },
+            "fitted": fitted,
+            "skipped": skipped,
+            "failed": failed,
             "images": manifest,
         }));
     } else {
-        out.ok(&format!(
-            "{}: fitted {}/{} image(s) to {} ({})",
-            platform,
-            fitted,
-            manifest.len(),
-            out_dir,
-            match profile.cover_aspect {
-                Some((w, h)) => format!("cover {}:{}", w, h),
-                None => "no crop".to_string(),
-            }
-        ));
+        if ok {
+            out.ok(&format!(
+                "{}: fitted {} image(s), skipped {} ({})",
+                spec.id,
+                fitted,
+                skipped,
+                match profile.cover_aspect {
+                    Some((w, h)) => format!("cover {}:{}", w, h),
+                    None => "width clamp only".to_string(),
+                }
+            ));
+        } else {
+            out.err(&format!(
+                "{}: fitted {}, skipped {}, failed {}",
+                spec.id, fitted, skipped, failed
+            ));
+        }
         for e in &manifest {
             if e["ok"] == serde_json::json!(true) {
                 out.ok(&format!(
-                    "{} -> {} ({}x{}{})",
+                    "{} -> {} ({}x{}{}{})",
                     e["source"].as_str().unwrap_or(""),
                     e["file"].as_str().unwrap_or(""),
                     e["width"],
@@ -943,56 +1368,230 @@ fn cmd_image_fit(input: &str, platform: &str, out_dir: &str, out: &Out) -> Resul
                         ", cropped"
                     } else {
                         ""
+                    },
+                    if e["resized"] == serde_json::json!(true) {
+                        ", resized"
+                    } else {
+                        ""
                     }
+                ));
+            } else if let Some(why) = e["skipped"].as_str() {
+                out.info(&format!(
+                    "{} -> skipped: {}",
+                    e["source"].as_str().unwrap_or(""),
+                    why
                 ));
             } else {
                 out.err(&format!(
                     "{} -> {}",
                     e["source"].as_str().unwrap_or(""),
-                    e["error"]
-                        .as_str()
-                        .or(e["skipped"].as_str())
-                        .unwrap_or("failed")
+                    e["error"].as_str().unwrap_or("failed")
                 ));
             }
         }
     }
-    Ok(if fitted > 0 { 0 } else { 1 })
+    Ok(if ok { 0 } else { 1 })
 }
 
-/// The two draft gates every MP write path shares (pitfall 37): blocking
-/// violations, then paste-hostile images. `draft update` used to have
-/// neither and `draft create` only the first.
-fn draft_gates_pass(out: &Out, result: &PipelineOutput) -> bool {
+/// Extension of the bytes actually written: fit_to_profile passes the
+/// original file through untouched when no crop/resize applies, so the input
+/// format is not a reliable guess.
+fn fitted_ext(bytes: &[u8], src: &Path) -> String {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return "png".into();
+    }
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        return "jpg".into();
+    }
+    let ext = src
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "webp" | "bmp" | "tif" | "tiff" => ext,
+        _ => "img".into(),
+    }
+}
+
+/// The draft gates every MP write path shares (pitfall 37): blocking
+/// violations, then paste-hostile images. Direct-HTML sources bypass the
+/// image pipeline, so their `src` attributes need the separate (quote-aware)
+/// HTML scanner.
+fn draft_gates_pass(out: &Out, result: &PipelineOutput, html_mode: bool) -> bool {
     if !result.blocking_violations().is_empty() {
         out.err("draft blocked: blocking violations");
         if out.json_mode {
-            out.print_json(&report_payload(result));
+            out.print_json(&serde_json::json!({
+                "ok": false,
+                "reason": "blocking violations",
+                "report": report_payload(result),
+            }));
         } else {
             print_violations_human(out, result);
         }
         return false;
     }
-    let hostile: Vec<String> = result
-        .images
-        .iter()
-        .filter(|i| i.paste_hostile())
-        .map(|i| i.source.clone())
-        .collect();
+    let hostile: Vec<String> = if html_mode {
+        wxwright_core::htmlutil::paste_hostile_html_imgs(&result.html)
+    } else {
+        result
+            .images
+            .iter()
+            .filter(|i| i.paste_hostile())
+            .map(|i| i.source.clone())
+            .collect()
+    };
     if !hostile.is_empty() {
         out.err(&format!(
             "draft blocked: {} image(s) cannot display in the MP editor (need mmbiz or an https URL): {}",
             hostile.len(),
             hostile.join("; ")
         ));
+        if out.json_mode {
+            out.print_json(&serde_json::json!({
+                "ok": false,
+                "reason": "paste-hostile images",
+                "images": &hostile,
+            }));
+        }
         return false;
     }
     true
 }
 
+struct RenderedDraft {
+    result: PipelineOutput,
+    front: Vec<(String, String)>,
+    title: Option<String>,
+    format: InputFormat,
+}
+
+/// Render an article for the draft box: Markdown goes through the same
+/// upload -> normalize -> validate chain as `convert`, direct HTML through
+/// the normalizer only (PRD 5.1). Metadata stays in `front` for the caller.
+fn render_draft(
+    file: &str,
+    raw: &str,
+    base_dir: Option<PathBuf>,
+    theme_id: Option<&str>,
+    creds: &Credentials,
+) -> Result<RenderedDraft, String> {
+    let (front, body) = split_frontmatter(raw);
+    let fmt = detect_input_format(file, &front, None, &body);
+    let title = front_value(&front, &["title"]).map(str::to_string);
+    let mut result = if fmt == InputFormat::Html {
+        let norm = wxwright_core::normalizer::normalize_html(&body, Default::default())
+            .map_err(|e| e.to_string())?;
+        let violations = wxwright_core::validator::validate_html(&norm.html);
+        PipelineOutput {
+            html: norm.html,
+            images: Vec::new(),
+            stats: wxwright_core::ir::Stats::default(),
+            links: Vec::new(),
+            fixes: norm.fixes,
+            violations,
+        }
+    } else {
+        let t = theme::load_theme(theme_id.unwrap_or("minimal")).map_err(|e| e.to_string())?;
+        let mut opts = ConvertOptions::new(t);
+        opts.image_mode = ImageMode::Upload;
+        opts.base_dir = base_dir;
+        opts.transport = Some(Arc::new(MpClient::new(creds.clone())));
+        wxwright_core::pipeline(&body, &opts).map_err(|e| e.to_string())?
+    };
+    result
+        .violations
+        .extend(wxwright_core::validator::validate_markdown(&body));
+    Ok(RenderedDraft {
+        result,
+        front,
+        title,
+        format: fmt,
+    })
+}
+
+fn front_digest(front: &[(String, String)]) -> Option<String> {
+    front_value(front, &["digest", "summary", "description"]).map(|s| s.chars().take(120).collect())
+}
+
+struct ExistingDraft {
+    title: Option<String>,
+    author: Option<String>,
+    digest: Option<String>,
+    source_url: Option<String>,
+    thumb: Option<String>,
+}
+
+/// Fetch the draft being updated so flags the caller omitted keep the
+/// existing values instead of blanking the byline, summary, source URL or
+/// cover.
+fn existing_draft(client: &MpClient, media_id: &str, index: u64) -> Result<ExistingDraft, String> {
+    let v = client.draft_get(media_id).map_err(|e| e.to_string())?;
+    let items = v
+        .get("news_item")
+        .and_then(|n| n.as_array())
+        .or_else(|| {
+            v.get("content")
+                .and_then(|c| c.get("news_item"))
+                .and_then(|n| n.as_array())
+        })
+        .ok_or_else(|| {
+            format!(
+                "draft {} has no news_item array (unexpected draft/get response)",
+                media_id
+            )
+        })?;
+    let item = items.get(index as usize).ok_or_else(|| {
+        format!(
+            "draft {} has {} article(s); index {} is out of range",
+            media_id,
+            items.len(),
+            index
+        )
+    })?;
+    let s = |k: &str| {
+        item.get(k)
+            .and_then(|x| x.as_str())
+            .map(str::to_string)
+            .filter(|v| !v.is_empty())
+    };
+    Ok(ExistingDraft {
+        title: s("title"),
+        author: s("author"),
+        digest: s("digest"),
+        source_url: s("content_source_url"),
+        thumb: s("thumb_media_id"),
+    })
+}
+
+fn upload_cover(client: &MpClient, path: &str) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read cover {}: {}", path, e))?;
+    let name = Path::new(path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| "cover.png".into());
+    client
+        .upload_material(bytes, &name)
+        .map(|(id, _)| id)
+        .map_err(|e| format!("cover upload failed: {}", e))
+}
+
 fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
+    // Confirmation is a usage decision: check it before credentials so a
+    // missing config never masks "rerun with --yes".
+    if matches!(cmd, DraftCmd::Delete { yes: false, .. }) {
+        if out.json_mode {
+            out.print_json(&serde_json::json!({
+                "ok": false,
+                "error": "draft delete is irreversible; rerun with --yes",
+            }));
+        } else {
+            out.err("draft delete is irreversible - rerun with --yes");
+        }
+        return Ok(2);
+    }
     let creds = wxwright_mp::load_credentials().ok_or(wxwright_mp::NO_CREDENTIALS_HINT)?;
-    let client = MpClient::new(creds);
+    let client = MpClient::new(creds.clone());
     match cmd {
         DraftCmd::Create {
             file,
@@ -1000,37 +1599,73 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             author,
             digest,
             theme: theme_name,
+            source_url,
             thumb_media_id,
+            cover,
         } => {
-            let (raw_md, base_dir) = read_stdin_if_dash(file)?;
-            let md = strip_frontmatter(&raw_md);
-            let mut opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
-            opts.transport = Some(Arc::new(MpClient::new(client_credentials(&client))));
-            let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-            if !draft_gates_pass(out, &result) {
+            let (raw, base_dir) = read_stdin_if_dash(file)?;
+            let theme_id = theme_from(&split_frontmatter(&raw).0, theme_name.as_deref());
+            let mut rendered = render_draft(file, &raw, base_dir, theme_id.as_deref(), &creds)?;
+            let title = title
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .or(rendered.title.clone())
+                .ok_or("draft needs a title: pass --title or add `title:` to the frontmatter")?;
+            rendered.result.violations.extend(title_violations(
+                &wxwright_core::platform::get_platform("wechat"),
+                Some(&title),
+            ));
+            if !draft_gates_pass(out, &rendered.result, rendered.format == InputFormat::Html) {
                 return Ok(1);
             }
-            let thumb = match thumb_media_id {
-                Some(t) => t.clone(),
-                None => result
-                    .images
-                    .iter()
-                    .find_map(|i| i.media_id.clone())
-                    .ok_or("no image available for thumb_media_id; the API requires a cover - include at least one image or pass --thumb-media-id")?,
+            let author = author
+                .clone()
+                .or_else(|| front_value(&rendered.front, &["author"]).map(str::to_string))
+                .unwrap_or_default();
+            let digest = digest
+                .clone()
+                .or_else(|| front_digest(&rendered.front))
+                .map(|d| d.chars().take(120).collect())
+                .unwrap_or_default();
+            let source_url = source_url
+                .clone()
+                .or_else(|| {
+                    front_value(&rendered.front, &["source_url", "source"]).map(str::to_string)
+                })
+                .unwrap_or_default();
+            let thumb = match thumb_media_id
+                .clone()
+                .or_else(|| rendered.result.images.iter().find_map(|i| i.media_id.clone()))
+            {
+                Some(t) => t,
+                None => match cover.as_deref() {
+                    Some(path) => upload_cover(&client, path)?,
+                    None => return Err(
+                        "no cover available: add an image to the article, pass --cover <file>, or --thumb-media-id <id>"
+                            .into(),
+                    ),
+                },
             };
             let article = wxwright_mp::DraftArticle {
-                title: title.clone(),
-                author: author.clone().unwrap_or_default(),
-                digest: digest.clone().unwrap_or_default(),
-                content_html: result.html.clone(),
-                content_source_url: String::new(),
+                title,
+                author,
+                digest,
+                content_html: rendered.result.html.clone(),
+                content_source_url: source_url,
                 thumb_media_id: thumb,
             };
             let media_id = client.draft_add(&article).map_err(|e| e.to_string())?;
             if out.json_mode {
-                out.print_json(&serde_json::json!({ "ok": true, "draft_media_id": media_id, "report": report_payload(&result) }));
+                out.print_json(&serde_json::json!({
+                    "ok": true,
+                    "draft_media_id": media_id,
+                    "report": report_payload(&rendered.result),
+                }));
             } else {
                 out.ok(&format!("draft created: {}", media_id));
+                print_violations_human(out, &rendered.result);
                 out.info("open MP -> 草稿箱 (Drafts) to review and publish");
             }
             Ok(0)
@@ -1039,38 +1674,101 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             media_id,
             file,
             title,
+            author,
+            digest,
             theme: theme_name,
+            source_url,
+            thumb_media_id,
+            cover,
+            index,
         } => {
-            let (raw_md, base_dir) = read_stdin_if_dash(file)?;
-            let md = strip_frontmatter(&raw_md);
-            let opts = build_options(theme_name.as_deref(), ImageMode::Upload, base_dir)?;
-            let result = wxwright_core::pipeline(&md, &opts).map_err(|e| e.to_string())?;
-            if !draft_gates_pass(out, &result) {
+            let existing = existing_draft(&client, media_id, *index)?;
+            let (raw, base_dir) = read_stdin_if_dash(file)?;
+            let theme_id = theme_from(&split_frontmatter(&raw).0, theme_name.as_deref());
+            let mut rendered = render_draft(file, &raw, base_dir, theme_id.as_deref(), &creds)?;
+            let title = title
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .or(rendered.title.clone())
+                .or(existing.title.clone())
+                .ok_or("draft needs a title: pass --title or add `title:` to the frontmatter")?;
+            rendered.result.violations.extend(title_violations(
+                &wxwright_core::platform::get_platform("wechat"),
+                Some(&title),
+            ));
+            if !draft_gates_pass(out, &rendered.result, rendered.format == InputFormat::Html) {
                 return Ok(1);
             }
+            let author = author
+                .clone()
+                .or_else(|| front_value(&rendered.front, &["author"]).map(str::to_string))
+                .or(existing.author.clone())
+                .unwrap_or_default();
+            let digest = digest
+                .clone()
+                .or_else(|| front_digest(&rendered.front))
+                .or(existing.digest.clone())
+                .map(|d| d.chars().take(120).collect())
+                .unwrap_or_default();
+            let source_url = source_url
+                .clone()
+                .or_else(|| {
+                    front_value(&rendered.front, &["source_url", "source"]).map(str::to_string)
+                })
+                .or(existing.source_url.clone())
+                .unwrap_or_default();
+            let thumb = match thumb_media_id
+                .clone()
+                .or_else(|| rendered.result.images.iter().find_map(|i| i.media_id.clone()))
+            {
+                Some(t) => t,
+                None => match cover.as_deref() {
+                    Some(path) => upload_cover(&client, path)?,
+                    None => existing.thumb.clone().ok_or_else(|| {
+                        format!(
+                            "draft {} has no readable cover; pass --cover <file> or --thumb-media-id <id>",
+                            media_id
+                        )
+                    })?,
+                },
+            };
             let article = wxwright_mp::DraftArticle {
-                title: title.clone(),
-                author: String::new(),
-                digest: String::new(),
-                content_html: result.html.clone(),
-                content_source_url: String::new(),
-                thumb_media_id: String::new(),
+                title,
+                author,
+                digest,
+                content_html: rendered.result.html.clone(),
+                content_source_url: source_url,
+                thumb_media_id: thumb,
             };
             client
-                .draft_update(media_id, 0, &article)
+                .draft_update(media_id, *index, &article)
                 .map_err(|e| e.to_string())?;
             if out.json_mode {
-                out.print_json(&serde_json::json!({ "ok": true, "updated": media_id }));
+                out.print_json(&serde_json::json!({
+                    "ok": true,
+                    "updated": media_id,
+                    "index": index,
+                    "report": report_payload(&rendered.result),
+                }));
             } else {
-                out.ok(&format!("draft {} updated", media_id));
+                out.ok(&format!(
+                    "draft {} updated (article index {})",
+                    media_id, index
+                ));
+                print_violations_human(out, &rendered.result);
             }
             Ok(0)
         }
         DraftCmd::List { offset, count } => {
-            let v = client
+            let mut v = client
                 .draft_list(*offset, *count)
                 .map_err(|e| e.to_string())?;
             if out.json_mode {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("ok".into(), serde_json::json!(true));
+                }
                 out.print_json(&v);
             } else {
                 let total = v.get("total_count").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -1099,19 +1797,16 @@ fn cmd_draft(cmd: &DraftCmd, out: &Out) -> Result<i32, String> {
             }
             Ok(0)
         }
-        DraftCmd::Delete { media_id } => {
+        DraftCmd::Delete { media_id, .. } => {
             client.draft_delete(media_id).map_err(|e| e.to_string())?;
-            out.ok(&format!("draft deleted: {}", media_id));
+            if out.json_mode {
+                out.print_json(&serde_json::json!({ "ok": true, "deleted": media_id }));
+            } else {
+                out.ok(&format!("draft deleted: {}", media_id));
+            }
             Ok(0)
         }
     }
-}
-
-fn client_credentials(_client: &MpClient) -> Credentials {
-    wxwright_mp::load_credentials().unwrap_or(Credentials {
-        appid: String::new(),
-        secret: String::new(),
-    })
 }
 
 fn cmd_publish(draft_id: &str, yes: bool, out: &Out) -> Result<i32, String> {
@@ -1119,10 +1814,12 @@ fn cmd_publish(draft_id: &str, yes: bool, out: &Out) -> Result<i32, String> {
         if out.json_mode {
             out.print_json(&serde_json::json!({
                 "ok": false,
-                "error": "publish requires explicit --yes; it performs 群发 (mass send) to followers"
+                "error": "publish requires explicit --yes; it submits the draft to freepublish (发布, not 群发)"
             }));
         } else {
-            out.err("publish performs 群发 (mass send) - rerun with --yes to confirm");
+            out.err(
+                "publish submits the draft for 发布 (freepublish) - rerun with --yes to confirm",
+            );
         }
         return Ok(2);
     }
@@ -1132,9 +1829,17 @@ fn cmd_publish(draft_id: &str, yes: bool, out: &Out) -> Result<i32, String> {
         .freepublish_submit(draft_id)
         .map_err(|e| e.to_string())?;
     if out.json_mode {
-        out.print_json(&resp);
+        let mut payload = resp;
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("ok".into(), serde_json::json!(true));
+            obj.insert("draft_id".into(), serde_json::json!(draft_id));
+        }
+        out.print_json(&payload);
     } else {
         out.ok(&format!("publish submitted for draft {}", draft_id));
+        if let Some(publish_id) = resp.get("publish_id").and_then(|v| v.as_str()) {
+            out.info(&format!("publish_id: {}", publish_id));
+        }
         out.info("check the MP console -> 发表记录 (Publish Records) for status");
     }
     Ok(0)
@@ -1143,7 +1848,7 @@ fn cmd_publish(draft_id: &str, yes: bool, out: &Out) -> Result<i32, String> {
 fn cmd_theme(cmd: &ThemeCmd, out: &Out) -> Result<i32, String> {
     match cmd {
         ThemeCmd::List => {
-            let mut themes = theme::builtin_themes().map_err(|e| e.to_string())?;
+            let themes = theme::builtin_themes().map_err(|e| e.to_string())?;
             let user = theme::list_user_themes();
             if out.json_mode {
                 let list: Vec<serde_json::Value> = themes
@@ -1155,7 +1860,7 @@ fn cmd_theme(cmd: &ThemeCmd, out: &Out) -> Result<i32, String> {
                         v
                     }))
                     .collect();
-                out.print_json(&serde_json::json!({ "themes": list }));
+                out.print_json(&serde_json::json!({ "ok": true, "themes": list }));
             } else {
                 for t in &themes {
                     out.plain(&format!(
@@ -1171,15 +1876,43 @@ fn cmd_theme(cmd: &ThemeCmd, out: &Out) -> Result<i32, String> {
                 }
                 out.info("pass a path to a .toml file to use a custom theme; user themes live in the wxwright themes directory");
             }
-            let _ = &mut themes;
             Ok(0)
         }
-        ThemeCmd::New { name } => {
+        ThemeCmd::New { name, force } => {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return Err(
+                    "theme name may only contain letters, digits, '-' and '_' (it becomes <name>.toml)"
+                        .into(),
+                );
+            }
             let path = format!("{}.toml", name);
             let body = theme_scaffold(name);
-            std::fs::write(&path, body).map_err(|e| format!("cannot write {}: {}", path, e))?;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true);
+            if *force {
+                opts.create(true).truncate(true);
+            } else {
+                opts.create_new(true);
+            }
+            let mut file = opts.open(&path).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    format!("{} already exists; pass --force to overwrite", path)
+                } else {
+                    format!("cannot write {}: {}", path, e)
+                }
+            })?;
+            file.write_all(body.as_bytes())
+                .map_err(|e| format!("cannot write {}: {}", path, e))?;
             if out.json_mode {
-                out.print_json(&serde_json::json!({ "ok": true, "path": path }));
+                out.print_json(&serde_json::json!({
+                    "ok": true,
+                    "path": path,
+                    "overwritten": *force,
+                }));
             } else {
                 out.ok(&format!("theme scaffold written to {}", path));
                 out.info("edit [colors] and [block.*] overrides, then check with `wxwright theme validate`");
@@ -1329,7 +2062,7 @@ fn cmd_platforms(out: &Out) -> Result<i32, String> {
     Ok(0)
 }
 
-fn cmd_doctor(out: &Out, strict: bool) -> Result<i32, String> {
+fn cmd_doctor(out: &Out, strict: bool, verify: bool) -> Result<i32, String> {
     let mut checks: Vec<serde_json::Value> = Vec::new();
     let mut push = |name: &str, status: &str, detail: serde_json::Value| {
         checks.push(serde_json::json!({ "check": name, "status": status, "detail": detail }));
@@ -1352,12 +2085,70 @@ fn cmd_doctor(out: &Out, strict: bool) -> Result<i32, String> {
     );
 
     match wxwright_mp::load_credentials() {
+        Some(c) if verify => {
+            let appid = c.appid.clone();
+            let secret = wxwright_mp::mask(&c.secret);
+            let client = MpClient::new(c);
+            match client.access_token(false) {
+                Ok(_) => {
+                    let nickname = client.account_basic_info().ok().map(|(name, _)| name);
+                    push(
+                        "credentials",
+                        "ok",
+                        serde_json::json!({
+                            "appid": appid,
+                            "secret": secret,
+                            "verified": true,
+                            "nickname": nickname,
+                        }),
+                    );
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    if credential_rejected(&msg) {
+                        push(
+                            "credentials",
+                            "err",
+                            serde_json::json!({
+                                "appid": appid,
+                                "secret": secret,
+                                "verified": false,
+                                "error": msg,
+                                "hint": "the AppID/Secret was rejected; rerun `wxwright login` with the current Secret",
+                            }),
+                        );
+                    } else {
+                        // The token endpoint failing for any other reason
+                        // (network, 40164 IP whitelist) says nothing about
+                        // whether the credentials themselves are valid.
+                        let hint = if msg.contains("40164") {
+                            "add this machine's public IP to the MP API whitelist, then rerun with --verify"
+                        } else {
+                            "network or API problem; the credentials were not judged"
+                        };
+                        push(
+                            "credentials",
+                            "warn",
+                            serde_json::json!({
+                                "appid": appid,
+                                "secret": secret,
+                                "verified": false,
+                                "error": msg,
+                                "hint": hint,
+                            }),
+                        );
+                    }
+                }
+            }
+        }
         Some(c) => push(
             "credentials",
             "ok",
             serde_json::json!({
                 "appid": c.appid,
                 "secret": wxwright_mp::mask(&c.secret),
+                "verified": false,
+                "note": "presence only; pass --verify for a live token check",
             }),
         ),
         None => push(
@@ -1495,7 +2286,9 @@ fn cmd_mcp(cmd: &McpCmd, out: &Out) -> Result<i32, String> {
             };
             let outcome = wxwright_mcp::install::install(target_str).map_err(|e| e.to_string())?;
             if out.json_mode {
-                out.print_json(&outcome);
+                let mut v = serde_json::to_value(&outcome).map_err(|e| e.to_string())?;
+                v["ok"] = serde_json::json!(true);
+                out.print_json(&v);
             } else {
                 out.ok(&format!(
                     "wxwright MCP server written to {} (key {})",
@@ -1514,43 +2307,129 @@ fn cmd_mcp(cmd: &McpCmd, out: &Out) -> Result<i32, String> {
     }
 }
 
-fn cmd_agent_card(md: bool, json: bool, out: &Out) -> Result<i32, String> {
-    if json && !md {
-        out.print_json(&wxwright_core::agentcard::card_json());
-    } else {
+fn cmd_agent_card(md: bool, out: &Out) -> Result<i32, String> {
+    // Markdown is the human/terminal form; JSON is what an agent consumes
+    // through a pipe. --md pins the Markdown even under --json.
+    if md || !out.json_mode {
         out.plain(&wxwright_core::agentcard::card_markdown());
+    } else {
+        out.print_json(&wxwright_core::agentcard::card_json());
     }
     Ok(0)
 }
 
-fn cmd_login(appid: &str, secret: &str, no_keyring: bool, out: &Out) -> Result<i32, String> {
-    if appid.is_empty() || secret.is_empty() {
-        return Err("--appid and --secret are both required".into());
+fn cmd_login(
+    appid: &str,
+    secret: Option<&str>,
+    secret_stdin: bool,
+    no_verify: bool,
+    no_keyring: bool,
+    out: &Out,
+) -> Result<i32, String> {
+    let appid = appid.trim();
+    if appid.is_empty() {
+        return Err("--appid must not be empty".into());
     }
-    wxwright_mp::save_credentials(
-        &Credentials {
-            appid: appid.to_string(),
-            secret: secret.to_string(),
-        },
-        !no_keyring,
-    )
-    .map_err(|e| e.to_string())?;
+    if secret.is_some() && secret_stdin {
+        return Err("pass either --secret or --secret-stdin, not both".into());
+    }
+    let secret = if secret_stdin {
+        // Reading from stdin keeps the secret out of shell history and the
+        // process list (PRD 5.6 / pitfall 16).
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_line(&mut buf)
+            .map_err(|e| format!("cannot read the secret from stdin: {}", e))?;
+        buf.trim().to_string()
+    } else {
+        secret
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                std::env::var("WXWRIGHT_MP_SECRET")
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            })
+            .ok_or(
+                "no secret given: use --secret-stdin (recommended), --secret, or WXWRIGHT_MP_SECRET",
+            )?
+    };
+    if secret.is_empty() {
+        return Err("the secret must not be empty".into());
+    }
+
+    let creds = Credentials {
+        appid: appid.to_string(),
+        secret: secret.clone(),
+    };
+    // Verify before storing: a typo that overwrites working credentials is a
+    // silent outage. IP-whitelist and network failures still store (the
+    // credentials themselves are valid; the caller can fix the whitelist).
+    let (verified, nickname, warning): (bool, Option<String>, Option<String>) = if no_verify {
+        (
+            false,
+            None,
+            Some("verification skipped (--no-verify)".into()),
+        )
+    } else {
+        let client = MpClient::new(creds.clone());
+        match client.access_token(false) {
+            Ok(_) => (
+                true,
+                client.account_basic_info().ok().map(|(name, _)| name),
+                None,
+            ),
+            Err(e) => {
+                let msg = e.to_string();
+                if credential_rejected(&msg) {
+                    return Err(format!(
+                        "credential check failed; nothing was stored: {}",
+                        msg
+                    ));
+                }
+                (false, None, Some(msg))
+            }
+        }
+    };
+
+    wxwright_mp::save_credentials(&creds, !no_keyring).map_err(|e| e.to_string())?;
+    let storage = if no_keyring {
+        "config-file"
+    } else {
+        "os-keychain"
+    };
     if out.json_mode {
         out.print_json(&serde_json::json!({
             "ok": true,
             "appid": appid,
-            "secret": wxwright_mp::mask(secret),
-            "storage": if no_keyring { "config-file" } else { "os-keychain" },
+            "secret": wxwright_mp::mask(&secret),
+            "storage": storage,
+            "verified": verified,
+            "nickname": nickname,
+            "warning": warning,
         }));
     } else {
         out.ok(&format!(
-            "credentials stored (secret {}).",
+            "credentials stored ({}).",
             if no_keyring {
                 "in config file"
             } else {
                 "in OS keychain"
             }
         ));
+        if let Some(name) = &nickname {
+            out.info(&format!("verified: account {}", name));
+        } else if verified {
+            out.info("verified: token acquired");
+        }
+        if let Some(w) = &warning {
+            out.warn(&format!("not verified: {}", w));
+            if w.contains("40164") {
+                out.info("add this machine's public IP to the MP API whitelist, then rerun `wxwright doctor`");
+            }
+        }
         out.info("mmbiz upload and draft APIs are now unlocked");
     }
     Ok(0)
@@ -1644,9 +2523,16 @@ fn cmd_bench(iters: usize, out: &Out) -> Result<i32, String> {
     }
     let p50 = |s: &[f64]| s[s.len() / 2];
     let p95 = |s: &[f64]| s[(s.len() as f64 * 0.95) as usize % s.len()];
+    let within_slo = p50(&total) <= 60.0;
+    let build = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     if out.json_mode {
         out.print_json(&serde_json::json!({
             "ok": true,
+            "build": build,
             "doc_chars": md.chars().count(),
             "iterations": iters,
             "pipeline_ms_p50": p50(&total),
@@ -1661,15 +2547,24 @@ fn cmd_bench(iters: usize, out: &Out) -> Result<i32, String> {
             "html_bytes": html_bytes,
             "violations": violation_count,
             "slo_p2_budget_ms": 60.0,
-            "within_slo": p50(&total) <= 60.0,
+            "within_slo": within_slo,
+            "note": if !within_slo && cfg!(debug_assertions) {
+                Some("debug build: the SLO budget applies to release builds")
+            } else {
+                None
+            },
         }));
     } else {
         out.ok(&format!(
-            "full chain over {} chars: p50 {:.1}ms, p95 {:.1}ms (SLO budget 60ms)",
+            "full chain over {} chars: p50 {:.1}ms, p95 {:.1}ms (SLO budget 60ms, {} build)",
             md.chars().count(),
             p50(&total),
-            p95(&total)
+            p95(&total),
+            build
         ));
+        if !within_slo && cfg!(debug_assertions) {
+            out.warn("above the SLO budget; debug builds are expected to be slower - measure a release build");
+        }
         out.info(&format!(
             "stages p50 ms: parse {:.1} · render {:.1} · stats {:.1} · normalize {:.1} · validate {:.1}",
             p50(&s_parse),

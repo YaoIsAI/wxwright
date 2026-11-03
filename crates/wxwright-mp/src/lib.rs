@@ -679,7 +679,9 @@ impl MpClient {
         Ok(())
     }
 
-    /// 群发 (mass send) via freepublish. Caller must gate on explicit --yes.
+    /// freepublish (发布): makes the draft public on the account. This is NOT
+    /// 群发 (mass send), which has no API and stays a human action in the MP
+    /// backend. Caller must gate on explicit --yes.
     pub fn freepublish_submit(&self, draft_media_id: &str) -> Result<serde_json::Value> {
         let payload = serde_json::json!({ "media_id": draft_media_id });
         self.post_with_token_value("/cgi-bin/freepublish/submit", &payload)

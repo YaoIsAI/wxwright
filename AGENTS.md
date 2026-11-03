@@ -201,9 +201,14 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
 | 61 | **发布流水线的守卫 job 只在 dispatch 运行**（`guard-version` 带 `if: github.event_name == 'workflow_dispatch'`；tag push 时它 skipped，而 GitHub 对 `needs` 的默认规则是上游 skipped → 下游全部 skipped） | tag 已在远端，workflow 1 秒内显示 completed/skipped，Release 根本没有创建；此前发布都靠手动 dispatch，问题被完全掩盖 | 守卫必须对所有触发运行，tag push 时同样校验 tag 名与 Cargo.toml；打完 tag 后先看 `gh run list --workflow release.yml` 不是 skipped，再逐 job 核对 |
 | 62 | **原始 JSON 接口把微信错误当数据返回**（`draft_list` / `draft_get` / `freepublish_submit` 走 `post_with_token_value`，只做 token 刷新不做 errcode 判定；40164 白名单错误原样返回，GUI `v.item \|\| []` 读成空草稿箱） | 用户看到「草稿箱是空的」而不是「IP 不在白名单」；推送/群发同类失败也无提示 | 所有拿原始 body 的调用必须过 `ensure_ok`：errcode 非 0 一律转成带 code+errmsg 的错误；回归测试 `raw_json_errors_are_not_silent_success` 锁定 |
 | 63 | **续写的上下文只取正文前 12k 字**（长文续写时模型看不到结尾，接不上最后一段，或从开头重写；同时旧版「插入光标」会把续写塞到顶部/未闭合围栏里） | 续写结果重复、断裂，或把正文写进代码块 | 续写上下文取「开头 2k + 结尾 10k」；追加前断言文章与回复的 ``` 围栏均为偶数；整篇润色/适配只能「替换正文」，不提供光标插入 |
-| 64 | **AI 撤销快照跨文章/跨手工编辑存活**（`lastFixUndo` / `lastAiAppend` 只在下一次 AI 操作时被覆盖；切换文章、切平台、手动输入后仍能点「撤销」，把另一篇文章或更早的正文写回编辑器；快照也没记 dirty，撤销后「未保存」状态错乱） | 撤销一次 AI 修复会静默覆盖用户此后写的内容，甚至把别的文章注入当前文章；一旦保存就落盘 | 快照只属于「某篇文章 + 某个平台 + 某次编辑」：手动输入、切换/新建文章、切平台、插入/替换/追加都必须立即置空；快照记录并恢复 dirty；打开 HTML 文章时渠道强制回 wechat，未知 platform id 不切换 |
+| 64 | **AI 撤销快照跨文章/跨手工编辑存活**（`lastFixUndo` / `lastAiAppend` 只在下一次 AI 操作时被覆盖；切换文章、切平台、手动输入后仍能点「撤销」，把另一篇文章或更早的正文写回编辑器；快照也没记 dirty，撤销后「未保存」状态错乱） | 撤销一次 AI 修复会静默覆盖用户此后写的内容，甚至把别的文章注入当前文章；一旦保存就落盘 | 快照只属于「某篇文章 + 某个平台 + 某次编辑」：手动输入、切换/新建文章、切平台、插入/替换/追加都必须立即置空；快照记录并恢复 dirty；打开 HTML 文章时渠道强制回 wechat，未知 platform id 不切换；**保存（persistCurrent）也立即置空**——内容已落盘，撤销等于把修复前的正文写回并重新弄脏 |
+| 65 | **CLI 先打印报告、再写 `--out` 制品**（v0.18.0 的 convert：`--out missingdir/a.html` 先输出 `ok:true`，再补一个 `{ok:false,error}` 文档；`fix --out -` 还把制品写成一个名为 `-` 的文件） | Agent 读到第一份文档就以为文件已生成，整套自动化基于不存在产物继续跑；`ok` 还硬编码 true，阻断违规也 exit 0 | 制品一律 **write-then-report**（`write_artifact` / `announce_artifact`，main.rs）：写失败=拒绝（exit 2），只输出一份错误文档、不留半成品；`ok` 必须由 `blocking_count` 推导；`cli_behavior.rs` 断言 stdout 恰好一份文档且没有 `-` 文件 |
+| 66 | **`copy --dry-run` 也会真的上传素材**（dry-run 仍按凭据构建 Upload transport，图片进永久素材库，然后报「剪贴板干净」） | 「先看会不会失败」的命令改动了公众号账号；用户以为 dry-run 无副作用 | dry-run 强制 `ImageMode::Keep`（零网络），图片门禁改用 `ImageOutcome::dry_run_hostile(uploads_enabled)` **预测**而非跳过；`uploads_skipped:true` 写进 JSON；`image_gate_test` + `cli_behavior` 锁死 |
+| 67 | **frontmatter 只认 `\n`，CRLF 文件整块被当正文**（Windows 编辑器存的 `.md`：title/theme/platform 全部失效， yet 命令照常成功） | 平台/主题/标题静默不生效，产物回到默认，排查时看不出是换行符 | `util::strip_frontmatter` 接受 CRLF + BOM（`split_inclusive('\n')` + `trim_end_matches(['\r','\n'])`）；回归测试 `validate_reads_crlf_frontmatter_and_its_platform_and_title` 用真实 `\r\n` 夹具 |
+| 68 | **手写文档与 agent card 漂移**（`docs/agent-integration.md` 把 `publish` 说成群发、MCP 只列 9 个工具、退出码表漏 1；README/PRD/教程同样有旧数字；卡片是生成的，文档不是） | Agent 按文档操作 CLI 就会误判出口（把 freepublish 当群发不敢用/当成群发乱用），且没人发现 | `tests/doc_drift_test.rs` 把文档钉回 `agentcard::card_json()`：20 条命令逐条命中、12 工具+计数、输出/退出码契约、publish 措辞（禁 “群发 (publish)”/“Mass publish (publish)”）；改命令面必须同步 card + handbook + 两套 README + 教程 |
+| 69 | **CLI 行为测试的沙箱里，`s.path(x)` 不是子进程 cwd**（子进程 `current_dir(s.work())`，`path()` 指沙箱根；用 `s.path("-").exists()` 断言「没有多余文件」→ 放了坏代码仍然全绿） | 假绿的守卫比没有守卫更糟 | 断言产物/残留文件一律用 `s.stray(name)`（查 `work()`）或 `s.read(name)`；`exec` 里任何「文件不该出现」的断言先确认查的是 cwd |
 
-## 8. 当前能力快照 / Feature map（2026-11-02，v0.18.0+）
+## 8. 当前能力快照 / Feature map（2026-11-02，v0.18.1）
 
 - 文章库（frontmatter 含 platform）/ 主题（3 内置 + AI 生成）/ 海报工坊 / 尺寸工坊 / 素材库 /
   SVG 组件库（侧边栏「组件」tab：8 组件+分类筛选+缩略卡一键插入+手风琴调参+AI 生成+传图/AI 生图占位+取色器；弹窗已退役）/
@@ -231,8 +236,14 @@ python -m http.server 8742 -d gui/ui         # 浏览器 demo 模式（无后端
   HTML 文章固定微信渠道）/
   **公众号连通性诊断**（绑定前实测 token；`wx_check` 显示昵称或 40164 的当前 IP，
   复制 IP/打开 MP 后台/重新检测；草稿箱与推送共用错误分类；绑定后自动切到公众号渠道）。
-- 测试 231（224 常规 + 7 条 live 冒烟 ignored）；版本 0.18.0（workspace+tauri.conf
-  + app.js GUI_VERSION 三处同步）。
+- 测试 253（246 常规 + 7 条 live 冒烟 ignored）；版本 0.18.1（workspace+tauri.conf
+  + app.js GUI_VERSION 三处同步；README 下载表还指向上一个已发布的 0.18.0 资产，
+  发版时一并同步）。
+- **CLI 是 Agent 的信源**：`crates/wxwright-cli/tests/cli_behavior.rs`（20 条端到端，
+  跑真实二进制、沙箱化四个配置根、零网络零凭据）锁退出码/JSON 纯净/制品/门禁/凭据；
+  `crates/wxwright-core/tests/doc_drift_test.rs` 把 `docs/agent-integration.md` + 两套
+  README + 教程钉回 `agentcard::card_json()`。改任何命令面（命令、flag、退出码、工具数、
+  freepublish/群发措辞）都要跑这两条，否则必红。
 - 多渠道出口：`convert --platform <id>` 与 MCP `wxwright_export` 让 CLI/Agent 也能拿到
   小红书文案 / 知乎 Markdown（此前只有 GUI 能切平台）；`PlatformSpec.export_kind` 是
   该行为的唯一来源；`wxwright image fit --platform <id>` 把文章图集裁到目标平台

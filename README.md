@@ -148,6 +148,9 @@ for the full signing story.
 # Convert without any credentials
 wxwright convert article.md --theme minimal --out article.html
 
+# Compliance gate: exit 0 clean / 1 blocking violations / 2 could not run
+wxwright validate article.md --strict
+
 # Full paste-safe chain: convert -> upload/inline images -> normalize -> validate -> clipboard
 wxwright copy article.md
 # then open the WeChat editor and press Ctrl+V
@@ -230,8 +233,9 @@ the article's images to the platform's primary shape.
 ### Publishing
 
 - **WeChat**: draft creation, image upload to the permanent material library,
-  draft update, and draft-box browsing. Mass publish (`publish`) always requires
-  an explicit `--yes`.
+  draft update, and draft-box browsing. Publishing a draft to the public feed
+  (`publish`, i.e. freepublish/发布 - not 群发) always requires an explicit
+  `--yes`; 群发 itself stays a human action in the MP backend.
 - **X and LinkedIn**: bring your own developer app. OAuth 2.0 PKCE/code flow with
   a local loopback callback, tokens in the OS keychain, live posting with fitted
   images (X up to four, LinkedIn one), and automatic X token refresh.
@@ -297,7 +301,8 @@ the optional official puppeteer check in CI.
 - AppSecret and OAuth tokens live in the OS keychain (Windows Credential
   Manager / macOS Keychain / libsecret); the config file stores only a reference.
 - Tokens and secrets are masked in logs and never returned by status commands.
-- Pushing to WeChat writes a draft; mass publish requires explicit confirmation.
+- Pushing to WeChat writes a draft; publishing it (freepublish) requires
+  explicit confirmation, and 群发 is never automated.
 - Zero telemetry, zero cloud dependencies. AI providers and ComfyUI are optional
   and only contacted when you configure them.
 - Update payloads are signature-verified before execution.

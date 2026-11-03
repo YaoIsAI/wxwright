@@ -19,7 +19,7 @@ wxwright 把这一切收进一个桌面应用：左边写作，中间预览，�
 本文既是**宣传页**，也是**逐按钮的使用手册**：18 张实拍截图，覆盖应用里每一个页面、每一个按钮。文章有点长，建议先收藏。
 
 ```chart
-{"kind":"bar","title":"wxwright 0.11 一览","labels":["适配平台","内置主题","MCP 工具","自动化测试"],"values":[7,7,8,182],"unit":"个"}
+{"kind":"bar","title":"wxwright 0.18 一览","labels":["适配平台","MCP 工具","自动化测试","内置主题"],"values":[7,12,248,3],"unit":"个"}
 ```
 
 ## 三分钟上手
@@ -150,7 +150,7 @@ wxwright 把这一切收进一个桌面应用：左边写作，中间预览，�
 
 *Agent 面板：一键安装 MCP，复制 Agent 卡片*
 
-一键写入 Claude Desktop / Cursor / VS Code / OpenCode 的 MCP 配置，或复制 Agent 卡片给任何 AI Agent。8 个 MCP 工具覆盖转换、校验、复制、上传、推草稿、导出——你的 Agent 从此会排版。
+一键写入 Claude Desktop / Cursor / VS Code / OpenCode 的 MCP 配置，或复制 Agent 卡片给任何 AI Agent。12 个 MCP 工具覆盖转换、修复、复制、校验、上传、裁剪、推草稿、更新草稿、草稿清单、删除草稿、主题清单、跨平台导出——你的 Agent 从此会排版。
 
 ## 设置：三页看完全部配置
 

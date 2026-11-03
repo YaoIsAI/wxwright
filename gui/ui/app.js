@@ -9,7 +9,7 @@ const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
 
 /// GUI version - the single frontend source of truth (about lines + status
 /// bar). Bump together with Cargo.toml and tauri.conf.json.
-const GUI_VERSION = "0.18.0";
+const GUI_VERSION = "0.18.1";
 
 /* ------------------------------------------------------------------ i18n */
 const I18N = {
@@ -1366,6 +1366,11 @@ async function persistCurrent(silent = false) {
   currentArticleId = meta.id;
   loadedTitle = meta.title;
   dirty = false;
+  // The buffer is on disk now. A snapshot that survives a save would revert
+  // committed content (and re-mark the article dirty) after the user already
+  // persisted it - possibly overwriting a change made elsewhere.
+  lastFixUndo = null;
+  lastAiAppend = null;
   $("stat-saved").textContent = t("saved");
   if (!silent) {
     toast(isNew ? t("saved_new_ok", meta.title) : t("saved_ok", meta.title), "ok");
@@ -1505,8 +1510,8 @@ const HELP_CONTENT = [
       { label: { zh: "微信公众平台后台（内容运营）", en: "WeChat MP admin (content ops)" }, url: "https://mp.weixin.qq.com" },
     ],
     note: {
-      zh: "注意：AppSecret 重置后旧值立即失效；群发（publish）类接口另有频次与资质要求，工具默认只推草稿。",
-      en: "Note: resetting the AppSecret invalidates the old one immediately; mass-send APIs have extra quota and qualification rules - this tool only pushes drafts by default.",
+      zh: "注意：AppSecret 重置后旧值立即失效；发布（freepublish）与群发类接口另有频次与资质要求，工具默认只推草稿。",
+      en: "Note: resetting the AppSecret invalidates the old one immediately; freepublish and mass-send APIs have extra quota and qualification rules - this tool only pushes drafts by default.",
     },
   },
   {
